@@ -28,7 +28,7 @@ void main() {
     expect(readme, contains('docs/privacy-network.md'));
     expect(troubleshooting, contains('../privacy-network.md'));
     for (final destination in [
-      'master.vokusz.app',
+      'MASTER_SERVER_URL',
       'api.github.com',
       'LiveKit',
       'CDN',

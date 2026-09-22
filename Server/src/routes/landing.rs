@@ -156,7 +156,7 @@ pub async fn landing(State(state): State<AppState>) -> Html<String> {
       <div class="card">
         <h2>Connect a client</h2>
         <ol>
-          <li>Install the Vokusz client from <a href="https://www.vokusz.app" style="color:#7c7cf0">vokusz.app</a>.</li>
+          <li>Install the Vokusz client from <a href="https://github.com/ChunchunOwO/vokusz/releases" style="color:#7c7cf0">GitHub Releases</a>.</li>
           <li>Add this server using its address (the URL in your browser bar).</li>
           <li>Register an account, or use an invite link if you have one.</li>
           <li>Bots connect to the gateway at <code>/ws</code> with a <code>Bot &lt;token&gt;</code> identify.</li>
@@ -171,8 +171,8 @@ pub async fn landing(State(state): State<AppState>) -> Html<String> {
           data folder, view logs, or toggle start-on-login.
         </p>
         <div class="links">
-          <a class="primary" href="https://www.vokusz.app">Get the client</a>
-          <a href="https://www.vokusz.app/docs.html#deploying-a-server">Documentation</a>
+          <a class="primary" href="https://github.com/ChunchunOwO/vokusz/releases">Get the client</a>
+          <a href="https://github.com/ChunchunOwO/vokusz/blob/main/Client/docs/self-hosting/overview.md">Documentation</a>
         </div>
       </div>
 

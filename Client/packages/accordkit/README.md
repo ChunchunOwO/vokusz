@@ -3,10 +3,10 @@
 [![Dart](https://img.shields.io/badge/Dart-3.0%2B-0175C2?logo=dart)](https://dart.dev)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-An [Accord protocol](https://vokusz.app) client library for Dart. AccordKit
+An Accord protocol client library for Dart. AccordKit
 gives you a typed REST client, a resilient gateway WebSocket client (with
 automatic heartbeating, resume, and reconnect), and data models for building
-bots, tools, and apps against [Vokusz](https://vokusz.app) servers.
+bots, tools, and apps against Vokusz servers.
 
 This is a Dart port of the GDScript `accordkit` addon and tracks the same API
 surface and wire behaviour.

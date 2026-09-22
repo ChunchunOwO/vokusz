@@ -228,8 +228,7 @@ class _AccordThreadPaneState extends ConsumerState<AccordThreadPane> {
     return 'Thread';
   }
 
-  /// Offers two share links for this post: a Vokusz Universal Link that opens
-  /// the installed client (with a website fallback), and the public `/s/...`
+  /// Offers a `vokusz://` share link for this post, plus the public `/s/...`
   /// web URL that anyone and search-engine crawlers can open.
   void _showShareMenu([Offset? position]) {
     final spaceId = widget.spaceId;
@@ -240,7 +239,7 @@ class _AccordThreadPaneState extends ConsumerState<AccordThreadPane> {
         label: 'Share Vokusz link',
         icon: Icons.rocket_launch_outlined,
         onSelected: () => _copyShareLink(
-          'https://www.vokusz.app/open/navigate/$spaceId/'
+          'vokusz://navigate/$spaceId/'
               '${widget.channelId}?msg=${_root.id}',
           'Vokusz link copied to clipboard',
         ),

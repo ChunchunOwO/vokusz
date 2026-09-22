@@ -44,7 +44,7 @@
     ],
     "resources": [],
     "publisher": "Vokusz",
-    "homepage": "https://www.vokusz.app",
+    "homepage": "https://github.com/ChunchunOwO/vokusz",
     "linux": {
       "deb": {
         "depends": []

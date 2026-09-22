@@ -158,7 +158,7 @@ pub async fn invite_page(
       <div class="invite-code">{code_escaped}</div>
       <div class="actions">
         <a id="open-btn" class="btn btn-primary" href="{vokusz_uri}">Open in Vokusz</a>
-        <a class="btn btn-secondary" href="https://www.vokusz.app">Get Vokusz</a>
+        <a class="btn btn-secondary" href="https://github.com/ChunchunOwO/vokusz/releases">Get Vokusz</a>
       </div>
       <p id="status" class="status"></p>
     </div>
@@ -173,7 +173,7 @@ pub async fn invite_page(
       setTimeout(function() {{
         if (!opened) {{
           document.getElementById("status").innerHTML =
-            'Vokusz not detected. <a href="https://www.vokusz.app">Download it</a> or copy the invite code above.';
+            'Vokusz not detected. <a href="https://github.com/ChunchunOwO/vokusz/releases">Download it</a> or copy the invite code above.';
         }}
       }}, 2000);
     </script>

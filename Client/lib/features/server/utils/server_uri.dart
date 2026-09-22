@@ -103,9 +103,7 @@ class ServerUri {
     );
   }
 
-  /// Parses either a `vokusz://` deep link or its public Universal Link form
-  /// at `https://www.vokusz.app/open/...`. Supported routes (matching
-  /// `uri_handler.gd`):
+  /// Parses a `vokusz://` deep link. Supported routes:
   ///   `vokusz://connect/<host>[:<port>][/<space-slug>][?token=&invite=]`
   ///   `vokusz://invite/<code>@<host>[:<port>]`
   ///   `vokusz://navigate/<space-id>[/<channel-id>][?msg=<message-id>]`
@@ -113,21 +111,8 @@ class ServerUri {
   static ParsedServerUrl? parseDeepLink(String uri) {
     var text = uri.trim();
     const scheme = 'vokusz://';
-    if (text.startsWith(scheme)) {
-      text = text.substring(scheme.length);
-    } else {
-      final web = Uri.tryParse(text);
-      if (web == null ||
-          web.scheme != 'https' ||
-          (web.host != 'www.vokusz.app' && web.host != 'vokusz.app') ||
-          web.userInfo.isNotEmpty ||
-          web.hasPort ||
-          !web.path.startsWith('/open/')) {
-        return null;
-      }
-      text = web.path.substring('/open/'.length);
-      if (web.hasQuery) text += '?${web.query}';
-    }
+    if (!text.startsWith(scheme)) return null;
+    text = text.substring(scheme.length);
     if (text.isEmpty) return null;
 
     final slash = text.indexOf('/');

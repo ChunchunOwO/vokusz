@@ -9,7 +9,7 @@ import 'package:bonfire/theme/app_theme.dart';
 /// Distinct from server/account state ([AccordSession]); these are local-only.
 class AccordSettings {
   /// Default master-server directory URL (matches the reference client).
-  static const String defaultMasterServerUrl = 'https://master.vokusz.app';
+  static const String defaultMasterServerUrl = '';
 
   /// Per-channel notification levels — `channel_id → 'all' | 'mentions' |
   /// 'nothing'`. Missing entries fall back to the global default ("mentions").

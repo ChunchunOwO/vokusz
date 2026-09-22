@@ -3,17 +3,12 @@
 #
 #   scripts/build.sh [platform] [-- extra flutter args]
 #
-# platform: web (default) | apk | appbundle | linux | windows | ios | macos
+# platform: windows (default) | web | apk | appbundle | linux | ios | macos
 #
-# Examples:
-#   scripts/build.sh                 # Web (JavaScript) release
-#   scripts/build.sh apk             # Android GitHub/sideload APK
-#   scripts/build.sh appbundle       # Android Play Store AAB
-#   scripts/build.sh linux
-#   scripts/build.sh ios -- --no-codesign
+# Windows is the main line. Other platforms are parked in ../../MutiVersion/.
 source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 
-PLATFORM="${1:-web}"
+PLATFORM="${1:-windows}"
 shift || true
 # Drop a leading `--` separator if present so callers can append raw flags.
 [ "${1:-}" = "--" ] && shift || true

@@ -10,8 +10,7 @@
 ///  2. `ACCORD_SERVER_BIN` — an explicit path to an `accordserver` binary.
 ///  3. An auto-detected binary from a sibling checkout, i.e.
 ///     `../accordserver/target/{release,debug}/accordserver`.
-///  4. `ACCORD_SERVER_IMAGE` (default is the reviewed digest below)
-///     run under docker.
+///  4. `ACCORD_SERVER_IMAGE` — a local docker image you built yourself.
 ///
 /// If none resolve, [AccordTestServer.start] throws [ServerUnavailable]; call
 /// it through [describeOrSkip] to turn that into a skipped suite with an
@@ -22,10 +21,8 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-const _defaultImage =
-    'ghcr.io/chunchunowo/vokusz-server@sha256:9f76756599fded6ec3f8b5f9638ed436e3ff73b96df24afd880c40673da8acf2';
 const _defaultLiveKitImage =
-    'livekit/livekit-server@sha256:9e34703b97ceb9f622bcbb533107e4786c7aa65966f0494966a452ad41a0c0d4';
+    'livekit/livekit-server:latest';
 
 /// Thrown when no server could be resolved from the environment.
 class ServerUnavailable implements Exception {
@@ -104,7 +101,7 @@ class AccordTestServer {
       '  ACCORD_TEST_SERVER_URL=http://host:port   (use a running server)\n'
       '  ACCORD_SERVER_BIN=/path/to/accordserver   (spawn a local build)\n'
       '  a sibling checkout built at ../accordserver/target/{release,debug}\n'
-      '  docker, to run $_defaultImage',
+      '  ACCORD_SERVER_IMAGE=<local image>          (docker)',
     );
   }
 
@@ -115,12 +112,15 @@ class AccordTestServer {
       throw ServerUnavailable('ACCORD_SERVER_BIN=$explicit does not exist.');
     }
 
-    // Sibling checkout, relative to this repo's root (the test CWD).
     for (final profile in const ['release', 'debug']) {
-      final candidate = File(
+      for (final rel in [
+        '../Server/target/$profile/accordserver',
+        '../Server/target/$profile/accordserver.exe',
         '../accordserver/target/$profile/accordserver',
-      ).absolute;
-      if (candidate.existsSync()) return candidate.path;
+      ]) {
+        final candidate = File(rel).absolute;
+        if (candidate.existsSync()) return candidate.path;
+      }
     }
     return null;
   }
@@ -174,7 +174,13 @@ class AccordTestServer {
 
   static Future<AccordTestServer> _startDocker() async {
     final port = await _freePort();
-    final image = _env('ACCORD_SERVER_IMAGE') ?? _defaultImage;
+    final image = _env('ACCORD_SERVER_IMAGE');
+    if (image == null) {
+      throw ServerUnavailable(
+        'ACCORD_SERVER_IMAGE is not set. Build the server locally or point '
+        'ACCORD_TEST_SERVER_URL / ACCORD_SERVER_BIN at a running binary.',
+      );
+    }
     final name = 'accord-integration-test-$port';
     final liveKit = liveKitRequested ? await _LiveKitFixture.start() : null;
 

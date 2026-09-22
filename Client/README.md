@@ -11,7 +11,7 @@ No ads. No first-party analytics or tracking. No paywall on the call. **Your ser
   <img alt="License: GPLv3" src="https://img.shields.io/badge/license-GPLv3-blue.svg">
   <a href="https://github.com/ChunchunOwO/vokusz/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/ChunchunOwO/vokusz"></a>
   <img alt="Built with Flutter" src="https://img.shields.io/badge/built%20with-Flutter-027DFD.svg">
-  <img alt="Platforms" src="https://img.shields.io/badge/platforms-Android%20%7C%20iOS%20%7C%20Windows%20%7C%20macOS%20%7C%20Linux%20%7C%20Web-success.svg">
+  <img alt="Platforms" src="https://img.shields.io/badge/platform-Windows-success.svg">
   <img alt="Status: early development" src="https://img.shields.io/badge/status-early%20development-orange.svg">
 </p>
 
@@ -29,7 +29,7 @@ Vokusz is built around the call first:
 - 🖥️ **Screen sharing stays free.** Camera and screen share are part of the client. No paid upgrade to share a window.
 - 🔒 **Your data, your rules.** No ads, first-party analytics, telemetry, or crash reporting. See the [network and privacy disclosure](docs/privacy-network.md) for the requests normal operation can make.
 - 🏠 **Self-hosted by design.** Don't just *join* a server — run your own. Keep full control of community data, accounts, uploads, and voice traffic; Vokusz does not proxy that traffic.
-- 🌍 **Native on every platform.** Lightweight, fast, and built with Flutter, with a responsive UI that adapts from phone to desktop.
+- 🖥️ **Windows first.** The shipping client is the Windows app. Other platforms sit in `MutiVersion/` until they are taken on separately.
 
 This client is the front door: one native app for every screen you own.
 
@@ -75,29 +75,12 @@ Grab the latest build from the **[Releases page](https://github.com/ChunchunOwO/
 
 | Platform | File |
 |---|---|
-| Linux (recommended) | `vokusz-linux-x86_64.deb` |
-| Linux (portable) | `vokusz-linux-x86_64.tgz` |
 | Windows (installer) | `vokusz-windows-x86_64-setup.exe` |
 | Windows (portable) | `vokusz-windows-x86_64.zip` |
-| macOS | `vokusz-macos-universal.dmg` |
-| Android | `vokusz-android.apk` |
-| Web | `vokusz-web.zip` |
 
-The Google Play build receives updates through Play; the GitHub sideload APK includes the in-app updater.
+Every release ships a `SHA256SUMS.txt` so you can verify what you downloaded. Step-by-step instructions live in [Installing vokusz](docs/getting-started/installation.md).
 
-Package-manager listings are being prepared; see [packaging status and maintainer setup](docs/packaging.md). Install commands for public catalogues will be advertised after their submissions are accepted.
-
-Every release ships a `SHA256SUMS.txt` so you can verify what you downloaded. Step-by-step instructions per platform live in [Installing vokusz](docs/getting-started/installation.md).
-
-iOS and store channels are built and submitted by the release workflow. Availability depends on the store and region; store installations receive updates through their respective stores.
-
-### Platform support
-
-| Android | iOS | Windows | macOS | Linux | Web |
-|:---:|:---:|:---:|:---:|:---:|:---:|
-| ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-
-All platform targets are present in the repository (`android/`, `ios/`, `windows/`, `macos/`, `linux/`, `web/`).
+Windows is the shipping platform. Android, Linux, macOS, and iOS are parked in [`MutiVersion/`](../MutiVersion).
 
 ---
 
@@ -136,8 +119,6 @@ The easiest route is the **Accord desktop app**: a tray application that bundles
 
 ## 📚 Documentation
 
-Shared app links use `https://www.vokusz.app/open/`. iOS Universal Link handling requires the website association and matching signing profile described in [App Store deployment](docs/app-store-deploy.md#universal-links).
-
 End-user documentation lives in [`docs/`](docs/index.md):
 
 - [Installing vokusz](docs/getting-started/installation.md) · [Adding a server](docs/getting-started/adding-a-server.md) · [Creating an account](docs/getting-started/creating-an-account.md)
@@ -146,7 +127,7 @@ End-user documentation lives in [`docs/`](docs/index.md):
 - [Managing your space](docs/administration/managing-your-space.md) · [Moderation](docs/administration/moderation.md) · [Invites](docs/administration/invites.md)
 - [Self-hosting](docs/self-hosting/overview.md) · [Network behavior and privacy](docs/privacy-network.md) · [Troubleshooting](docs/troubleshooting/common-issues.md)
 
-Maintainer-facing notes: [release signing](docs/release-signing.md) and [store deployment](docs/app-store-deploy.md).
+Maintainer-facing notes: [release signing](docs/release-signing.md).
 CI checks Mac upload metadata isolation before release builds; see the store deployment guide for retrying a failed Mac upload.
 Manual CI includes platform build checks by default (`build_artifacts=true`); store recovery runs the test gates and its selected store build.
 
@@ -254,36 +235,11 @@ UI end-to-end, multi-instance, and LiveKit SFU scenarios run advisory
 ### Release builds
 
 ```bash
-scripts/build.sh                 # Web (JavaScript) release -> build/web/
-scripts/build.sh apk             # Android sideload APK (github flavor)
-scripts/build.sh appbundle       # Play Store AAB
-scripts/build.sh linux           # needs libmpv / media_kit deps
 scripts/build.sh windows
-scripts/build.sh macos
-scripts/build.sh ios -- --no-codesign
-```
-
-The equivalent raw Flutter invocations:
-
-```bash
-flutter build apk     --flavor github --no-tree-shake-icons   # Android sideload APK
-flutter build appbundle --flavor play --dart-define=APP_STORE=true   # Play Store AAB
-flutter build web     --no-tree-shake-icons --release   # Web (JavaScript)
 flutter build windows
-flutter build macos
-flutter build linux                               # needs libmpv / media_kit deps
-flutter build ios     --release --no-tree-shake-icons --no-codesign
 ```
 
-Store builds are compiled with `--dart-define=APP_STORE=true`, which disables the
-in-app self-updater (store guidelines forbid it). Tagging `v<version>` (matching
-`pubspec.yaml`) runs the release workflow: it gates on CI, builds and signs every
-platform, publishes the GitHub Release, and submits the store builds. See
-[store deployment](docs/app-store-deploy.md).
-
-Before a tagged release, maintainers can run the manual **Windows signing smoke
-test** workflow to validate the Certum cloud certificate and Authenticode trust
-path without publishing an artifact. See [release signing](docs/release-signing.md).
+Tagging `v<version>` (matching `pubspec.yaml`) runs the Windows release workflow. See [release signing](docs/release-signing.md).
 
 ---
 

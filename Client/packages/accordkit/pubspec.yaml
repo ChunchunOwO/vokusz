@@ -2,7 +2,7 @@ name: accordkit
 description: Accord protocol client for Dart — REST, Gateway WebSocket, and data models for Vokusz servers.
 version: 2.0.0
 repository: https://github.com/ChunchunOwO/accordkit-dart
-homepage: https://vokusz.app
+homepage: https://github.com/ChunchunOwO/vokusz
 
 environment:
   sdk: ">=3.0.0 <4.0.0"

@@ -77,8 +77,7 @@ the process fails, later ones pass" and cost a long detour — if you see that
 shape again, suspect background work escaping the test body before you suspect
 the widget under test.
 
-## CI
+## Running
 
-Runs as its own non-blocking job (see `ci.yml`) on Linux under `xvfb`, against
-the `ghcr.io` server image. Separate from the unit gate so a server-side or
-display problem can't wedge merges.
+Not part of the Windows CI gate. Point it at a local server with
+`ACCORD_TEST_SERVER_URL` or `ACCORD_SERVER_BIN`.

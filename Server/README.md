@@ -134,12 +134,6 @@ Example: password `hunter2!` becomes `postgres://accord:hunter2%21@localhost/acc
 
 ## Docker
 
-The server image is published to GHCR:
-
-```
-ghcr.io/chunchunowo/vokusz-server
-```
-
 ### Docker Compose
 
 Use [docker-compose.yml](docker-compose.yml) for SQLite or [docker-compose.postgres.yml](docker-compose.postgres.yml) for PostgreSQL. Both use [livekit.yaml](livekit.yaml); replace example hostnames and configure the external `app-network` before starting.

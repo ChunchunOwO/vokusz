@@ -39,8 +39,6 @@ We reuse Bonfire's Flutter UI and talk to Vokusz servers over the Accord protoco
 
 ### Layout
 
-- Universal Links use `https://www.vokusz.app/open/`. Before releasing the iOS entitlement, verify the website association file, regenerated signing profile and physical-device launch; see `docs/app-store-deploy.md`.
-
 ```
 lib/
   features/        # feature modules: authentication, spaces, channels, messaging,
@@ -64,7 +62,7 @@ tool/
                    #   headless-Chromium driver. Not part of `flutter test`; see
                    #   docs/app-store-deploy.md ("Guideline 2.3.10").
 docs/              # product + technical specs (see below)
-android/ ios/ web/ windows/ linux/ macos/   # all platform targets present
+windows/ web/      # Windows is the main line. Other runners live in ../../MutiVersion/
 ```
 
 Cross-cutting startup features wired in `lib/main.dart`:
@@ -123,38 +121,22 @@ The actual wiring: a single gateway dispatcher (`lib/features/events/services/ac
 
 ## Build / run / test
 
-- Public support/privacy URLs live in `lib/shared/app_info.dart`; App Store listing URLs are tracked under `fastlane/metadata/ios/en-US`. Release notes remain generated and ignored. Keep both URL sources aligned.
+- Public support/privacy URLs live in `lib/shared/app_info.dart` (GitHub docs in this repo).
 
 ```bash
 flutter pub get
 dart run build_runner watch -d        # keep running during dev (codegen)
 scripts/codegen.sh --check             # regenerate + verify committed *.g.dart
 
-flutter run --flavor github            # run on a connected device/emulator (Android needs a flavor)
-flutter analyze --no-fatal-infos       # lint; --no-fatal-infos keeps inherited Bonfire-style infos non-fatal
-flutter test                           # full unit/widget suite; use its reported total
-flutter test test/features/voice/voice_logic_test.dart   # run a single test file
+flutter run -d windows
+flutter analyze --no-fatal-infos
+flutter test
+flutter test test/features/voice/voice_logic_test.dart
 
-# Release builds
-# Android has two product flavors (see android/app/build.gradle): `github` (sideload
-# APK, keeps the in-app self-updater) and `play` (Play AAB, no self-updater). Android
-# builds/runs MUST pass --flavor; other platforms have no flavors.
-flutter build apk       --flavor github --no-tree-shake-icons -v          # Android sideload APK
-flutter build appbundle --flavor play  --dart-define=APP_STORE=true       # Play Store AAB
-flutter build web     --no-tree-shake-icons --release   # Web (JavaScript)
 flutter build windows -v
-flutter build linux   -v                                # needs libmpv/media_kit deps
-flutter build ios     --release --no-tree-shake-icons --no-codesign -v
 ```
 
-CI lives in `.github/workflows/` and is Vokusz-native (no OpenBonfire infra):
-- `ci.yml` — blocking jobs cover root codegen/analyze/tests, vendored `accordkit`, the full `markdown_viewer` suite, and LiveKit's Android native unit tests. Broader server/UI scenarios remain advisory. The `build` job is a Web (JavaScript)/Android/Linux/Windows matrix.
-- CI also evaluates the Mac upload lane against Fastlane's directory validator (`bundle exec ruby fastlane/test/mac_upload_metadata_test.rb`); upload-only lanes must scope metadata and screenshots to their platform folders.
-- CI's `build_artifacts` input defaults to false for reusable calls and true for direct manual runs. Manual store recovery runs the test gates before its selected store build. Both Linux build matrices require `libsecret-1-dev` for secure storage.
-- `release.yml` — tag-driven (`v*`); validates the tag matches `pubspec.yaml` version, gates on `ci.yml`, builds all platforms, publishes a GitHub Release.
-- `windows-signing-smoke.yml` — manual, non-publishing validation of the real Certum SimplySign login, timestamping, and Authenticode trust path.
-- `ios-simulator.yml` — manual iPad/iPhone simulator screenshot run for checking real iOS rendering (no signing or secrets needed).
-- `release-recovery.yml` — manual re-publish of a completed tagged Release run's verified artifacts when the original publish step failed part-way.
+CI is at the repo root (`.github/workflows/`): Windows analyze/test, and tagged Windows releases.
 
 ## Migration status
 

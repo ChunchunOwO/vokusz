@@ -116,10 +116,11 @@ bool get isBackgroundConnectionAvailable =>
 /// the Flutter client's own repository. See [kGithubLatestReleaseUrl].
 const String kGithubRepo = 'ChunchunOwO/vokusz';
 
-/// Public website surfaces used by in-app support and policy links.
-const String kVokuszWebsiteUrl = 'https://www.vokusz.app';
-const String kVokuszHelpUrl = '$kVokuszWebsiteUrl/help.html';
-const String kVokuszPrivacyPolicyUrl = '$kVokuszWebsiteUrl/privacy.html';
+/// In-app support links. Docs live in this repo; there is no product website.
+const String kVokuszHelpUrl =
+    'https://github.com/$kGithubRepo/blob/main/Client/docs/index.md';
+const String kVokuszPrivacyPolicyUrl =
+    'https://github.com/$kGithubRepo/blob/main/Client/docs/privacy-network.md';
 
 /// GitHub REST endpoint for the latest published release of [kGithubRepo].
 const String kGithubLatestReleaseUrl =

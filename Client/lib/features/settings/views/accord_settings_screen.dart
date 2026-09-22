@@ -807,7 +807,7 @@ class _AboutSection extends StatelessWidget {
           leading: const Icon(Icons.privacy_tip_outlined),
           title: const Text('Privacy Policy'),
           subtitle: const Text(
-            'How the app, website, and independent servers handle data.',
+            'How the app and independent servers handle data.',
           ),
           trailing: const Icon(Icons.open_in_new, size: 16),
           onTap: () => openOnboardingHelpUrl(kVokuszPrivacyPolicyUrl),
@@ -862,7 +862,7 @@ Future<void> _pickServerProfile(BuildContext context, WidgetRef ref) async {
   );
 }
 
-/// Editable master-server directory URL (default https://master.vokusz.app),
+/// Editable master-server directory URL,
 /// used to browse public spaces without an account.
 class _MasterServerField extends ConsumerStatefulWidget {
   const _MasterServerField();

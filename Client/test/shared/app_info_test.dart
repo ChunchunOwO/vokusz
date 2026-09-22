@@ -7,7 +7,7 @@ void main() {
       for (final url in [kVokuszHelpUrl, kVokuszPrivacyPolicyUrl]) {
         final uri = Uri.parse(url);
         expect(uri.scheme, 'https', reason: url);
-        expect(uri.host, Uri.parse(kVokuszWebsiteUrl).host, reason: url);
+        expect(uri.host, 'github.com', reason: url);
       }
     });
   });

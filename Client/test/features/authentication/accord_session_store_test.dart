@@ -144,28 +144,7 @@ void main() {
     },
   );
 
-  test('native packaging and Web threat documentation stay wired', () {
-    expect(
-      File('android/app/src/main/AndroidManifest.xml').readAsStringSync(),
-      contains('android:allowBackup="false"'),
-    );
-    expect(
-      File('dist/build-deb.sh').readAsStringSync(),
-      contains('libsecret-1-0'),
-    );
-    for (final path in [
-      'ios/Runner/DebugProfile.entitlements',
-      'ios/Runner/Release.entitlements',
-      'macos/Runner/DebugProfile.entitlements',
-      'macos/Runner/Release.entitlements',
-      'macos/Runner/AppStore.entitlements',
-    ]) {
-      expect(
-        File(path).readAsStringSync(),
-        contains('keychain-access-groups'),
-        reason: path,
-      );
-    }
+  test('privacy docs describe Web credential storage', () {
     final privacy = File('docs/privacy-network.md').readAsStringSync();
     expect(privacy, contains('non-exportable WebCrypto key'));
     expect(privacy, contains('does not fall back to plaintext storage'));

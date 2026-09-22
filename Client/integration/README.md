@@ -92,25 +92,16 @@ Never assert on state immediately after an action that travels through the
 gateway — use `waitForEvent` (streams) or `waitForState` (caches), both of which
 fail with a timeout instead of hanging.
 
-## CI
+## Running against a server
 
-`ci.yml` runs `accordkit_protocol_test.dart` as a blocking merge and release
-gate against an immutable `ghcr.io` image digest. The full integration,
-desktop UI, and multi-instance suites remain separate advisory jobs while
-their broader external-toolchain flakes are removed.
-
-To update the fixture, review the candidate accordserver image, replace the
-digest in both `ci.yml` and `support/accord_test_server.dart`, then run this on
-a machine where the fixture selects Docker (without an explicit or sibling
-server binary):
+Point the suite at a local binary or an already-running server:
 
 ```bash
-ACCORD_SERVER_IMAGE=ghcr.io/chunchunowo/vokusz-server@sha256:<digest> \
+ACCORD_SERVER_BIN=../Server/target/release/accordserver \
   flutter test integration/accordkit_protocol_test.dart
 ```
 
-Do not replace the digest with a mutable tag: releases reuse `ci.yml`, so this
-protocol job is part of the release gate as well as the pull-request gate.
+There is no pinned CI image. Docker is optional via `ACCORD_SERVER_IMAGE`.
 
 The real-SFU scenario is deliberately advisory and manual because native
 WebRTC, UDP, xvfb, and host audio are materially less reliable than the REST /

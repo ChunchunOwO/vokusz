@@ -15,7 +15,7 @@ vokusz has no first-party analytics, telemetry, advertising, or automatic crash-
 |---|---|---|
 | Accord servers you add | Sign-in, messaging, administration, uploads, and live gateway events | Account credentials or token and the community data required by the action |
 | A server-configured LiveKit service | When you join or receive a voice/video call | A short-lived room token plus WebRTC signalling and media; direct media paths can also reveal participant IP addresses as normal for WebRTC |
-| The configured server directory (default `https://master.vokusz.app`) | When you browse public servers or use directory-backed federation features | The directory query and ordinary connection metadata such as IP address and user agent |
+| A server directory URL you configure (`MASTER_SERVER_URL`) | When you browse public servers or use directory-backed federation features | The directory query and ordinary connection metadata such as IP address and user agent |
 | GitHub (`api.github.com` and release downloads) | Desktop update checks and downloads; release notes for the installed version | App version, platform request metadata, and the download request. Store builds do not use the GitHub self-updater |
 | The origin hosting the Web build | Loading the app and checking its service worker for an updated deployment | Ordinary web request metadata |
 | A connected server's configured CDN | Rendering server-provided avatars, emoji, attachments, and message media | Requested media URL and ordinary connection metadata |

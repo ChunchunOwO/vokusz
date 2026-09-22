@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - "**"
+    tags-ignore:
+      - "**"
+  pull_request:
+  workflow_call:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  FLUTTER_CHANNEL: beta
+  PUB_CACHE: ${{ github.workspace }}/.pub-cache
+
+jobs:
+  analyze:
+    name: Analyze & Test
+    runs-on: windows-2022
+    defaults:
+      run:
+        working-directory: Client
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Cache pub + native deps
+        uses: actions/cache@v6
+        with:
+          key: pub-${{ runner.os }}-${{ hashFiles('Client/pubspec.lock') }}
+          path: ${{ github.workspace }}/.pub-cache
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: ${{ env.FLUTTER_CHANNEL }}
+          cache: true
+
+      - name: Install dependencies
+        shell: bash
+        run: flutter pub get
+
+      - name: Verify generated code is up to date
+        shell: bash
+        run: scripts/codegen.sh --check
+
+      - name: Analyze
+        run: flutter analyze --no-fatal-infos
+
+      - name: Test
+        run: flutter test

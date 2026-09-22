@@ -102,7 +102,7 @@ Register your server with the vokusz master server so users can discover it in t
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `MASTER_SERVER_PUBLIC_URL` | *(none)* | Your server's public URL (required to enable) |
-| `MASTER_SERVER_URL` | `https://master.vokusz.app` | Master server endpoint |
+| `MASTER_SERVER_URL` | *(required if public URL is set)* | Master server endpoint |
 | `MASTER_SERVER_NAME` | `Accord Server` | Display name in the server list |
 | `MASTER_HEARTBEAT_INTERVAL` | `60` | Heartbeat interval in seconds |
 

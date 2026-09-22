@@ -299,7 +299,7 @@ fn build_redirect_page(
       <div class="actions">
         <a id="open-btn" class="btn btn-primary" href="{vokusz_uri}">Open in Vokusz</a>
         <a class="btn btn-secondary" href="/{web_fragment}">Open in browser</a>
-        <a class="btn btn-tertiary" href="https://www.vokusz.app">Get Vokusz</a>
+        <a class="btn btn-tertiary" href="https://github.com/ChunchunOwO/vokusz/releases">Get Vokusz</a>
       </div>
       <p id="status" class="status"></p>
     </div>

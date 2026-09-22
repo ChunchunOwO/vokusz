@@ -162,8 +162,11 @@ impl Config {
         let master_server = std::env::var("MASTER_SERVER_PUBLIC_URL")
             .ok()
             .map(|public_url| MasterServerConfig {
-                url: std::env::var("MASTER_SERVER_URL")
-                    .unwrap_or_else(|_| "https://master.vokusz.app".to_string()),
+                url: std::env::var("MASTER_SERVER_URL").unwrap_or_else(|_| {
+                    panic!(
+                        "MASTER_SERVER_URL is required when MASTER_SERVER_PUBLIC_URL is set"
+                    )
+                }),
                 server_id: resolve_master_server_id(&storage_path),
                 server_name: std::env::var("MASTER_SERVER_NAME")
                     .unwrap_or_else(|_| "Accord Server".to_string()),

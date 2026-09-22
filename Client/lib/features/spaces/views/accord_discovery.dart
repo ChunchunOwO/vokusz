@@ -156,8 +156,8 @@ class _DiscoveryPanel extends StatelessWidget {
 /// reusable both as the standalone discovery dialog and inside the
 /// Add-a-Server "Browse" tab.
 ///
-/// Browsing always targets the **master server** (configured in settings,
-/// default `https://master.vokusz.app`) and needs no authentication — each
+/// Browsing always targets the **master server** (configured in settings)
+/// and needs no authentication — each
 /// listing carries its own `server_url`, so a single directory federates across
 /// instances. Joining a listing for an instance you are not connected to needs
 /// auth against that instance: [onJoinRequiresAuth] is invoked so the host can

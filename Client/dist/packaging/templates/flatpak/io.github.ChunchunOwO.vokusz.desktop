@@ -1,0 +1,11 @@
+[Desktop Entry]
+Name=Vokusz
+Comment=Chat, voice, video, and screen sharing for Vokusz communities
+Exec=vokusz %u
+Icon=io.github.ChunchunOwO.vokusz
+Terminal=false
+Type=Application
+Categories=Network;Chat;InstantMessaging;
+Keywords=chat;messaging;voice;community;
+StartupWMClass=vokusz
+MimeType=x-scheme-handler/vokusz;

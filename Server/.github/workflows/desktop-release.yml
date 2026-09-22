@@ -1,0 +1,280 @@
+name: Build desktop installers
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+env:
+  LIVEKIT_VERSION: "1.8.0"
+
+jobs:
+  build:
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14
+            target: aarch64-apple-darwin
+            livekit_asset: ""
+            tauri_target_flag: --target aarch64-apple-darwin
+          - os: macos-14
+            target: x86_64-apple-darwin
+            livekit_asset: ""
+            tauri_target_flag: --target x86_64-apple-darwin
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            livekit_asset: livekit_${{ vars.LIVEKIT_VERSION || '1.8.0' }}_linux_amd64.tar.gz
+            tauri_target_flag: ""
+          - os: windows-2022
+            target: x86_64-pc-windows-msvc
+            livekit_asset: livekit_${{ vars.LIVEKIT_VERSION || '1.8.0' }}_windows_amd64.zip
+            tauri_target_flag: ""
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            .
+            desktop/src-tauri
+
+      - name: Install Linux build deps
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            file
+
+      - name: Build accordserver
+        shell: bash
+        run: |
+          cargo build --release --bin accordserver --target ${{ matrix.target }}
+
+      - name: Download LiveKit server
+        shell: bash
+        env:
+          LIVEKIT_VERSION: ${{ env.LIVEKIT_VERSION }}
+          ASSET: ${{ matrix.livekit_asset }}
+        run: |
+          set -euo pipefail
+          mkdir -p livekit-dl
+          case "${{ runner.os }}" in
+            macOS)
+              # LiveKit publishes no darwin binaries on GitHub releases; use Homebrew.
+              brew install livekit
+              cp "$(brew --prefix)/bin/livekit-server" livekit-dl/livekit-server
+              ;;
+            Windows)
+              curl -fsSL -o livekit-dl/livekit.zip \
+                "https://github.com/livekit/livekit/releases/download/v${LIVEKIT_VERSION}/${ASSET}"
+              unzip -q livekit-dl/livekit.zip -d livekit-dl
+              ;;
+            *)
+              curl -fsSL -o livekit-dl/livekit.tar.gz \
+                "https://github.com/livekit/livekit/releases/download/v${LIVEKIT_VERSION}/${ASSET}"
+              tar -xzf livekit-dl/livekit.tar.gz -C livekit-dl
+              ;;
+          esac
+
+      - name: Stage sidecar binaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p desktop/src-tauri/binaries
+
+          case "${{ matrix.target }}" in
+            *windows*)
+              cp "target/${{ matrix.target }}/release/accordserver.exe" \
+                 "desktop/src-tauri/binaries/accordserver-${{ matrix.target }}.exe"
+              cp livekit-dl/livekit-server.exe \
+                 "desktop/src-tauri/binaries/livekit-server-${{ matrix.target }}.exe"
+              ;;
+            *)
+              cp "target/${{ matrix.target }}/release/accordserver" \
+                 "desktop/src-tauri/binaries/accordserver-${{ matrix.target }}"
+              cp livekit-dl/livekit-server \
+                 "desktop/src-tauri/binaries/livekit-server-${{ matrix.target }}"
+              chmod +x \
+                "desktop/src-tauri/binaries/accordserver-${{ matrix.target }}" \
+                "desktop/src-tauri/binaries/livekit-server-${{ matrix.target }}"
+              ;;
+          esac
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: 9
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install Tauri CLI
+        working-directory: desktop
+        run: |
+          pnpm init -y || true
+          pnpm add -D @tauri-apps/cli
+
+      - name: Regenerate full icon set from canonical icon.png
+        working-directory: desktop
+        run: |
+          pnpm tauri icon src-tauri/icons/icon.png
+
+      - name: Build installer
+        working-directory: desktop
+        shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          pnpm tauri build ${{ matrix.tauri_target_flag }}
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: accord-${{ matrix.target }}
+          path: |
+            desktop/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.dmg
+            desktop/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.msi
+            desktop/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.exe
+            desktop/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.deb
+            desktop/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.AppImage
+            desktop/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.tar.gz
+            desktop/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.sig
+            desktop/src-tauri/target/release/bundle/**/*.dmg
+            desktop/src-tauri/target/release/bundle/**/*.msi
+            desktop/src-tauri/target/release/bundle/**/*.exe
+            desktop/src-tauri/target/release/bundle/**/*.deb
+            desktop/src-tauri/target/release/bundle/**/*.AppImage
+            desktop/src-tauri/target/release/bundle/**/*.tar.gz
+            desktop/src-tauri/target/release/bundle/**/*.sig
+          if-no-files-found: warn
+
+      - name: Attach to release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            desktop/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.dmg
+            desktop/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.msi
+            desktop/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.exe
+            desktop/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.deb
+            desktop/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.AppImage
+            desktop/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.tar.gz
+            desktop/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.sig
+            desktop/src-tauri/target/release/bundle/**/*.dmg
+            desktop/src-tauri/target/release/bundle/**/*.msi
+            desktop/src-tauri/target/release/bundle/**/*.exe
+            desktop/src-tauri/target/release/bundle/**/*.deb
+            desktop/src-tauri/target/release/bundle/**/*.AppImage
+            desktop/src-tauri/target/release/bundle/**/*.tar.gz
+            desktop/src-tauri/target/release/bundle/**/*.sig
+          fail_on_unmatched_files: false
+
+  # Assemble the updater manifest (latest.json) from every platform's signed
+  # artifacts and attach it to the release. tauri-plugin-updater fetches this
+  # file from the "latest" release to decide whether a newer version exists.
+  manifest:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Generate latest.json
+        shell: bash
+        env:
+          TAG: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          node <<'EOF'
+          const fs = require('fs');
+          const path = require('path');
+
+          const tag = process.env.TAG;                 // e.g. v0.1.26
+          const repo = process.env.REPO;               // owner/name
+          const version = tag.replace(/^v/, '');
+          const base = `https://github.com/${repo}/releases/download/${tag}`;
+
+          // Map the uploaded per-target artifact dir to the updater platform key
+          // and the file pattern tauri produces for that platform's updater.
+          const targets = [
+            { dir: 'accord-aarch64-apple-darwin',      key: 'darwin-aarch64', ext: /\.app\.tar\.gz$/ },
+            { dir: 'accord-x86_64-apple-darwin',       key: 'darwin-x86_64',  ext: /\.app\.tar\.gz$/ },
+            { dir: 'accord-x86_64-unknown-linux-gnu',  key: 'linux-x86_64',   ext: /\.AppImage$/ },
+            { dir: 'accord-x86_64-pc-windows-msvc',    key: 'windows-x86_64', ext: /-setup\.exe$/ },
+          ];
+
+          function walk(dir) {
+            const out = [];
+            if (!fs.existsSync(dir)) return out;
+            for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+              const p = path.join(dir, entry.name);
+              if (entry.isDirectory()) out.push(...walk(p));
+              else out.push(p);
+            }
+            return out;
+          }
+
+          const platforms = {};
+          for (const t of targets) {
+            const files = walk(path.join('artifacts', t.dir));
+            const artifact = files.find((f) => t.ext.test(f));
+            if (!artifact) {
+              console.log(`! no updater artifact for ${t.key} (dir ${t.dir}); skipping`);
+              continue;
+            }
+            const sig = files.find((f) => f === artifact + '.sig');
+            if (!sig) {
+              console.log(`! no signature for ${artifact}; skipping ${t.key}`);
+              continue;
+            }
+            platforms[t.key] = {
+              signature: fs.readFileSync(sig, 'utf8').trim(),
+              url: `${base}/${path.basename(artifact)}`,
+            };
+          }
+
+          if (Object.keys(platforms).length === 0) {
+            console.error('no signed updater artifacts found — is signing configured?');
+            process.exit(1);
+          }
+
+          const manifest = {
+            version,
+            pub_date: new Date().toISOString(),
+            platforms,
+          };
+          fs.writeFileSync('latest.json', JSON.stringify(manifest, null, 2));
+          console.log(JSON.stringify(manifest, null, 2));
+          EOF
+
+      - name: Attach manifest to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: latest.json
+          fail_on_unmatched_files: true

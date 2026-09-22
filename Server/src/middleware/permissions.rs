@@ -1,0 +1,613 @@
+use sqlx::AnyPool;
+
+use crate::db;
+use crate::error::AppError;
+use crate::middleware::auth::AuthUser;
+use crate::models::permission::has_permission;
+
+/// Default permissions granted to the @everyone role when a space is created.
+pub const DEFAULT_EVERYONE_PERMISSIONS: &[&str] = &[
+    "view_channel",
+    "send_messages",
+    "read_history",
+    "add_reactions",
+    "create_invites",
+    "change_nickname",
+    "connect",
+    "speak",
+    "use_vad",
+    "embed_links",
+    "attach_files",
+    "use_external_emojis",
+    "stream",
+    "use_soundboard",
+    "create_threads",
+    "send_in_threads",
+];
+
+/// Permissions granted to the default Moderator role.
+pub const MODERATOR_PERMISSIONS: &[&str] = &[
+    // @everyone base
+    "view_channel",
+    "send_messages",
+    "read_history",
+    "add_reactions",
+    "create_invites",
+    "change_nickname",
+    "connect",
+    "speak",
+    "use_vad",
+    "embed_links",
+    "attach_files",
+    "use_external_emojis",
+    "stream",
+    // Moderation extras
+    "kick_members",
+    "ban_members",
+    "manage_messages",
+    "mute_members",
+    "deafen_members",
+    "move_members",
+    "manage_nicknames",
+    "moderate_members",
+    "mention_everyone",
+    "manage_threads",
+    "manage_events",
+];
+
+/// Permissions granted to the default Admin role.
+/// Note: `administrator` is intentionally excluded -- it's a God-mode bypass.
+pub const ADMIN_PERMISSIONS: &[&str] = &[
+    // @everyone base
+    "view_channel",
+    "send_messages",
+    "read_history",
+    "add_reactions",
+    "create_invites",
+    "change_nickname",
+    "connect",
+    "speak",
+    "use_vad",
+    "embed_links",
+    "attach_files",
+    "use_external_emojis",
+    "stream",
+    // Moderation
+    "kick_members",
+    "ban_members",
+    "manage_messages",
+    "mute_members",
+    "deafen_members",
+    "move_members",
+    "manage_nicknames",
+    "moderate_members",
+    "mention_everyone",
+    "manage_threads",
+    "manage_events",
+    // Admin extras
+    "manage_channels",
+    "manage_space",
+    "manage_roles",
+    "manage_webhooks",
+    "manage_emojis",
+    "manage_soundboard",
+    "view_audit_log",
+    "priority_speaker",
+];
+
+/// Check that the authenticated user is a server (instance) admin.
+pub fn require_server_admin(auth: &AuthUser) -> Result<(), AppError> {
+    if !auth.is_admin {
+        return Err(AppError::Forbidden(
+            "server admin privileges required".into(),
+        ));
+    }
+    Ok(())
+}
+
+/// Compute effective permissions for a user in a space.
+///
+/// - If `is_server_admin` is true, returns `["administrator"]` (instance-level bypass).
+/// - If the user is the space owner, returns `["administrator"]`.
+/// - If the user is not a member, returns `Forbidden`.
+/// - Otherwise, merges @everyone permissions with all assigned role permissions.
+pub async fn resolve_member_permissions(
+    pool: &AnyPool,
+    space_id: &str,
+    user_id: &str,
+) -> Result<Vec<String>, AppError> {
+    resolve_member_permissions_inner(pool, space_id, user_id, false).await
+}
+
+/// Like `resolve_member_permissions` but allows an instance-admin bypass.
+pub async fn resolve_member_permissions_with_admin(
+    pool: &AnyPool,
+    space_id: &str,
+    user_id: &str,
+    is_server_admin: bool,
+) -> Result<Vec<String>, AppError> {
+    resolve_member_permissions_inner(pool, space_id, user_id, is_server_admin).await
+}
+
+async fn resolve_member_permissions_inner(
+    pool: &AnyPool,
+    space_id: &str,
+    user_id: &str,
+    is_server_admin: bool,
+) -> Result<Vec<String>, AppError> {
+    // Instance-level admin bypass
+    if is_server_admin {
+        return Ok(vec!["administrator".to_string()]);
+    }
+
+    // Check ownership first
+    let space = db::spaces::get_space_row(pool, space_id).await?;
+    if space.owner_id == user_id {
+        return Ok(vec!["administrator".to_string()]);
+    }
+
+    // Verify membership (will return NotFound → we convert to Forbidden)
+    db::members::get_member_row(pool, space_id, user_id)
+        .await
+        .map_err(|e| match e {
+            AppError::NotFound(_) => {
+                AppError::Forbidden("you are not a member of this space".to_string())
+            }
+            other => other,
+        })?;
+
+    // Start with @everyone role permissions
+    let roles = db::roles::list_roles(pool, space_id).await?;
+    let mut perms: Vec<String> = Vec::new();
+
+    // Find @everyone role (position 0)
+    if let Some(everyone) = roles.iter().find(|r| r.position == 0) {
+        let everyone_perms: Vec<String> =
+            serde_json::from_str(&everyone.permissions).unwrap_or_default();
+        perms.extend(everyone_perms);
+    }
+
+    // Get member's assigned roles and merge their permissions
+    let member_role_ids = db::members::get_member_role_ids(pool, space_id, user_id).await?;
+    for role in &roles {
+        if member_role_ids.contains(&role.id) {
+            let role_perms: Vec<String> =
+                serde_json::from_str(&role.permissions).unwrap_or_default();
+            for p in role_perms {
+                if !perms.contains(&p) {
+                    perms.push(p);
+                }
+            }
+        }
+    }
+
+    Ok(perms)
+}
+
+/// Check that a user has a specific permission in a space.
+/// Instance admins (`auth.is_admin`) bypass all permission checks.
+/// Guest tokens are scoped to read-only access on their assigned space.
+/// Returns `Forbidden` if the user lacks the permission or is not a member.
+pub async fn require_permission(
+    pool: &AnyPool,
+    space_id: &str,
+    auth: &AuthUser,
+    perm: &str,
+) -> Result<(), AppError> {
+    // Guest tokens: only allow read-only permissions on their scoped space
+    if auth.is_guest {
+        return require_guest_space_permission(auth, space_id, perm);
+    }
+    let perms =
+        resolve_member_permissions_with_admin(pool, space_id, &auth.user_id, auth.is_admin).await?;
+    if !has_permission(&perms, perm) {
+        return Err(AppError::Forbidden(format!("missing permission: {perm}")));
+    }
+    Ok(())
+}
+
+/// Guest-only read permissions.
+const GUEST_PERMISSIONS: &[&str] = &["view_channel", "read_history"];
+
+/// Check that a guest token is authorized for the given space and permission.
+fn require_guest_space_permission(
+    auth: &AuthUser,
+    space_id: &str,
+    perm: &str,
+) -> Result<(), AppError> {
+    // Guests can only access their scoped space
+    if auth.guest_space_id.as_deref() != Some(space_id) {
+        return Err(AppError::Forbidden(
+            "guest token not valid for this space".into(),
+        ));
+    }
+    // Guests only have read-only permissions
+    if !GUEST_PERMISSIONS.contains(&perm) {
+        return Err(AppError::Forbidden(
+            "guest accounts cannot perform this action".into(),
+        ));
+    }
+    Ok(())
+}
+
+/// Shorthand: require that a user is a member of the space (has view_channel).
+/// Note: does not handle guest tokens — use `require_permission` with an `AuthUser` for guests.
+pub async fn require_membership(
+    pool: &AnyPool,
+    space_id: &str,
+    user_id: &str,
+) -> Result<(), AppError> {
+    let perms = resolve_member_permissions(pool, space_id, user_id).await?;
+    if !has_permission(&perms, "view_channel") {
+        return Err(AppError::Forbidden(
+            "missing permission: view_channel".into(),
+        ));
+    }
+    Ok(())
+}
+
+/// Resolve effective permissions for a user in a specific channel,
+/// accounting for permission overwrites (role, member).
+///
+/// Algorithm:
+/// 1. Start with base space permissions from `resolve_member_permissions`.
+/// 2. If base includes `administrator`, return immediately (bypass).
+/// 3. Apply @everyone role overwrite: deny removes, allow adds.
+/// 4. Union of user's role overwrites: collect all allow/deny, allow wins, then apply.
+/// 5. Apply member-specific overwrite: deny removes, allow adds.
+pub async fn resolve_channel_permissions(
+    pool: &AnyPool,
+    channel_id: &str,
+    space_id: &str,
+    user_id: &str,
+) -> Result<Vec<String>, AppError> {
+    let mut perms = resolve_member_permissions(pool, space_id, user_id).await?;
+
+    // Administrator bypasses all overwrites
+    if perms.iter().any(|p| p == "administrator") {
+        return Ok(perms);
+    }
+
+    let overwrites = db::permission_overwrites::list_overwrites(pool, channel_id).await?;
+    if overwrites.is_empty() {
+        return Ok(perms);
+    }
+
+    // Find the @everyone role (its ID is the role at position 0)
+    let roles = db::roles::list_roles(pool, space_id).await?;
+    let everyone_role_id = roles.iter().find(|r| r.position == 0).map(|r| r.id.clone());
+
+    // Step 1: Apply @everyone role overwrite
+    if let Some(ref eid) = everyone_role_id {
+        if let Some(ow) = overwrites
+            .iter()
+            .find(|o| o.overwrite_type == "role" && o.id == *eid)
+        {
+            for d in &ow.deny {
+                perms.retain(|p| p != d);
+            }
+            for a in &ow.allow {
+                if !perms.contains(a) {
+                    perms.push(a.clone());
+                }
+            }
+        }
+    }
+
+    // Step 2: Union of user's assigned role overwrites
+    let member_role_ids = db::members::get_member_role_ids(pool, space_id, user_id).await?;
+    let role_overwrites: Vec<&crate::models::permission::PermissionOverwrite> = overwrites
+        .iter()
+        .filter(|o| {
+            o.overwrite_type == "role"
+                && member_role_ids.contains(&o.id)
+                && everyone_role_id.as_deref() != Some(&o.id)
+        })
+        .collect();
+
+    if !role_overwrites.is_empty() {
+        let mut role_allow: Vec<String> = Vec::new();
+        let mut role_deny: Vec<String> = Vec::new();
+        for ow in &role_overwrites {
+            for a in &ow.allow {
+                if !role_allow.contains(a) {
+                    role_allow.push(a.clone());
+                }
+            }
+            for d in &ow.deny {
+                if !role_deny.contains(d) {
+                    role_deny.push(d.clone());
+                }
+            }
+        }
+        // Allow wins over deny across roles
+        role_deny.retain(|d| !role_allow.contains(d));
+
+        for d in &role_deny {
+            perms.retain(|p| p != d);
+        }
+        for a in &role_allow {
+            if !perms.contains(a) {
+                perms.push(a.clone());
+            }
+        }
+    }
+
+    // Step 3: Apply member-specific overwrite (highest precedence)
+    if let Some(ow) = overwrites
+        .iter()
+        .find(|o| o.overwrite_type == "member" && o.id == user_id)
+    {
+        for d in &ow.deny {
+            perms.retain(|p| p != d);
+        }
+        for a in &ow.allow {
+            if !perms.contains(a) {
+                perms.push(a.clone());
+            }
+        }
+    }
+
+    // Channel overwrites must never manufacture a space administrator.
+    perms.retain(|p| p != "administrator");
+    Ok(perms)
+}
+
+/// Returns `true` if the given timeout timestamp is in the future, i.e. the
+/// member is currently timed out. Past or unparseable timestamps (and `None`)
+/// are treated as not-timed-out, so an expired timeout simply stops applying.
+pub fn is_timed_out(timed_out_until: Option<&str>) -> bool {
+    match timed_out_until {
+        Some(ts) => chrono::DateTime::parse_from_rfc3339(ts)
+            .map(|t| t > chrono::Utc::now())
+            .unwrap_or(false),
+        None => false,
+    }
+}
+
+/// Rejects with 403 if the member is currently under a moderation timeout in
+/// the given space. Used to gate message sending, reactions, typing, and voice
+/// connect for timed-out members. Instance admins are exempt.
+pub async fn require_not_timed_out(
+    pool: &AnyPool,
+    space_id: &str,
+    auth: &AuthUser,
+) -> Result<(), AppError> {
+    if auth.is_admin {
+        return Ok(());
+    }
+    let member = match db::members::get_member_row(pool, space_id, &auth.user_id).await {
+        Ok(m) => m,
+        // Not a member (or already removed): no timeout to enforce here.
+        Err(AppError::NotFound(_)) => return Ok(()),
+        Err(e) => return Err(e),
+    };
+    if is_timed_out(member.timed_out_until.as_deref()) {
+        return Err(AppError::Forbidden(
+            "you are timed out in this space".into(),
+        ));
+    }
+    Ok(())
+}
+
+/// Effective slowmode cooldown for `auth` posting in `channel`, in milliseconds.
+/// Zero means no cooldown applies. Instance admins, and members who can manage
+/// messages or channels (which includes the owner), are exempt, matching the
+/// moderator exemption for pins and bulk deletes. Callers pass the result to
+/// `db::messages::create_message`, which enforces it atomically.
+pub async fn slowmode_cooldown_ms(
+    pool: &AnyPool,
+    channel: &crate::models::channel::ChannelRow,
+    auth: &AuthUser,
+) -> Result<i64, AppError> {
+    let cooldown_ms = channel.rate_limit.clamp(0, 21600) * 1000;
+    if cooldown_ms == 0 || auth.is_admin {
+        return Ok(0);
+    }
+    let Some(space_id) = channel.space_id.as_deref() else {
+        return Ok(cooldown_ms);
+    };
+    let perms = resolve_channel_permissions(pool, &channel.id, space_id, &auth.user_id).await?;
+    if has_permission(&perms, "manage_messages") || has_permission(&perms, "manage_channels") {
+        return Ok(0);
+    }
+    Ok(cooldown_ms)
+}
+
+/// Check that a user is a participant in a DM channel.
+pub async fn require_dm_access(
+    pool: &AnyPool,
+    channel_id: &str,
+    user_id: &str,
+) -> Result<(), AppError> {
+    if !db::dm_participants::is_participant(pool, channel_id, user_id).await? {
+        return Err(AppError::Forbidden(
+            "you are not a participant in this DM".into(),
+        ));
+    }
+    Ok(())
+}
+
+/// Check that a user has a specific permission for a channel.
+/// Uses `resolve_channel_permissions` which accounts for overwrites.
+/// Instance admins (`auth.is_admin`) bypass all permission checks.
+/// Guest tokens are restricted to `allow_anonymous_read` channels with read-only perms.
+/// For DM/group_dm channels, checks participant access instead.
+/// Returns the space_id on success (empty string for DMs).
+pub async fn require_channel_permission(
+    pool: &AnyPool,
+    channel_id: &str,
+    auth: &AuthUser,
+    perm: &str,
+) -> Result<String, AppError> {
+    let channel = db::channels::get_channel_row(pool, channel_id).await?;
+
+    // Guest token handling: restrict to allow_anonymous_read channels
+    if auth.is_guest {
+        if channel.channel_type == "dm" || channel.channel_type == "group_dm" {
+            return Err(AppError::Forbidden(
+                "guest accounts cannot access DMs".into(),
+            ));
+        }
+        let space_id = channel
+            .space_id
+            .ok_or_else(|| AppError::BadRequest("channel has no space".to_string()))?;
+        // Check space scope
+        if auth.guest_space_id.as_deref() != Some(&space_id) {
+            return Err(AppError::Forbidden(
+                "guest token not valid for this space".into(),
+            ));
+        }
+        // Check channel allows anonymous read
+        if !channel.allow_anonymous_read {
+            return Err(AppError::Forbidden(
+                "this channel is not publicly readable".into(),
+            ));
+        }
+        // Check permission is read-only
+        if !GUEST_PERMISSIONS.contains(&perm) {
+            return Err(AppError::Forbidden(
+                "guest accounts cannot perform this action".into(),
+            ));
+        }
+        return Ok(space_id);
+    }
+
+    if channel.channel_type == "dm" || channel.channel_type == "group_dm" {
+        require_dm_access(pool, channel_id, &auth.user_id).await?;
+        return Ok(String::new());
+    }
+    let space_id = channel
+        .space_id
+        .ok_or_else(|| AppError::BadRequest("channel has no space".to_string()))?;
+    if auth.is_admin {
+        return Ok(space_id);
+    }
+    let perms = resolve_channel_permissions(pool, channel_id, &space_id, &auth.user_id).await?;
+    if !has_permission(&perms, "view_channel") || !has_permission(&perms, perm) {
+        return Err(AppError::Forbidden(format!("missing permission: {perm}")));
+    }
+    Ok(space_id)
+}
+
+/// Shorthand: require that a user is a member of the channel's space.
+/// Returns the space_id on success.
+pub async fn require_channel_membership(
+    pool: &AnyPool,
+    channel_id: &str,
+    user_id: &str,
+) -> Result<String, AppError> {
+    // Membership checks use a synthetic non-admin AuthUser since instance
+    // admins still need explicit membership for view access.
+    let auth = AuthUser {
+        user_id: user_id.to_string(),
+        is_bot: false,
+        is_admin: false,
+        is_guest: false,
+        guest_space_id: None,
+    };
+    require_channel_permission(pool, channel_id, &auth, "view_channel").await
+}
+
+/// Returns a user's highest role position in a space.
+/// Space owner returns `i64::MAX`. A member with only @everyone returns 0.
+pub async fn get_highest_role_position(
+    pool: &AnyPool,
+    space_id: &str,
+    user_id: &str,
+) -> Result<i64, AppError> {
+    // Owner outranks everyone
+    let space = db::spaces::get_space_row(pool, space_id).await?;
+    if space.owner_id == user_id {
+        return Ok(i64::MAX);
+    }
+
+    let role_ids = db::members::get_member_role_ids(pool, space_id, user_id).await?;
+    if role_ids.is_empty() {
+        return Ok(0); // only @everyone
+    }
+
+    let roles = db::roles::list_roles(pool, space_id).await?;
+    let max_pos = roles
+        .iter()
+        .filter(|r| role_ids.contains(&r.id))
+        .map(|r| r.position)
+        .max()
+        .unwrap_or(0);
+
+    Ok(max_pos)
+}
+
+/// Requires that the actor's highest role position is strictly greater than
+/// the target user's highest role position. Prevents lateral or upward actions.
+/// Instance admins (`auth.is_admin`) bypass this check.
+pub async fn require_hierarchy(
+    pool: &AnyPool,
+    space_id: &str,
+    auth: &AuthUser,
+    target_id: &str,
+) -> Result<(), AppError> {
+    if auth.is_admin {
+        return Ok(());
+    }
+    let actor_pos = get_highest_role_position(pool, space_id, &auth.user_id).await?;
+    let target_pos = get_highest_role_position(pool, space_id, target_id).await?;
+    if actor_pos <= target_pos {
+        return Err(AppError::Forbidden(
+            "you cannot act on a member with an equal or higher role".into(),
+        ));
+    }
+    Ok(())
+}
+
+/// Requires that the actor's highest role position is strictly greater than
+/// the given role's position. Used for role management operations.
+pub async fn require_role_hierarchy(
+    pool: &AnyPool,
+    space_id: &str,
+    actor_id: &str,
+    role_position: i64,
+) -> Result<(), AppError> {
+    let actor_pos = get_highest_role_position(pool, space_id, actor_id).await?;
+    if actor_pos <= role_position {
+        return Err(AppError::Forbidden(
+            "you cannot manage a role at or above your highest role".into(),
+        ));
+    }
+    Ok(())
+}
+
+/// Apply the same visibility policy to message reads, search, and channel lists.
+/// Public listing alone does not publish a channel's history.
+pub async fn require_channel_read_access(
+    pool: &AnyPool,
+    channel: &crate::models::channel::ChannelRow,
+    auth: Option<&AuthUser>,
+    history: bool,
+) -> Result<(), AppError> {
+    if let Some(auth) = auth {
+        if auth.is_guest {
+            let space_id = channel
+                .space_id
+                .as_deref()
+                .ok_or_else(|| AppError::Forbidden("guests cannot access DMs".into()))?;
+            let space = db::spaces::get_space_row(pool, space_id).await?;
+            if !space.allow_guest_access {
+                return Err(AppError::Forbidden("guest access is disabled".into()));
+            }
+        }
+        require_channel_permission(pool, &channel.id, auth, "view_channel").await?;
+        if history {
+            require_channel_permission(pool, &channel.id, auth, "read_history").await?;
+        }
+        return Ok(());
+    }
+    if channel.allow_anonymous_read {
+        if let Some(space_id) = &channel.space_id {
+            if db::spaces::get_space_row(pool, space_id).await?.public {
+                return Ok(());
+            }
+        }
+    }
+    Err(AppError::Unauthorized("authentication required".into()))
+}

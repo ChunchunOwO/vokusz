@@ -1,0 +1,319 @@
+use sqlx::{AnyPool, Row};
+
+use crate::error::AppError;
+use crate::models::user::{CreateUser, UpdateUser, User};
+use crate::snowflake;
+
+fn row_to_user(row: sqlx::any::AnyRow) -> User {
+    User {
+        id: row.get("id"),
+        username: row.get("username"),
+        display_name: row.get("display_name"),
+        avatar: row.get("avatar"),
+        banner: row.get("banner"),
+        accent_color: row.get("accent_color"),
+        bio: row.get("bio"),
+        bot: crate::db::get_bool(&row, "bot"),
+        system: crate::db::get_bool(&row, "system"),
+        is_admin: crate::db::get_bool(&row, "is_admin"),
+        mfa_enabled: crate::db::get_bool(&row, "totp_enabled"),
+        disabled: crate::db::get_bool(&row, "disabled"),
+        flags: row.get("flags"),
+        public_flags: row.get("public_flags"),
+        created_at: row.get("created_at"),
+        origin: row.try_get("origin").ok().flatten(),
+    }
+}
+
+const SELECT_USERS: &str = "SELECT id, username, display_name, avatar, banner, accent_color, bio, bot, system, is_admin, totp_enabled, disabled, flags, public_flags, created_at, origin FROM users";
+
+pub async fn get_user(pool: &AnyPool, user_id: &str) -> Result<User, AppError> {
+    let row = sqlx::query(&super::q(&format!("{SELECT_USERS} WHERE id = ?")))
+        .bind(user_id)
+        .fetch_optional(pool)
+        .await?
+        .ok_or_else(|| AppError::NotFound("unknown_user".to_string()))?;
+
+    Ok(row_to_user(row))
+}
+
+/// Batch-fetches users by id in a single query. Unknown ids are silently
+/// omitted, and the result order is unspecified — callers index by `id`. Used
+/// to embed member user objects in the member-list response without an N+1
+/// round-trip per member.
+pub async fn get_users_by_ids(pool: &AnyPool, ids: &[String]) -> Result<Vec<User>, AppError> {
+    if ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let placeholders: Vec<&str> = ids.iter().map(|_| "?").collect();
+    let in_clause = placeholders.join(", ");
+    let sql = super::q(&format!("{SELECT_USERS} WHERE id IN ({in_clause})"));
+    let mut query = sqlx::query(&sql);
+    for id in ids {
+        query = query.bind(id);
+    }
+    let rows = query.fetch_all(pool).await?;
+    Ok(rows.into_iter().map(row_to_user).collect())
+}
+
+pub async fn create_user(pool: &AnyPool, input: &CreateUser) -> Result<User, AppError> {
+    let id = snowflake::generate();
+    let display_name = input.display_name.as_deref().unwrap_or(&input.username);
+
+    sqlx::query(&super::q(
+        "INSERT INTO users (id, username, display_name) VALUES (?, ?, ?)",
+    ))
+    .bind(&id)
+    .bind(&input.username)
+    .bind(display_name)
+    .execute(pool)
+    .await?;
+
+    get_user(pool, &id).await
+}
+
+/// Insert or refresh a remote (federated) user's cached profile.
+///
+/// `id` is the fully-qualified user ID (`<snowflake>@<domain>`) and `origin` is
+/// the home domain. The fully-qualified `handle` (e.g. `alice@b.example`) is
+/// stored in the `username` column — inherently unique across servers, so it
+/// never collides with a local bare username and the existing global UNIQUE on
+/// `username` is preserved. Remote users never authenticate here, so
+/// `password_hash` stays NULL. Idempotent: re-receiving a profile updates the
+/// mutable fields.
+#[allow(clippy::too_many_arguments)]
+pub async fn upsert_remote_user(
+    pool: &AnyPool,
+    id: &str,
+    origin: &str,
+    handle: &str,
+    display_name: Option<&str>,
+    avatar: Option<&str>,
+) -> Result<User, AppError> {
+    sqlx::query(&super::q(
+        "INSERT INTO users (id, username, display_name, avatar, origin) VALUES (?, ?, ?, ?, ?) \
+         ON CONFLICT (id) DO UPDATE SET username = excluded.username, \
+         display_name = excluded.display_name, avatar = excluded.avatar, origin = excluded.origin",
+    ))
+    .bind(id)
+    .bind(handle)
+    .bind(display_name.unwrap_or(handle))
+    .bind(avatar)
+    .bind(origin)
+    .execute(pool)
+    .await?;
+
+    get_user(pool, id).await
+}
+
+/// Ensure a remote user row exists (for FK integrity) WITHOUT overwriting an
+/// existing cached profile. A new row takes the supplied profile; an existing
+/// row is left untouched.
+///
+/// Use this instead of [`upsert_remote_user`] when the event's signing peer is
+/// not the user's home server (so it is not authoritative for that user's
+/// profile), or when the event carries no profile data. This prevents a peer
+/// from spoofing or clobbering another server's user (S2): only a user's own
+/// home may refresh its profile.
+#[allow(clippy::too_many_arguments)]
+pub async fn ensure_remote_user(
+    pool: &AnyPool,
+    id: &str,
+    origin: &str,
+    handle: &str,
+    display_name: Option<&str>,
+    avatar: Option<&str>,
+) -> Result<(), AppError> {
+    sqlx::query(&super::q(
+        "INSERT INTO users (id, username, display_name, avatar, origin) VALUES (?, ?, ?, ?, ?) \
+         ON CONFLICT (id) DO NOTHING",
+    ))
+    .bind(id)
+    .bind(handle)
+    .bind(display_name.unwrap_or(handle))
+    .bind(avatar)
+    .bind(origin)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+/// Returns the id of the singleton System user, creating it if absent.
+/// Used as the author/actor id for server-originated writes (MCP, automated
+/// moderation) so they satisfy the `users(id)` foreign keys.
+pub async fn get_or_create_system_user(pool: &AnyPool) -> Result<String, AppError> {
+    if let Some(row) = sqlx::query(&super::q(
+        "SELECT id FROM users WHERE system = TRUE LIMIT 1",
+    ))
+    .fetch_optional(pool)
+    .await?
+    {
+        return Ok(row.get("id"));
+    }
+
+    let user = match create_user(
+        pool,
+        &CreateUser {
+            username: "System".to_string(),
+            display_name: Some("System".to_string()),
+        },
+    )
+    .await
+    {
+        Ok(user) => user,
+        Err(AppError::Conflict(_)) => {
+            // A member may already own this username. Never promote that
+            // account, and never let the collision stall automated moderation.
+            create_user(
+                pool,
+                &CreateUser {
+                    username: format!("System_{}", snowflake::generate()),
+                    display_name: Some("System".to_string()),
+                },
+            )
+            .await?
+        }
+        Err(error) => return Err(error),
+    };
+
+    sqlx::query(&super::q("UPDATE users SET system = TRUE WHERE id = ?"))
+        .bind(&user.id)
+        .execute(pool)
+        .await?;
+
+    Ok(user.id)
+}
+
+pub async fn update_user(
+    pool: &AnyPool,
+    user_id: &str,
+    input: &UpdateUser,
+    is_postgres: bool,
+) -> Result<User, AppError> {
+    let now_fn = crate::db::now_sql(is_postgres);
+    let mut sets = Vec::new();
+    let mut values: Vec<String> = Vec::new();
+
+    if let Some(ref username) = input.username {
+        sets.push("username = ?");
+        values.push(username.clone());
+    }
+    if let Some(ref display_name) = input.display_name {
+        sets.push("display_name = ?");
+        values.push(display_name.clone());
+    }
+    if let Some(ref avatar) = input.avatar {
+        if avatar.is_empty() {
+            sets.push("avatar = NULL");
+        } else {
+            sets.push("avatar = ?");
+            values.push(avatar.clone());
+        }
+    }
+    if let Some(ref banner) = input.banner {
+        if banner.is_empty() {
+            sets.push("banner = NULL");
+        } else {
+            sets.push("banner = ?");
+            values.push(banner.clone());
+        }
+    }
+    if let Some(ref bio) = input.bio {
+        sets.push("bio = ?");
+        values.push(bio.clone());
+    }
+
+    if sets.is_empty() && input.accent_color.is_none() {
+        return get_user(pool, user_id).await;
+    }
+
+    if let Some(color) = input.accent_color {
+        if sets.is_empty() {
+            let sql =
+                format!("UPDATE users SET accent_color = ?, updated_at = {now_fn} WHERE id = ?");
+            let sql = super::q(&sql);
+            sqlx::query(&sql)
+                .bind(color)
+                .bind(user_id)
+                .execute(pool)
+                .await?;
+        } else {
+            let updated_at_set = format!("updated_at = {now_fn}");
+            sets.push(&updated_at_set);
+            let set_clause = sets.join(", ");
+            let query = format!("UPDATE users SET {set_clause}, accent_color = ? WHERE id = ?");
+            let query = super::q(&query);
+            let mut q = sqlx::query(&query);
+            for v in &values {
+                q = q.bind(v);
+            }
+            q = q.bind(color).bind(user_id);
+            q.execute(pool).await?;
+        }
+    } else {
+        let updated_at_set = format!("updated_at = {now_fn}");
+        sets.push(&updated_at_set);
+        let set_clause = sets.join(", ");
+        let query = format!("UPDATE users SET {set_clause} WHERE id = ?");
+        let query = super::q(&query);
+        let mut q = sqlx::query(&query);
+        for v in &values {
+            q = q.bind(v);
+        }
+        q = q.bind(user_id);
+        q.execute(pool).await?;
+    }
+
+    get_user(pool, user_id).await
+}
+
+pub async fn get_user_dm_channels(
+    pool: &AnyPool,
+    user_id: &str,
+) -> Result<Vec<crate::models::channel::ChannelRow>, AppError> {
+    let rows = sqlx::query(&super::q(
+        "SELECT id, type, space_id, name, description, topic, position, parent_id, \
+         nsfw, rate_limit, bitrate, user_limit, owner_id, last_message_id, \
+         archived, auto_archive_after, created_at \
+         FROM channels WHERE id IN \
+         (SELECT channel_id FROM dm_participants WHERE user_id = ?) \
+         ORDER BY last_message_id DESC",
+    ))
+    .bind(user_id)
+    .fetch_all(pool)
+    .await?;
+
+    Ok(rows
+        .into_iter()
+        .map(|row| crate::models::channel::ChannelRow {
+            id: row.get("id"),
+            channel_type: row.get("type"),
+            space_id: row.get("space_id"),
+            name: row.get("name"),
+            description: row.get("description"),
+            topic: row.get("topic"),
+            position: row.get("position"),
+            parent_id: row.get("parent_id"),
+            nsfw: crate::db::get_bool(&row, "nsfw"),
+            rate_limit: row.get("rate_limit"),
+            bitrate: row.get("bitrate"),
+            user_limit: row.get("user_limit"),
+            owner_id: row.get("owner_id"),
+            last_message_id: row.get("last_message_id"),
+            archived: crate::db::get_bool(&row, "archived"),
+            auto_archive_after: row.get("auto_archive_after"),
+            allow_anonymous_read: false,
+            created_at: row.get("created_at"),
+        })
+        .collect())
+}
+
+pub async fn get_user_spaces(pool: &AnyPool, user_id: &str) -> Result<Vec<String>, AppError> {
+    let rows =
+        sqlx::query_as::<_, (String,)>(&super::q("SELECT space_id FROM members WHERE user_id = ?"))
+            .bind(user_id)
+            .fetch_all(pool)
+            .await?;
+
+    Ok(rows.into_iter().map(|r| r.0).collect())
+}

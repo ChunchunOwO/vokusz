@@ -1,0 +1,104 @@
+plugins {
+    id "com.android.application"
+    id "kotlin-android"
+    // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
+    id "dev.flutter.flutter-gradle-plugin"
+}
+
+// Release signing. In CI the upload keystore + credentials come from environment
+// variables (decoded from GitHub secrets by the release jobs); locally they can
+// come from an (untracked) android/key.properties. Local builds may fall back to
+// the debug key, but tagged CI sets ANDROID_REQUIRE_RELEASE_SIGNING=true so an
+// incomplete credential set fails before any distributable is produced.
+def keystoreProperties = new Properties()
+def keystorePropertiesFile = rootProject.file("key.properties")
+if (keystorePropertiesFile.exists()) {
+    keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+}
+def releaseStoreFile = System.getenv("ANDROID_KEYSTORE_PATH") ?: keystoreProperties["storeFile"]
+def releaseStorePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD") ?: keystoreProperties["storePassword"]
+def releaseKeyAlias = System.getenv("ANDROID_KEY_ALIAS") ?: keystoreProperties["keyAlias"]
+def releaseKeyPassword = System.getenv("ANDROID_KEY_PASSWORD") ?: keystoreProperties["keyPassword"]
+def releaseStore = releaseStoreFile ? file(releaseStoreFile) : null
+def hasReleaseSigning = releaseStore != null && releaseStore.isFile() &&
+        releaseStorePassword && releaseKeyAlias && releaseKeyPassword
+def requireReleaseSigning = System.getenv("ANDROID_REQUIRE_RELEASE_SIGNING") == "true"
+
+if (requireReleaseSigning && !hasReleaseSigning) {
+    throw new GradleException("Stable Android release signing is required, but the keystore path or credentials are incomplete.")
+}
+
+android {
+    namespace = "com.vokusz.app"
+    compileSdk = flutter.compileSdkVersion
+    ndkVersion "27.0.12077973"
+
+    compileOptions {
+        coreLibraryDesugaringEnabled true
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+
+    kotlinOptions {
+        jvmTarget = JavaVersion.VERSION_17
+    }
+
+    defaultConfig {
+        applicationId = "com.vokusz.app"
+        // flutter_secure_storage 11 uses the Android Keystore and requires 23.
+        minSdk = 23
+        targetSdk = flutter.targetSdkVersion
+        versionCode = flutter.versionCode
+        versionName = flutter.versionName
+    }
+
+    signingConfigs {
+        if (hasReleaseSigning) {
+            release {
+                storeFile = releaseStore
+                storePassword = releaseStorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            // Sign release artifacts (AAB for Play, APK for direct download) with
+            // the upload key when it's available. Secret-less local development
+            // remains usable with the debug fallback; tagged release jobs enable
+            // the fail-closed guard above and can never take this branch.
+            signingConfig = hasReleaseSigning ? signingConfigs.release : signingConfigs.debug
+        }
+    }
+
+    // Two distribution channels that share one applicationId (same app) but differ
+    // in manifest contributions. Pick one with `--flavor github` / `--flavor play`.
+    flavorDimensions "distribution"
+    productFlavors {
+        // Sideloadable build published to GitHub Releases. Keeps the in-app
+        // self-updater — REQUEST_INSTALL_PACKAGES is declared in
+        // src/github/AndroidManifest.xml.
+        github {
+            dimension "distribution"
+        }
+        // Google Play build. Play delivers updates, so the self-updater and its
+        // REQUEST_INSTALL_PACKAGES permission are omitted here; the build also
+        // passes --dart-define=APP_STORE=true to disable the updater at runtime.
+        play {
+            dimension "distribution"
+        }
+    }
+}
+
+dependencies {
+    coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.1.4'
+    // FileProvider, used by MainActivity to hand a downloaded APK to the system
+    // installer for the in-app self-update.
+    implementation 'androidx.core:core-ktx:1.13.1'
+}
+
+flutter {
+    source = "../.."
+}

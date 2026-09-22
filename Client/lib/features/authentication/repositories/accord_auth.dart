@@ -1,0 +1,1082 @@
+import 'dart:async';
+
+import 'package:accordkit/accordkit.dart';
+import 'package:bonfire/features/authentication/models/accord_auth_state.dart';
+import 'package:bonfire/features/authentication/models/accord_session.dart';
+import 'package:bonfire/features/authentication/repositories/accord_session_store.dart';
+import 'package:bonfire/features/authentication/utils/credential_validation.dart';
+import 'package:bonfire/features/channels/controllers/open_tabs.dart';
+import 'package:bonfire/features/channels/controllers/muted_channels.dart';
+import 'package:bonfire/features/events/controllers/connection.dart';
+import 'package:bonfire/features/channels/controllers/read_state.dart';
+import 'package:bonfire/features/events/controllers/presence.dart';
+import 'package:bonfire/features/voice/controllers/missed_calls.dart';
+import 'package:bonfire/features/events/services/accord_connection_coordinator.dart';
+import 'package:bonfire/features/notifications/services/notification.dart';
+import 'package:bonfire/features/server/controllers/connections.dart';
+import 'package:bonfire/features/server/models/accord_server.dart';
+import 'package:bonfire/features/messaging/controllers/pending_uploads.dart';
+import 'package:bonfire/features/messaging/utils/pending_upload_store.dart';
+import 'package:bonfire/features/server/utils/space_cache.dart';
+import 'package:bonfire/features/settings/controllers/settings.dart';
+import 'package:bonfire/features/spaces/controllers/spaces.dart';
+import 'package:bonfire/features/user/controllers/accord_users.dart';
+import 'package:flutter/foundation.dart';
+import 'package:riverpod_annotation/riverpod_annotation.dart';
+
+part 'accord_auth.g.dart';
+
+/// One live server connection and the [AccordSession] that opened it. Gateway
+/// subscription ownership lives in [AccordConnectionCoordinator].
+class _Conn {
+  final AccordClient client;
+  final AccordSession session;
+
+  _Conn({required this.client, required this.session});
+}
+
+/// Neutral result of an auth REST call, before any state publication: exactly
+/// one of [data] (success payload), [mfaTicket], or [error] is meaningful.
+class _AuthAttempt {
+  final Object? data;
+  final String? mfaTicket;
+  final String? error;
+
+  const _AuthAttempt._({this.data, this.mfaTicket, this.error});
+
+  factory _AuthAttempt.success(Object? data) => _AuthAttempt._(data: data);
+  factory _AuthAttempt.mfa(String ticket) => _AuthAttempt._(mfaTicket: ticket);
+  factory _AuthAttempt.error(String message) => _AuthAttempt._(error: message);
+}
+
+/// Authentication + connection lifecycle against Accord servers. The Accord
+/// replacement for Bonfire's `Auth` provider.
+///
+/// In the multi-server model this holds N live [AccordClient]s at once (one per
+/// connected server, keyed by `userId@baseUrl`) and tracks which one is
+/// *active*. `state` (an [AccordAuthLoggedIn]) and [client] always refer to the
+/// active connection, so every existing pane/controller keeps reading the active
+/// server unchanged. Background connections stay logged in (gateways open,
+/// spaces cached in `ConnectionsController`) so the rail can show every server's
+/// spaces at once; selecting a space on another server flips the active
+/// connection without re-authenticating.
+@Riverpod(keepAlive: true)
+class AccordAuth extends _$AccordAuth {
+  AccordAuth({AccordSessionStore? sessionStore})
+    : _store = sessionStore ?? AccordSessionStore();
+
+  final AccordSessionStore _store;
+  final Map<String, _Conn> _connections = {};
+  Future<AccordAuthState>? _restoration;
+
+  /// Connection keys currently being torn down after a 401, so the burst of
+  /// simultaneous unauthorized responses (spaces, members, emojis, …) triggers
+  /// exactly one sign-out per connection.
+  final Set<String> _signingOut = {};
+
+  /// The active connection's client, or null when signed out. Repositories
+  /// should obtain this via the logged-in [AccordAuthLoggedIn] state rather than
+  /// reaching in here.
+  AccordClient? get client {
+    final activeKey = ref.read(connectionsControllerProvider).activeKey;
+    return activeKey == null ? null : _connections[activeKey]?.client;
+  }
+
+  /// The active connection's client for [key], if connected.
+  AccordClient? clientForKey(String key) => _connections[key]?.client;
+
+  /// The connection key (`userId@baseUrl`) currently connected to [baseUrl], if
+  /// any — used by the deep-link/add-server flow to detect "already connected".
+  String? keyForBaseUrl(String baseUrl) {
+    final activeKey = ref.read(connectionsControllerProvider).activeKey;
+    final active = _connections[activeKey];
+    if (active != null &&
+        AccordServer.sameEndpoint(active.session.server.baseUrl, baseUrl)) {
+      return activeKey;
+    }
+    for (final conn in _connections.values) {
+      if (AccordServer.sameEndpoint(conn.session.server.baseUrl, baseUrl)) {
+        return conn.session.key;
+      }
+    }
+    return null;
+  }
+
+  /// Finds a saved account even before startup has created its live client.
+  /// Prefer the active account, including the persisted active pointer while
+  /// restoration is still reading credentials from the platform vault.
+  Future<AccordSession?> accountForBaseUrl(String baseUrl) async {
+    AccordSession? activeLiveSession() {
+      final key = ref.read(connectionsControllerProvider).activeKey;
+      final active = _connections[key]?.session;
+      return active != null &&
+              AccordServer.sameEndpoint(active.server.baseUrl, baseUrl)
+          ? active
+          : null;
+    }
+
+    final liveActive = activeLiveSession();
+    if (liveActive != null) return liveActive;
+    final accounts = await listAccounts();
+    final active = await _store.readRestorableActive();
+    // Restoration may have published the active account during the vault read.
+    final currentActive = activeLiveSession();
+    if (currentActive != null) return currentActive;
+    if (active != null &&
+        AccordServer.sameEndpoint(active.server.baseUrl, baseUrl)) {
+      return active;
+    }
+    final liveKey = keyForBaseUrl(baseUrl);
+    if (liveKey != null) return _connections[liveKey]?.session;
+    for (final account in accounts) {
+      if (AccordServer.sameEndpoint(account.server.baseUrl, baseUrl)) {
+        return account;
+      }
+    }
+    return null;
+  }
+
+  /// Ensures a saved account has a REST/gateway client without switching the
+  /// visible account or publishing a login-in-progress state. Null means no
+  /// saved account exists; connection errors must be shown instead of asking
+  /// for a second set of credentials.
+  Future<String?> ensureConnectionForBaseUrl(String baseUrl) async {
+    final liveKey = keyForBaseUrl(baseUrl);
+    if (liveKey != null &&
+        liveKey == ref.read(connectionsControllerProvider).activeKey) {
+      return liveKey;
+    }
+    final session = await accountForBaseUrl(baseUrl);
+    if (session == null) return null;
+    if (clientForKey(session.key) != null) return session.key;
+    await _addConnection(session, makeActive: false, replaceExisting: true);
+    if (clientForKey(session.key) == null) {
+      throw StateError('Could not reconnect the saved account');
+    }
+    return session.key;
+  }
+
+  /// Joins on the selected account and populates its rail cache before callers
+  /// activate it. A 409 means existing membership; fetch the space if needed.
+  Future<({String? spaceId, String? error})> joinOnConnection(
+    String key, {
+    String? spaceId,
+    String? invite,
+  }) async {
+    if (spaceId == null && invite == null) return (spaceId: null, error: null);
+    if (invite == null) {
+      final cached = ref.read(connectionsControllerProvider).connectionFor(key);
+      for (final space in cached?.spaces ?? const <AccordSpace>[]) {
+        if (space.id == spaceId ||
+            space.slug == spaceId ||
+            space.name == spaceId) {
+          // Existing private membership can be opened without attempting the
+          // public-space join endpoint, which correctly rejects private spaces.
+          return (spaceId: space.id, error: null);
+        }
+      }
+    }
+    final target = clientForKey(key);
+    if (target == null) return (spaceId: null, error: 'Connection unavailable');
+    final result = invite != null
+        ? await target.invites.accept(invite)
+        : await target.spaces.join(spaceId!);
+    if (!result.ok && result.statusCode != 409) {
+      return (spaceId: null, error: result.error?.message ?? 'Failed to join');
+    }
+    var space = result.data;
+    var joinedSpaceId = spaceId;
+    // Both join endpoints currently expose raw JSON through accordkit.
+    if (space is Map) {
+      final nested = space['space'];
+      if (nested is Map) {
+        space = AccordSpace.fromJson(Map<String, dynamic>.from(nested));
+      } else if (space['id'] != null) {
+        space = AccordSpace.fromJson(Map<String, dynamic>.from(space));
+      } else {
+        joinedSpaceId = space['space_id']?.toString() ?? joinedSpaceId;
+      }
+    }
+    if (space is! AccordSpace && joinedSpaceId == null && invite != null) {
+      final details = await target.invites.fetch(invite);
+      final invitation = details.data;
+      if (invitation is AccordInvite) joinedSpaceId = invitation.spaceId;
+    }
+    if (space is! AccordSpace && joinedSpaceId != null) {
+      final fetched = await target.spaces.fetch(joinedSpaceId);
+      space = fetched.data;
+    }
+    if (space is! AccordSpace || space.id.isEmpty) {
+      return (spaceId: null, error: 'Server returned no joined space');
+    }
+    ref.read(connectionsControllerProvider.notifier).upsertSpace(key, space);
+    if (ref.read(connectionsControllerProvider).activeKey == key) {
+      ref.read(spacesControllerProvider.notifier).upsertSpace(space);
+    }
+    return (spaceId: space.id, error: null);
+  }
+
+  @override
+  AccordAuthState build() {
+    final connectionCoordinator = ref.read(accordConnectionCoordinatorProvider);
+    ref.onDispose(() {
+      connectionCoordinator.detachAll();
+      for (final conn in _connections.values) {
+        conn.client.dispose();
+      }
+      _connections.clear();
+    });
+    return const AccordAuthLoggedOut();
+  }
+
+  /// Logs in to [server] with [username]/[password]. Returns an
+  /// [AccordAuthMfaRequired] state when the server demands a second factor;
+  /// follow up with [submitMfa].
+  Future<AccordAuthState> loginWithCredentials({
+    required AccordServer server,
+    required String username,
+    required String password,
+  }) async {
+    state = const AccordAuthInProgress();
+    final attempt = await _attemptLogin(
+      server,
+      username: username,
+      password: password,
+    );
+    if (attempt.error != null) return _fail(attempt.error!);
+    if (attempt.mfaTicket != null) {
+      final next = AccordAuthMfaRequired(
+        ticket: attempt.mfaTicket!,
+        server: server,
+      );
+      state = next;
+      return next;
+    }
+    return await _completeLogin(server, attempt.data);
+  }
+
+  /// Registers a new account on [server] and logs straight in. [displayName]
+  /// defaults to [username] when blank.
+  Future<AccordAuthState> registerWithCredentials({
+    required AccordServer server,
+    required String username,
+    required String password,
+    String? displayName,
+  }) async {
+    // The server enforces the username rule authoritatively as well.
+    final usernameError = validateRegistrationUsername(username);
+    if (usernameError != null) return _fail(usernameError);
+    state = const AccordAuthInProgress();
+    final attempt = await _attemptRegister(
+      server,
+      username: username,
+      password: password,
+      displayName: displayName,
+    );
+    if (attempt.error != null) return _fail(attempt.error!);
+    return await _completeLogin(server, attempt.data);
+  }
+
+  /// Connects to [server] as an anonymous guest (read-only). The guest token is
+  /// transient, so the session is **not** persisted or added to the saved
+  /// account list. The sign-in surface keeps this mode hidden until all write
+  /// affordances can consume the explicit guest restriction.
+  Future<AccordAuthState> loginAsGuest(AccordServer server) async {
+    state = const AccordAuthInProgress();
+    final authClient = _restClientFor(server);
+    try {
+      final result = await authClient.auth.guest();
+      if (!result.ok) {
+        return _fail(result.error?.message ?? 'Guest access not available');
+      }
+      final data = result.data;
+      if (data is! Map) {
+        return _fail('Unexpected guest response');
+      }
+      final token = data['token']?.toString();
+      if (token == null || token.isEmpty) {
+        return _fail('No guest token received');
+      }
+
+      final probe = _restClientFor(server, token: token);
+      try {
+        final me = await probe.users.getMe();
+        if (!me.ok || me.data is! AccordUser) {
+          return _fail(me.error?.message ?? 'Guest connection failed');
+        }
+        final user = me.data as AccordUser;
+        final base = _sessionFrom(server, token, user);
+        final session = AccordSession(
+          server: base.server,
+          token: base.token,
+          tokenType: base.tokenType,
+          userId: base.userId,
+          username: base.username,
+          avatar: base.avatar,
+          isAdmin: false,
+          isGuest: true,
+          expiresAt: guestSessionExpiry(data, token),
+        );
+        if (session.isExpired) return _fail('Guest token already expired');
+        // Intentionally not persisted: guest sessions are transient.
+        return await _addConnection(session, makeActive: true);
+      } finally {
+        await probe.dispose();
+      }
+    } catch (e) {
+      return _fail(e.toString());
+    } finally {
+      await authClient.dispose();
+    }
+  }
+
+  /// Fetches a server's public settings (e.g. Terms-of-Service config) before
+  /// login. Exactly one of [settings] (the map, with a `{ data: {...} }`
+  /// envelope unwrapped) and [error] is non-null, so callers can tell "the
+  /// server said nothing is configured" from "we never got an answer".
+  ///
+  /// [statusCode] carries the HTTP status the failure came with (`0` when the
+  /// request never produced a response at all), because the *reason* matters:
+  /// accordserver serves `GET /settings` to authenticated users only, so a
+  /// signed-out read reliably 401s and callers treat that structural refusal
+  /// differently from an unexpected failure (#289).
+  Future<({Map<String, dynamic>? settings, String? error, int statusCode})>
+  fetchServerSettings(AccordServer server) async {
+    final client = _restClientFor(server);
+    try {
+      final result = await client.rest.makeRequest('GET', '/settings');
+      if (!result.ok || result.data is! Map) {
+        final message =
+            result.error?.message ??
+            (result.ok
+                ? 'Unexpected settings response'
+                : 'HTTP ${result.statusCode}');
+        debugPrint(
+          'Failed to read ${server.baseUrl} settings '
+          '(${result.statusCode}): $message',
+        );
+        return (settings: null, error: message, statusCode: result.statusCode);
+      }
+      final map = Map<String, dynamic>.from(result.data as Map);
+      final inner = map['data'];
+      return (
+        settings: inner is Map ? Map<String, dynamic>.from(inner) : map,
+        error: null,
+        statusCode: result.statusCode,
+      );
+    } catch (e) {
+      debugPrint('Failed to read ${server.baseUrl} settings: $e');
+      return (settings: null, error: e.toString(), statusCode: 0);
+    } finally {
+      await client.dispose();
+    }
+  }
+
+  /// Completes an MFA challenge from [loginWithCredentials] with a TOTP or
+  /// backup [code].
+  Future<AccordAuthState> submitMfa(String code) async {
+    final current = state;
+    if (current is! AccordAuthMfaRequired) {
+      return _fail('No MFA challenge in progress');
+    }
+    final server = current.server;
+    state = const AccordAuthInProgress();
+    final attempt = await _attemptMfa(
+      server,
+      ticket: current.ticket,
+      code: code,
+    );
+    if (attempt.error != null) return _fail(attempt.error!);
+    return await _completeLogin(server, attempt.data);
+  }
+
+  /// Resolves an [AccordAuthPasswordResetRequired] challenge: changes the
+  /// password using the temporary token, then connects the now-usable session.
+  Future<AccordAuthState> submitPasswordChange({
+    required String oldPassword,
+    required String newPassword,
+  }) async {
+    final current = state;
+    if (current is! AccordAuthPasswordResetRequired) {
+      return _fail('No password change in progress');
+    }
+    final pending = current.pending;
+    state = const AccordAuthInProgress();
+
+    final authed = _restClientFor(
+      pending.server,
+      token: pending.token,
+      tokenType: pending.tokenType,
+    );
+    try {
+      final result = await authed.auth.changePassword({
+        'old_password': oldPassword,
+        'new_password': newPassword,
+      });
+      if (!result.ok) {
+        return _resetRequired(
+          pending,
+          error: result.error?.message ?? 'Password change failed',
+        );
+      }
+      await _store.persist(pending);
+      return await _addConnection(pending, makeActive: true);
+    } catch (e) {
+      return _resetRequired(pending, error: e.toString());
+    } finally {
+      await authed.dispose();
+    }
+  }
+
+  /// Restores the persisted active session (and any other saved accounts) and
+  /// reconnects their gateways. The active account is connected first and its
+  /// logged-in state returned for navigation; the rest connect in the
+  /// background so the rail can show every server's spaces. Returns
+  /// [AccordAuthLoggedOut] when nothing is stored.
+  Future<AccordAuthState> restoreSession() => _restoration ??= _restoreSession()
+      .whenComplete(() => _restoration = null);
+
+  Future<AccordAuthState> _restoreSession() async {
+    if (state is AccordAuthLoggedIn) return state;
+    AccordSession? active;
+    try {
+      active = await _store.readRestorableActive();
+    } catch (e) {
+      debugPrint('Failed to restore Accord session: $e');
+      // A locked/unavailable platform credential vault can be temporary. Keep
+      // the opaque pointer (and any legacy plaintext awaiting migration) so a
+      // later launch can recover instead of destroying the only credential.
+      return _fail(e.toString());
+    }
+    if (active == null) return const AccordAuthLoggedOut();
+
+    // A join can activate another saved account while the vault read awaits.
+    final result = await _addConnection(
+      active,
+      makeActive: state is! AccordAuthLoggedIn,
+    );
+
+    // Reconnect every other saved account in the background.
+    final activeKey = active.key;
+    final accounts = await listAccounts();
+    for (final session in accounts) {
+      if (session.key == activeKey) continue;
+      unawaited(_addConnection(session, makeActive: false));
+    }
+
+    // Prune tabs owned by accounts that no longer exist (e.g. logged out before
+    // this restore), so the strip doesn't show stale/duplicate tabs.
+    final knownServers = {activeKey, for (final s in accounts) s.key};
+    ref.read(openTabsControllerProvider.notifier).retainServers(knownServers);
+    return result;
+  }
+
+  /// Tears down every live connection and clears the active session pointer.
+  Future<void> logout() async {
+    ref.read(accordConnectionCoordinatorProvider).detachAll();
+    for (final conn in _connections.values) {
+      await conn.client.dispose();
+    }
+    _connections.clear();
+
+    await _store.deleteActive();
+
+    ref.read(connectionsControllerProvider.notifier).clear();
+    ref.invalidate(accordUsersControllerProvider);
+    ref.invalidate(mutedChannelsControllerProvider);
+    ref.invalidate(readStateControllerProvider);
+    ref.invalidate(presenceControllerProvider);
+    // Missed calls are session-only and in-memory, so without this they would
+    // survive a sign-out that doesn't restart the app.
+    ref.read(missedCallsControllerProvider.notifier).clearAll();
+    ref.read(openTabsControllerProvider.notifier).clear();
+    unawaited(SpaceCache.clear());
+    unawaited(PendingUploadStore.clear());
+    ref.invalidate(pendingUploadsControllerProvider);
+    ref.read(spacesControllerProvider.notifier).setSpaces(const []);
+    state = const AccordAuthLoggedOut();
+  }
+
+  /// Reacts to a `401 Unauthorized` from connection [key]: its token is invalid
+  /// or expired and accordkit exposes no refresh path, so the session can't be
+  /// recovered silently. Sign the affected account out via [removeAccount],
+  /// which switches to another live server if one exists or otherwise
+  /// [logout]s to the login screen — matching "log me back in" rather than
+  /// leaving cached spaces/channels rendered behind a dead token.
+  ///
+  /// Guarded by [_signingOut] so the burst of simultaneous 401s (spaces,
+  /// members, emojis, …) tears the connection down exactly once; a no-op once
+  /// the connection is already gone.
+  Future<void> _handleUnauthorized(String key) async {
+    if (_signingOut.contains(key)) return;
+    final conn = _connections[key];
+    if (conn == null) return;
+    _signingOut.add(key);
+    debugPrint(
+      'Session $key is unauthorized (token invalid/expired); '
+      'signing it out.',
+    );
+    try {
+      await removeAccount(conn.session);
+    } finally {
+      _signingOut.remove(key);
+    }
+  }
+
+  // ── Add-a-server (multi-connection) ────────────────────────────────────────
+  // These connect an *additional* server while staying logged in. Unlike the
+  // primary login flow they must NOT publish a global [AccordAuthInProgress]
+  // state (that would bounce the home screen to /login); they keep the current
+  // active connection until the new one succeeds.
+
+  /// Connects an additional [server] with an existing [token], persists it, and
+  /// makes it active. Returns null on success or an error message on failure.
+  Future<String?> addServerWithToken({
+    required AccordServer server,
+    required String token,
+    String tokenType = 'Bearer',
+  }) async {
+    try {
+      final session = await _sessionFromToken(server, token, tokenType);
+      if (session == null) return 'Token rejected';
+      await _store.persist(session);
+      await _addConnection(session, makeActive: true);
+      return null;
+    } catch (e) {
+      return e.toString();
+    }
+  }
+
+  /// Connects an additional [server] with [username]/[password], persists it,
+  /// and makes it active. Reports MFA challenges via [AddServerOutcome.mfa].
+  Future<AddServerOutcome> addServerWithCredentials({
+    required AccordServer server,
+    required String username,
+    required String password,
+  }) async {
+    final attempt = await _attemptLogin(
+      server,
+      username: username,
+      password: password,
+    );
+    if (attempt.error != null) return AddServerOutcome.error(attempt.error!);
+    if (attempt.mfaTicket != null) {
+      return AddServerOutcome.mfa(attempt.mfaTicket!);
+    }
+    return await _completeAddServer(server, attempt.data);
+  }
+
+  /// Registers a new account on [server] and connects it as an additional
+  /// server, persisting it and making it active. The add-a-server counterpart
+  /// to [registerWithCredentials] (which is for the primary login flow): it
+  /// returns an [AddServerOutcome] instead of publishing a global
+  /// [AccordAuthInProgress] state, so the home screen isn't bounced to login.
+  Future<AddServerOutcome> addServerWithRegister({
+    required AccordServer server,
+    required String username,
+    required String password,
+    String? displayName,
+  }) async {
+    final usernameError = validateRegistrationUsername(username);
+    if (usernameError != null) return AddServerOutcome.error(usernameError);
+    final attempt = await _attemptRegister(
+      server,
+      username: username,
+      password: password,
+      displayName: displayName,
+    );
+    if (attempt.error != null) return AddServerOutcome.error(attempt.error!);
+    return await _completeAddServer(server, attempt.data);
+  }
+
+  /// Completes an MFA challenge raised by [addServerWithCredentials].
+  Future<AddServerOutcome> addServerSubmitMfa(
+    AccordServer server,
+    String ticket,
+    String code,
+  ) async {
+    final attempt = await _attemptMfa(server, ticket: ticket, code: code);
+    if (attempt.error != null) return AddServerOutcome.error(attempt.error!);
+    return await _completeAddServer(server, attempt.data);
+  }
+
+  /// Resolves a forced-password-reset challenge without disturbing the
+  /// currently active connection. The temporary [pending] session is persisted
+  /// and connected only after the password change succeeds.
+  Future<AddServerOutcome> addServerSubmitPasswordChange({
+    required AccordSession pending,
+    required String oldPassword,
+    required String newPassword,
+  }) async {
+    final authed = _restClientFor(
+      pending.server,
+      token: pending.token,
+      tokenType: pending.tokenType,
+    );
+    try {
+      final result = await authed.auth.changePassword({
+        'old_password': oldPassword,
+        'new_password': newPassword,
+      });
+      if (!result.ok) {
+        return AddServerOutcome.passwordReset(
+          pending,
+          error: result.error?.message ?? 'Password change failed',
+        );
+      }
+      await _store.persist(pending);
+      await _addConnection(pending, makeActive: true);
+      return AddServerOutcome.ok();
+    } catch (e) {
+      return AddServerOutcome.passwordReset(pending, error: e.toString());
+    } finally {
+      await authed.dispose();
+    }
+  }
+
+  /// The add-a-server counterpart to [_completeLogin]: same `{ user, token }`
+  /// parsing and connect, but reports through [AddServerOutcome] without
+  /// publishing a global auth state.
+  Future<AddServerOutcome> _completeAddServer(
+    AccordServer server,
+    Object? data,
+  ) async {
+    final parsed = _sessionFromAuthData(server, data);
+    if (parsed.error != null) return AddServerOutcome.error(parsed.error!);
+    if (data is Map && data['force_password_reset'] == true) {
+      return AddServerOutcome.passwordReset(parsed.session!);
+    }
+    await _store.persist(parsed.session!);
+    await _addConnection(parsed.session!, makeActive: true);
+    return AddServerOutcome.ok();
+  }
+
+  /// Flips the active connection to [key] (a server already connected). No-op if
+  /// [key] is not connected.
+  void setActiveServer(String key) {
+    if (!_connections.containsKey(key)) return;
+    _makeActive(key);
+  }
+
+  // ── internals ─────────────────────────────────────────────────────────────
+
+  AccordClient _restClientFor(
+    AccordServer server, {
+    String token = '',
+    String tokenType = 'Bearer',
+  }) => AccordClient(
+    token: token,
+    tokenType: tokenType,
+    baseUrl: server.baseUrl,
+    gatewayUrl: server.gatewayUrl,
+    cdnUrl: server.cdnUrl,
+  );
+
+  // The shared REST cores behind both the primary-login and add-a-server
+  // flows. Each opens a throwaway unauthenticated client, maps
+  // failures/exceptions to an [_AuthAttempt], and leaves state publication to
+  // the caller (primary login publishes global [AccordAuthState]s;
+  // add-a-server returns [AddServerOutcome]s so the home screen isn't bounced
+  // to login).
+
+  Future<_AuthAttempt> _attemptLogin(
+    AccordServer server, {
+    required String username,
+    required String password,
+  }) async {
+    final authClient = _restClientFor(server);
+    try {
+      final result = await authClient.auth.login({
+        'username': username,
+        'password': password,
+      });
+      if (!result.ok) {
+        return _AuthAttempt.error(result.error?.message ?? 'Login failed');
+      }
+      final data = result.data;
+      if (data is Map && data['mfa_required'] == true) {
+        return _AuthAttempt.mfa(data['ticket']?.toString() ?? '');
+      }
+      return _AuthAttempt.success(data);
+    } catch (e) {
+      return _AuthAttempt.error(e.toString());
+    } finally {
+      await authClient.dispose();
+    }
+  }
+
+  Future<_AuthAttempt> _attemptRegister(
+    AccordServer server, {
+    required String username,
+    required String password,
+    String? displayName,
+  }) async {
+    final authClient = _restClientFor(server);
+    try {
+      final dn = displayName?.trim();
+      final result = await authClient.auth.register({
+        'username': username,
+        'password': password,
+        'display_name': (dn == null || dn.isEmpty) ? username : dn,
+      });
+      if (!result.ok) {
+        return _AuthAttempt.error(
+          result.error?.message ?? 'Registration failed',
+        );
+      }
+      return _AuthAttempt.success(result.data);
+    } catch (e) {
+      return _AuthAttempt.error(e.toString());
+    } finally {
+      await authClient.dispose();
+    }
+  }
+
+  Future<_AuthAttempt> _attemptMfa(
+    AccordServer server, {
+    required String ticket,
+    required String code,
+  }) async {
+    final authClient = _restClientFor(server);
+    try {
+      final result = await authClient.auth.loginMfa({
+        'ticket': ticket,
+        'code': code,
+      });
+      if (!result.ok) {
+        return _AuthAttempt.error(
+          result.error?.message ?? 'Invalid two-factor code',
+        );
+      }
+      return _AuthAttempt.success(result.data);
+    } catch (e) {
+      return _AuthAttempt.error(e.toString());
+    } finally {
+      await authClient.dispose();
+    }
+  }
+
+  /// Builds the client-local session record for [user] authenticated against
+  /// [server] with [token] — the one place the user→session field mapping
+  /// lives.
+  AccordSession _sessionFrom(
+    AccordServer server,
+    String token,
+    AccordUser user, {
+    String tokenType = 'Bearer',
+  }) => AccordSession(
+    server: server,
+    token: token,
+    tokenType: tokenType,
+    userId: user.id,
+    username: user.displayName ?? user.username,
+    avatar: user.avatar,
+    isAdmin: user.isAdmin,
+  );
+
+  /// Parses an `{ user, token }` auth payload into a session, or an error
+  /// message when malformed. Shared by the login and add-a-server completions.
+  ({AccordSession? session, String? error}) _sessionFromAuthData(
+    AccordServer server,
+    Object? data,
+  ) {
+    if (data is! Map) return (session: null, error: 'Malformed auth response');
+    final token = data['token']?.toString();
+    final user = data['user'];
+    if (token == null || user is! AccordUser) {
+      return (session: null, error: 'Auth response missing token or user');
+    }
+    return (session: _sessionFrom(server, token, user), error: null);
+  }
+
+  /// Verifies [token] against [server] and mints a session, or null if the
+  /// token is rejected.
+  Future<AccordSession?> _sessionFromToken(
+    AccordServer server,
+    String token,
+    String tokenType,
+  ) async {
+    final probe = _restClientFor(server, token: token, tokenType: tokenType);
+    try {
+      final me = await probe.users.getMe();
+      if (!me.ok || me.data is! AccordUser) return null;
+      return _sessionFrom(
+        server,
+        token,
+        me.data as AccordUser,
+        tokenType: tokenType,
+      );
+    } finally {
+      await probe.dispose();
+    }
+  }
+
+  /// Parses an `{ user, token }` auth response and connects.
+  Future<AccordAuthState> _completeLogin(
+    AccordServer server,
+    Object? data,
+  ) async {
+    final parsed = _sessionFromAuthData(server, data);
+    if (parsed.error != null) return _fail(parsed.error!);
+    final session = parsed.session!;
+    if (data is Map && data['force_password_reset'] == true) {
+      return _resetRequired(session);
+    }
+    try {
+      await _store.persist(session);
+    } catch (e) {
+      return _fail('Secure credential storage failed: $e');
+    }
+    return await _addConnection(session, makeActive: true);
+  }
+
+  AccordAuthState _resetRequired(AccordSession pending, {String? error}) {
+    final next = AccordAuthPasswordResetRequired(pending, error: error);
+    state = next;
+    return next;
+  }
+
+  String _accountKey(AccordSession session) => session.key;
+
+  /// All saved accounts, for the switcher UI.
+  Future<List<AccordSession>> listAccounts() => _store.listAccounts();
+
+  /// Switches the active session to a previously saved [session]. If it is
+  /// already connected this just flips active; otherwise it connects it.
+  Future<AccordAuthState> switchTo(AccordSession session) async {
+    final key = _accountKey(session);
+    if (_connections.containsKey(key)) {
+      await _store.persistActive(session);
+      return _makeActive(key);
+    }
+    state = const AccordAuthInProgress();
+    try {
+      await _store.persist(session);
+      return await _addConnection(session, makeActive: true);
+    } catch (e) {
+      return _fail(e.toString());
+    }
+  }
+
+  /// Removes [session] from the saved account list and disconnects it if live.
+  /// If it was the active connection, switches to another connected server or
+  /// signs out when none remain.
+  Future<void> removeAccount(AccordSession session) async {
+    final key = _accountKey(session);
+    final wasActive = ref.read(connectionsControllerProvider).activeKey == key;
+    await _store.removeAccount(key);
+
+    final conn = _connections.remove(key);
+    if (conn != null) {
+      ref.read(accordConnectionCoordinatorProvider).detach(key);
+      await conn.client.dispose();
+      ref.read(connectionsControllerProvider.notifier).remove(key);
+    }
+    ref.invalidate(readStateControllerProvider(key));
+    ref.invalidate(mutedChannelsControllerProvider(key));
+    ref.invalidate(presenceControllerProvider(key));
+    ref.read(openTabsControllerProvider.notifier).removeForServer(key);
+    unawaited(SpaceCache.remove(key));
+    unawaited(PendingUploadStore.remove(key));
+    ref.invalidate(pendingUploadsControllerProvider(key));
+
+    if (wasActive) {
+      final next = _connections.keys.isNotEmpty
+          ? _connections.keys.first
+          : null;
+      if (next != null) {
+        await _store.persistActive(_connections[next]!.session);
+        _makeActive(next);
+      } else {
+        await logout();
+      }
+      return;
+    }
+
+    // Clear a stale active pointer left behind by a logged-out removal.
+    final rawActive = await _store.readActiveRaw();
+    if (rawActive is Map) {
+      try {
+        final stored = AccordSession.fromJson(
+          Map<String, dynamic>.from(rawActive),
+        );
+        if (_accountKey(stored) == key) {
+          await _store.deleteActive();
+        }
+      } catch (_) {
+        // Ignore an unreadable active pointer.
+      }
+    }
+  }
+
+  /// Tears down the live connection [key] (gateway + event subscriptions) and
+  /// drops it from the rail registry. Used to replace an account when a new one
+  /// signs in to the same server. Does not touch the saved-account list — the
+  /// caller's [_persist] dedupes that.
+  Future<void> _evictConnection(String key) async {
+    final conn = _connections.remove(key);
+    if (conn != null) {
+      ref.read(accordConnectionCoordinatorProvider).detach(key);
+      await conn.client.dispose();
+    }
+    ref.read(connectionsControllerProvider.notifier).remove(key);
+    ref.invalidate(readStateControllerProvider(key));
+    ref.invalidate(mutedChannelsControllerProvider(key));
+    ref.invalidate(presenceControllerProvider(key));
+    ref.read(openTabsControllerProvider.notifier).removeForServer(key);
+    unawaited(SpaceCache.remove(key));
+    unawaited(PendingUploadStore.remove(key));
+    ref.invalidate(pendingUploadsControllerProvider(key));
+  }
+
+  /// Connects [session] as a live server (or, if already connected, optionally
+  /// makes it active). Background connections (makeActive: false) keep the
+  /// current `state` untouched.
+  Future<AccordAuthState> _addConnection(
+    AccordSession session, {
+    required bool makeActive,
+    bool replaceExisting = false,
+  }) async {
+    final key = _accountKey(session);
+    if (_connections.containsKey(key)) {
+      return makeActive ? _makeActive(key) : state;
+    }
+
+    // One account per server: a server is owned by a single account at a time.
+    // If a *different* account is already live on this server, an explicit
+    // (active) login replaces it; a background restore must not stack a second
+    // connection onto the same server (which would duplicate its rail group).
+    final existingOnServer = keyForBaseUrl(session.server.baseUrl);
+    if (existingOnServer != null && existingOnServer != key) {
+      if (!makeActive && !replaceExisting) return state;
+      await _evictConnection(existingOnServer);
+      // Another lookup may have installed this same session during disposal.
+      if (_connections.containsKey(key)) {
+        return makeActive ? _makeActive(key) : state;
+      }
+    }
+
+    ref
+        .read(connectionsControllerProvider.notifier)
+        .register(session, status: ConnectionStatus.connecting);
+
+    // First point at which notifications mean anything: there is an account
+    // whose mentions we could post. Asking at startup instead put the OS
+    // permission alert over the terms gate. Fire-and-forget — the prompt must
+    // not delay the connection, and it no-ops after the first call.
+    unawaited(requestNotificationPermissions());
+
+    // Seed the rail from the last-known cache so this server's spaces show
+    // immediately (dimmed, while connecting/unreachable) instead of waiting on
+    // READY — which never arrives if the server is offline. The gateway READY
+    // overwrites this with the authoritative list once connected.
+    final cachedSpaces = SpaceCache.load(key);
+    if (cachedSpaces.isNotEmpty) {
+      ref
+          .read(connectionsControllerProvider.notifier)
+          .setSpaces(key, cachedSpaces);
+    }
+
+    final client = AccordClient(
+      token: session.token,
+      tokenType: session.tokenType,
+      baseUrl: session.server.baseUrl,
+      gatewayUrl: session.server.gatewayUrl,
+      cdnUrl: session.server.cdnUrl,
+      onUnauthorized: () => _handleUnauthorized(key),
+      intents: session.isGuest
+          ? GatewayIntents.guest()
+          : [
+              GatewayIntents.spaces,
+              GatewayIntents.messages,
+              GatewayIntents.messageContent,
+              GatewayIntents.messageReactions,
+              GatewayIntents.messageTyping,
+              GatewayIntents.members,
+              GatewayIntents.presences,
+              GatewayIntents.voiceStates,
+            ],
+    );
+    _connections[key] = _Conn(client: client, session: session);
+    ref
+        .read(accordConnectionCoordinatorProvider)
+        .attach(
+          client: client,
+          session: session,
+          isActive: () =>
+              ref.read(connectionsControllerProvider).activeKey == key,
+        );
+    client.login();
+
+    if (makeActive) return _makeActive(key);
+    return state;
+  }
+
+  /// Promotes the connection [key] to active: snapshots the outgoing server's
+  /// live spaces into its rail cache, seeds the shared rail from [key]'s cache,
+  /// publishes the logged-in state. Existing panes/controllers then
+  /// transparently read the new active client.
+  AccordAuthState _makeActive(String key) {
+    final conn = _connections[key];
+    if (conn == null) return state;
+
+    final connections = ref.read(connectionsControllerProvider.notifier);
+
+    // Capture the outgoing active server's live spaces (incl. roles, which only
+    // the shared controller has) so they persist while it's backgrounded.
+    final prevKey = ref.read(connectionsControllerProvider).activeKey;
+    if (prevKey != null && prevKey != key) {
+      final liveSpaces = ref.read(spacesControllerProvider);
+      if (liveSpaces != null) connections.setSpaces(prevKey, liveSpaces);
+    }
+
+    connections.setActive(key);
+    ref.read(settingsControllerProvider.notifier).claimLegacyEntityKeys(key);
+
+    // Seed the shared rail/space controllers from this connection's cache so
+    // panes have data immediately; the gateway READY refreshes it.
+    final cached = connections.spacesFor(key);
+    ref.read(spacesControllerProvider.notifier).setSpaces(cached);
+
+    final next = AccordAuthLoggedIn(client: conn.client, session: conn.session);
+    state = next;
+    if (!conn.session.isGuest) unawaited(_store.persistActive(conn.session));
+    return next;
+  }
+
+  AccordAuthState _fail(String message) {
+    final next = AccordAuthFailed(message);
+    state = next;
+    return next;
+  }
+}
+
+/// Result of an add-a-server attempt while already logged in. Distinct from the
+/// global [AccordAuthState] so the dialog can surface its own MFA/error flow
+/// without disturbing the active connection.
+class AddServerOutcome {
+  final bool ok;
+  final String? error;
+  final String? mfaTicket;
+  final AccordSession? passwordResetSession;
+
+  const AddServerOutcome._({
+    this.ok = false,
+    this.error,
+    this.mfaTicket,
+    this.passwordResetSession,
+  });
+
+  factory AddServerOutcome.ok() => const AddServerOutcome._(ok: true);
+  factory AddServerOutcome.error(String message) =>
+      AddServerOutcome._(error: message);
+  factory AddServerOutcome.mfa(String ticket) =>
+      AddServerOutcome._(mfaTicket: ticket);
+  factory AddServerOutcome.passwordReset(
+    AccordSession pending, {
+    String? error,
+  }) => AddServerOutcome._(passwordResetSession: pending, error: error);
+
+  bool get needsMfa => mfaTicket != null;
+  bool get needsPasswordReset => passwordResetSession != null;
+}

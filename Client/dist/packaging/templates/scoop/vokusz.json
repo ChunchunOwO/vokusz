@@ -1,0 +1,28 @@
+{
+  "##": "Review only until the release honors vokusz.package-manager. User data is in Documents/vokusz/data; do not persist the application directory.",
+  "version": "@@VERSION@@",
+  "description": "Chat, voice, video, and screen sharing for Vokusz communities",
+  "homepage": "https://github.com/ChunchunOwO/vokusz",
+  "license": "GPL-3.0-only",
+  "architecture": {
+    "64bit": {
+      "url": "@@WINDOWS_PORTABLE_URL@@",
+      "hash": "@@WINDOWS_PORTABLE_SHA256@@"
+    }
+  },
+  "bin": "vokusz.exe",
+  "shortcuts": [["vokusz.exe", "Vokusz"]],
+  "post_install": "Set-Content -LiteralPath (Join-Path $dir 'vokusz.package-manager') -Value 'scoop' -Encoding ascii",
+  "checkver": "github",
+  "autoupdate": {
+    "architecture": {
+      "64bit": {
+        "url": "https://github.com/ChunchunOwO/vokusz/releases/download/v$version/vokusz-windows-x86_64.zip",
+        "hash": {
+          "url": "$baseurl/SHA256SUMS.txt",
+          "regex": "(?m)^([a-fA-F0-9]{64})[ \\t]+\\*?vokusz-windows-x86_64\\.zip$"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,2460 @@
+mod common;
+
+use axum::body::Body;
+use common::{
+    authenticated_json_request, authenticated_request, build_multipart_upload_body, parse_body,
+    TestServer,
+};
+use http::{Method, Request, StatusCode};
+use tower::ServiceExt;
+
+#[tokio::test]
+async fn test_health_endpoint() {
+    let app = common::test_app().await;
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/health")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    assert_eq!(&body[..], b"ok");
+}
+
+#[tokio::test]
+async fn test_health_content_type() {
+    let app = common::test_app().await;
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/health")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let content_type = response
+        .headers()
+        .get("content-type")
+        .unwrap()
+        .to_str()
+        .unwrap();
+    assert!(
+        content_type.contains("text/plain"),
+        "expected text/plain, got {content_type}"
+    );
+}
+
+#[tokio::test]
+async fn test_not_found() {
+    let app = common::test_app().await;
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/nonexistent")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn test_cors_headers_present() {
+    let app = common::test_app().await;
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/health")
+                .header("Origin", "http://example.com")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert!(response
+        .headers()
+        .contains_key("access-control-allow-origin"));
+}
+
+#[tokio::test]
+async fn test_cors_preflight() {
+    let app = common::test_app().await;
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("OPTIONS")
+                .uri("/health")
+                .header("Origin", "http://example.com")
+                .header("Access-Control-Request-Method", "GET")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert!(response
+        .headers()
+        .contains_key("access-control-allow-origin"));
+    assert!(response
+        .headers()
+        .contains_key("access-control-allow-methods"));
+}
+
+#[tokio::test]
+async fn test_ws_rejects_non_upgrade() {
+    let app = common::test_app().await;
+    let response = app
+        .oneshot(Request::builder().uri("/ws").body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    // Without WebSocket upgrade headers, the server should reject with a client error
+    assert!(
+        response.status().is_client_error(),
+        "expected client error, got {}",
+        response.status()
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Message Search Tests
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn test_message_search_content() {
+    let server = TestServer::new().await;
+    let alice = server.create_user_with_token("alice").await;
+    let space_id = server.create_space(&alice.user.id, "SearchSpace").await;
+    let channel_id = server.create_channel(&space_id, "general").await;
+
+    // Create messages via DB
+    let msg_input = accordserver::models::message::CreateMessage {
+        content: "hello world".to_string(),
+        tts: None,
+        embeds: None,
+        reply_to: None,
+        thread_id: None,
+        title: None,
+    };
+    accordserver::db::messages::create_message(
+        server.pool(),
+        &channel_id,
+        &alice.user.id,
+        Some(&space_id),
+        &msg_input,
+        0,
+    )
+    .await
+    .unwrap();
+
+    let msg_input2 = accordserver::models::message::CreateMessage {
+        content: "goodbye world".to_string(),
+        tts: None,
+        embeds: None,
+        reply_to: None,
+        thread_id: None,
+        title: None,
+    };
+    accordserver::db::messages::create_message(
+        server.pool(),
+        &channel_id,
+        &alice.user.id,
+        Some(&space_id),
+        &msg_input2,
+        0,
+    )
+    .await
+    .unwrap();
+
+    // Search for "hello"
+    let app = server.router();
+    let req = authenticated_request(
+        Method::GET,
+        &format!("/api/v1/spaces/{space_id}/messages/search?query=hello"),
+        &alice.auth_header(),
+    );
+    let response = app.oneshot(req).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = parse_body(response).await;
+    let data = body["data"].as_array().unwrap();
+    assert_eq!(data.len(), 1);
+    assert_eq!(data[0]["content"], "hello world");
+}
+
+#[tokio::test]
+async fn test_message_search_author_filter() {
+    let server = TestServer::new().await;
+    let alice = server.create_user_with_token("alice").await;
+    let bob = server.create_user_with_token("bob").await;
+    let space_id = server.create_space(&alice.user.id, "SearchSpace").await;
+    server.add_member(&space_id, &bob.user.id).await;
+    let channel_id = server.create_channel(&space_id, "general").await;
+
+    // Alice sends a message
+    let msg = accordserver::models::message::CreateMessage {
+        content: "from alice".to_string(),
+        tts: None,
+        embeds: None,
+        reply_to: None,
+        thread_id: None,
+        title: None,
+    };
+    accordserver::db::messages::create_message(
+        server.pool(),
+        &channel_id,
+        &alice.user.id,
+        Some(&space_id),
+        &msg,
+        0,
+    )
+    .await
+    .unwrap();
+
+    // Bob sends a message
+    let msg2 = accordserver::models::message::CreateMessage {
+        content: "from bob".to_string(),
+        tts: None,
+        embeds: None,
+        reply_to: None,
+        thread_id: None,
+        title: None,
+    };
+    accordserver::db::messages::create_message(
+        server.pool(),
+        &channel_id,
+        &bob.user.id,
+        Some(&space_id),
+        &msg2,
+        0,
+    )
+    .await
+    .unwrap();
+
+    // Search by author_id (bob)
+    let app = server.router();
+    let req = authenticated_request(
+        Method::GET,
+        &format!(
+            "/api/v1/spaces/{space_id}/messages/search?author_id={}",
+            bob.user.id
+        ),
+        &alice.auth_header(),
+    );
+    let response = app.oneshot(req).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = parse_body(response).await;
+    let data = body["data"].as_array().unwrap();
+    assert_eq!(data.len(), 1);
+    assert_eq!(data[0]["content"], "from bob");
+}
+
+#[tokio::test]
+async fn test_message_search_pinned_filter() {
+    let server = TestServer::new().await;
+    let alice = server.create_user_with_token("alice").await;
+    let space_id = server.create_space(&alice.user.id, "SearchSpace").await;
+    let channel_id = server.create_channel(&space_id, "general").await;
+
+    let msg = accordserver::models::message::CreateMessage {
+        content: "pinned message".to_string(),
+        tts: None,
+        embeds: None,
+        reply_to: None,
+        thread_id: None,
+        title: None,
+    };
+    let created = accordserver::db::messages::create_message(
+        server.pool(),
+        &channel_id,
+        &alice.user.id,
+        Some(&space_id),
+        &msg,
+        0,
+    )
+    .await
+    .unwrap();
+
+    let msg2 = accordserver::models::message::CreateMessage {
+        content: "unpinned message".to_string(),
+        tts: None,
+        embeds: None,
+        reply_to: None,
+        thread_id: None,
+        title: None,
+    };
+    accordserver::db::messages::create_message(
+        server.pool(),
+        &channel_id,
+        &alice.user.id,
+        Some(&space_id),
+        &msg2,
+        0,
+    )
+    .await
+    .unwrap();
+
+    // Pin the first message
+    accordserver::db::messages::pin_message(
+        server.pool(),
+        &channel_id,
+        &created.id,
+        server.state.db_is_postgres,
+    )
+    .await
+    .unwrap();
+
+    // Search for pinned messages
+    let app = server.router();
+    let req = authenticated_request(
+        Method::GET,
+        &format!("/api/v1/spaces/{space_id}/messages/search?pinned=true"),
+        &alice.auth_header(),
+    );
+    let response = app.oneshot(req).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = parse_body(response).await;
+    let data = body["data"].as_array().unwrap();
+    assert_eq!(data.len(), 1);
+    assert_eq!(data[0]["content"], "pinned message");
+}
+
+#[tokio::test]
+async fn test_message_search_pagination() {
+    let server = TestServer::new().await;
+    let alice = server.create_user_with_token("alice").await;
+    let space_id = server.create_space(&alice.user.id, "SearchSpace").await;
+    let channel_id = server.create_channel(&space_id, "general").await;
+
+    // Create 3 messages
+    for i in 0..3 {
+        let msg = accordserver::models::message::CreateMessage {
+            content: format!("message {i}"),
+            tts: None,
+            embeds: None,
+            reply_to: None,
+            thread_id: None,
+            title: None,
+        };
+        accordserver::db::messages::create_message(
+            server.pool(),
+            &channel_id,
+            &alice.user.id,
+            Some(&space_id),
+            &msg,
+            0,
+        )
+        .await
+        .unwrap();
+    }
+
+    // Search with limit=2
+    let app = server.router();
+    let req = authenticated_request(
+        Method::GET,
+        &format!("/api/v1/spaces/{space_id}/messages/search?query=message&limit=2"),
+        &alice.auth_header(),
+    );
+    let response = app.oneshot(req).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = parse_body(response).await;
+    let data = body["data"].as_array().unwrap();
+    assert_eq!(data.len(), 2);
+    assert_eq!(body["cursor"]["has_more"], true);
+
+    // Use cursor for next page
+    let cursor = body["cursor"]["after"].as_str().unwrap();
+    let app = server.router();
+    let req = authenticated_request(
+        Method::GET,
+        &format!("/api/v1/spaces/{space_id}/messages/search?query=message&limit=2&cursor={cursor}"),
+        &alice.auth_header(),
+    );
+    let response = app.oneshot(req).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = parse_body(response).await;
+    let data = body["data"].as_array().unwrap();
+    assert_eq!(data.len(), 1);
+    assert_eq!(body["cursor"]["has_more"], false);
+}
+
+#[tokio::test]
+async fn test_message_search_non_member_forbidden() {
+    let server = TestServer::new().await;
+    let alice = server.create_user_with_token("alice").await;
+    let bob = server.create_user_with_token("bob").await;
+    let space_id = server.create_space(&alice.user.id, "PrivateSpace").await;
+    let _channel_id = server.create_channel(&space_id, "general").await;
+
+    // Bob is not a member — should get 403
+    let app = server.router();
+    let req = authenticated_request(
+        Method::GET,
+        &format!("/api/v1/spaces/{space_id}/messages/search?query=hello"),
+        &bob.auth_header(),
+    );
+    let response = app.oneshot(req).await.unwrap();
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn test_message_search_empty_filters_bad_request() {
+    let server = TestServer::new().await;
+    let alice = server.create_user_with_token("alice").await;
+    let space_id = server.create_space(&alice.user.id, "SearchSpace").await;
+
+    // No filters → 400
+    let app = server.router();
+    let req = authenticated_request(
+        Method::GET,
+        &format!("/api/v1/spaces/{space_id}/messages/search"),
+        &alice.auth_header(),
+    );
+    let response = app.oneshot(req).await.unwrap();
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+}
+
+// ---------------------------------------------------------------------------
+// Read State / Unread Tests
+// ---------------------------------------------------------------------------
+
+/// Regression test: a thread reply must not bump channels.last_message_id, so
+/// the channel stops appearing in get_unread_channels for users who have already
+/// acked the channel's main timeline. Previously, every message insert bumped
+/// the pointer, which caused a channel to silently re-highlight as unread after
+/// any thread activity once the client reconnected and re-read the unread list.
+#[tokio::test]
+async fn test_thread_reply_does_not_mark_channel_unread() {
+    let server = TestServer::new().await;
+    let alice = server.create_user_with_token("alice").await;
+    let bob = server.create_user_with_token("bob").await;
+    let space_id = server
+        .create_space(&alice.user.id, "ThreadUnreadSpace")
+        .await;
+    server.add_member(&space_id, &bob.user.id).await;
+    let channel_id = server.create_channel(&space_id, "announcements").await;
+
+    // Alice posts a top-level message.
+    let parent = accordserver::db::messages::create_message(
+        server.pool(),
+        &channel_id,
+        &alice.user.id,
+        Some(&space_id),
+        &accordserver::models::message::CreateMessage {
+            content: "official announcement".to_string(),
+            tts: None,
+            embeds: None,
+            reply_to: None,
+            thread_id: None,
+            title: None,
+        },
+        0,
+    )
+    .await
+    .unwrap();
+
+    // Bob acks the channel at that message — he has now read everything.
+    let is_postgres = accordserver::db::url_is_postgres(
+        &std::env::var("DATABASE_URL").unwrap_or_else(|_| "sqlite::memory:".to_string()),
+    );
+    accordserver::db::read_states::ack_channel(
+        server.pool(),
+        &bob.user.id,
+        &channel_id,
+        &parent.id,
+        is_postgres,
+    )
+    .await
+    .unwrap();
+
+    let unread_before =
+        accordserver::db::read_states::get_unread_channels(server.pool(), &bob.user.id)
+            .await
+            .unwrap();
+    assert!(
+        !unread_before.iter().any(|u| u.channel_id == channel_id),
+        "channel should not be unread immediately after ack"
+    );
+
+    // Alice posts a thread reply against the parent message.
+    accordserver::db::messages::create_message(
+        server.pool(),
+        &channel_id,
+        &alice.user.id,
+        Some(&space_id),
+        &accordserver::models::message::CreateMessage {
+            content: "thread reply".to_string(),
+            tts: None,
+            embeds: None,
+            reply_to: None,
+            thread_id: Some(parent.id.clone()),
+            title: None,
+        },
+        0,
+    )
+    .await
+    .unwrap();
+
+    // Bob still has no unseen top-level content, so the channel must not be
+    // reported as unread.
+    let unread_after =
+        accordserver::db::read_states::get_unread_channels(server.pool(), &bob.user.id)
+            .await
+            .unwrap();
+    assert!(
+        !unread_after.iter().any(|u| u.channel_id == channel_id),
+        "channel should not become unread from a thread reply alone"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Emoji Tests
+// ---------------------------------------------------------------------------
+
+/// A tiny 1x1 red PNG encoded as base64 data URI.
+fn test_png_data_uri() -> String {
+    // Minimal valid PNG: 1x1 pixel, red
+    let png_bytes: &[u8] = &[
+        0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, // PNG signature
+        0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52, // IHDR chunk
+        0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, // 1x1
+        0x08, 0x02, 0x00, 0x00, 0x00, 0x90, 0x77, 0x53, 0xDE, // 8-bit RGB
+        0x00, 0x00, 0x00, 0x0C, 0x49, 0x44, 0x41, 0x54, // IDAT chunk
+        0x08, 0xD7, 0x63, 0xF8, 0xCF, 0xC0, 0x00, 0x00, 0x00, 0x02, 0x00, 0x01, 0xE2, 0x21, 0xBC,
+        0x33, // compressed pixel data
+        0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, // IEND chunk
+        0xAE, 0x42, 0x60, 0x82,
+    ];
+    let b64 = simple_base64_encode(png_bytes);
+    format!("data:image/png;base64,{b64}")
+}
+
+/// A minimal OGG data URI for audio testing.
+fn test_ogg_data_uri() -> String {
+    // Just enough bytes to pass validation (not a real OGG, but the server only validates mime type)
+    let fake_ogg: &[u8] = &[0x4F, 0x67, 0x67, 0x53, 0x00, 0x02, 0x00, 0x00];
+    let b64 = simple_base64_encode(fake_ogg);
+    format!("data:audio/ogg;base64,{b64}")
+}
+
+fn simple_base64_encode(data: &[u8]) -> String {
+    const CHARS: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut result = String::new();
+    for chunk in data.chunks(3) {
+        let b0 = chunk[0] as u32;
+        let b1 = if chunk.len() > 1 { chunk[1] as u32 } else { 0 };
+        let b2 = if chunk.len() > 2 { chunk[2] as u32 } else { 0 };
+        let triple = (b0 << 16) | (b1 << 8) | b2;
+        result.push(CHARS[((triple >> 18) & 0x3F) as usize] as char);
+        result.push(CHARS[((triple >> 12) & 0x3F) as usize] as char);
+        if chunk.len() > 1 {
+            result.push(CHARS[((triple >> 6) & 0x3F) as usize] as char);
+        } else {
+            result.push('=');
+        }
+        if chunk.len() > 2 {
+            result.push(CHARS[(triple & 0x3F) as usize] as char);
+        } else {
+            result.push('=');
+        }
+    }
+    result
+}
+
+#[tokio::test]
+async fn test_emoji_create_with_image() {
+    let server = TestServer::new().await;
+    let alice = server.create_user_with_token("alice").await;
+    let space_id = server.create_space(&alice.user.id, "EmojiSpace").await;
+
+    let req = authenticated_json_request(
+        Method::POST,
+        &format!("/api/v1/spaces/{space_id}/emojis"),
+        &alice.auth_header(),
+        &serde_json::json!({
+            "name": "test_emoji",
+            "image": test_png_data_uri()
+        }),
+    );
+    let response = server.router().oneshot(req).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = parse_body(response).await;
+    let emoji = &body["data"];
+    assert_eq!(emoji["name"], "test_emoji");
+    assert!(
+        emoji["image_url"].as_str().is_some(),
+        "expected image_url in response"
+    );
+    let image_url = emoji["image_url"].as_str().unwrap();
+    assert!(
+        image_url.starts_with("/cdn/emojis/"),
+        "image_url should start with /cdn/emojis/"
+    );
+    assert!(
+        image_url.ends_with(".png"),
+        "image_url should end with .png"
+    );
+}
+
+#[tokio::test]
+async fn test_emoji_list_has_image_url() {
+    let server = TestServer::new().await;
+    let alice = server.create_user_with_token("alice").await;
+    let space_id = server.create_space(&alice.user.id, "EmojiSpace").await;
+
+    // Create an emoji
+    let req = authenticated_json_request(
+        Method::POST,
+        &format!("/api/v1/spaces/{space_id}/emojis"),
+        &alice.auth_header(),
+        &serde_json::json!({
+            "name": "list_emoji",
+            "image": test_png_data_uri()
+        }),
+    );
+    let response = server.router().oneshot(req).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+
+    // List emojis
+    let req = authenticated_request(
+        Method::GET,
+        &format!("/api/v1/spaces/{space_id}/emojis"),
+        &alice.auth_header(),
+    );
+    let response = server.router().oneshot(req).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = parse_body(response).await;
+    let emojis = body["data"].as_array().unwrap();
+    assert_eq!(emojis.len(), 1);
+    assert!(emojis[0]["image_url"].as_str().is_some());
+}
+
+#[tokio::test]
+async fn test_emoji_delete_cleans_up_file() {
+    let server = TestServer::new().await;
+    let alice = server.create_user_with_token("alice").await;
+    let space_id = server.create_space(&alice.user.id, "EmojiSpace").await;
+
+    // Create emoji
+    let req = authenticated_json_request(
+        Method::POST,
+        &format!("/api/v1/spaces/{space_id}/emojis"),
+        &alice.auth_header(),
+        &serde_json::json!({
+            "name": "deleteme",
+            "image": test_png_data_uri()
+        }),
+    );
+    let response = server.router().oneshot(req).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = parse_body(response).await;
+    let emoji_id = body["data"]["id"].as_str().unwrap().to_string();
+    let image_url = body["data"]["image_url"].as_str().unwrap().to_string();
+
+    // Verify the file exists on disk
+    let file_path = server
+        .state
+        .storage_path
+        .join(image_url.strip_prefix("/cdn/").unwrap());
+    assert!(file_path.exists(), "emoji file should exist on disk");
+
+    // Delete emoji
+    let req = authenticated_request(
+        Method::DELETE,
+        &format!("/api/v1/spaces/{space_id}/emojis/{emoji_id}"),
+        &alice.auth_header(),
+    );
+    let response = server.router().oneshot(req).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+
+    // Verify the file is cleaned up
+    assert!(
+        !file_path.exists(),
+        "emoji file should be deleted from disk"
+    );
+}
+
+#[tokio::test]
+async fn test_cdn_serves_emoji_image() {
+    let server = TestServer::new().await;
+    let alice = server.create_user_with_token("alice").await;
+    let space_id = server.create_space(&alice.user.id, "EmojiSpace").await;
+
+    // Create emoji
+    let req = authenticated_json_request(
+        Method::POST,
+        &format!("/api/v1/spaces/{space_id}/emojis"),
+        &alice.auth_header(),
+        &serde_json::json!({
+            "name": "cdntest",
+            "image": test_png_data_uri()
+        }),
+    );
+    let response = server.router().oneshot(req).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = parse_body(response).await;
+    let image_url = body["data"]["image_url"].as_str().unwrap().to_string();
+
+    // Fetch the image via CDN endpoint
+    let req = Request::builder()
+        .uri(&image_url)
+        .body(Body::empty())
+        .unwrap();
+    let response = server.router().oneshot(req).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    assert!(!bytes.is_empty(), "CDN should serve the image file");
+}
+
+// ---------------------------------------------------------------------------
+// Soundboard Tests
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn test_soundboard_crud() {
+    let server = TestServer::new().await;
+    let alice = server.create_user_with_token("alice").await;
+    let space_id = server.create_space(&alice.user.id, "SoundSpace").await;
+
+    // Create sound
+    let req = authenticated_json_request(
+        Method::POST,
+        &format!("/api/v1/spaces/{space_id}/soundboard"),
+        &alice.auth_header(),
+        &serde_json::json!({
+            "name": "airhorn",
+            "audio": test_ogg_data_uri(),
+            "volume": 0.8
+        }),
+    );
+    let response = server.router().oneshot(req).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = parse_body(response).await;
+    let sound = &body["data"];
+    let sound_id = sound["id"].as_str().unwrap().to_string();
+    assert_eq!(sound["name"], "airhorn");
+    assert_eq!(sound["volume"], 0.8);
+    assert!(sound["audio_url"].as_str().is_some());
+
+    // List sounds
+    let req = authenticated_request(
+        Method::GET,
+        &format!("/api/v1/spaces/{space_id}/soundboard"),
+        &alice.auth_header(),
+    );
+    let response = server.router().oneshot(req).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = parse_body(response).await;
+    let sounds = body["data"].as_array().unwrap();
+    assert_eq!(sounds.len(), 1);
+    assert_eq!(sounds[0]["name"], "airhorn");
+
+    // Get sound
+    let req = authenticated_request(
+        Method::GET,
+        &format!("/api/v1/spaces/{space_id}/soundboard/{sound_id}"),
+        &alice.auth_header(),
+    );
+    let response = server.router().oneshot(req).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = parse_body(response).await;
+    assert_eq!(body["data"]["name"], "airhorn");
+
+    // Update sound
+    let req = authenticated_json_request(
+        Method::PATCH,
+        &format!("/api/v1/spaces/{space_id}/soundboard/{sound_id}"),
+        &alice.auth_header(),
+        &serde_json::json!({ "name": "renamed-horn", "volume": 1.5 }),
+    );
+    let response = server.router().oneshot(req).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = parse_body(response).await;
+    assert_eq!(body["data"]["name"], "renamed-horn");
+    assert_eq!(body["data"]["volume"], 1.5);
+
+    // Delete sound
+    let req = authenticated_request(
+        Method::DELETE,
+        &format!("/api/v1/spaces/{space_id}/soundboard/{sound_id}"),
+        &alice.auth_header(),
+    );
+    let response = server.router().oneshot(req).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+
+    // List again — should be empty
+    let req = authenticated_request(
+        Method::GET,
+        &format!("/api/v1/spaces/{space_id}/soundboard"),
+        &alice.auth_header(),
+    );
+    let response = server.router().oneshot(req).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = parse_body(response).await;
+    assert_eq!(body["data"].as_array().unwrap().len(), 0);
+}
+
+#[tokio::test]
+async fn test_soundboard_play() {
+    let server = TestServer::new().await;
+    let alice = server.create_user_with_token("alice").await;
+    let space_id = server.create_space(&alice.user.id, "SoundSpace").await;
+
+    // Create sound
+    let req = authenticated_json_request(
+        Method::POST,
+        &format!("/api/v1/spaces/{space_id}/soundboard"),
+        &alice.auth_header(),
+        &serde_json::json!({
+            "name": "horn",
+            "audio": test_ogg_data_uri()
+        }),
+    );
+    let response = server.router().oneshot(req).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = parse_body(response).await;
+    let sound_id = body["data"]["id"].as_str().unwrap().to_string();
+
+    // Play sound
+    let req = authenticated_request(
+        Method::POST,
+        &format!("/api/v1/spaces/{space_id}/soundboard/{sound_id}/play"),
+        &alice.auth_header(),
+    );
+    let response = server.router().oneshot(req).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+}
+
+// ---------------------------------------------------------------------------
+// Voice REST Endpoint Tests
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn test_voice_info_returns_backend() {
+    let server = TestServer::new().await;
+    let req = Request::builder()
+        .uri("/api/v1/voice/info")
+        .body(Body::empty())
+        .unwrap();
+    let response = server.router().oneshot(req).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = parse_body(response).await;
+    assert_eq!(body["backend"], "livekit");
+}
+
+#[tokio::test]
+async fn test_voice_join_voice_channel_success() {
+    let server = TestServer::new().await;
+    let alice = server.create_user_with_token("alice").await;
+    let space_id = server.create_space(&alice.user.id, "VoiceSpace").await;
+    let vc_id = server.create_voice_channel(&space_id, "voice-chat").await;
+
+    let req = authenticated_json_request(
+        Method::POST,
+        &format!("/api/v1/channels/{vc_id}/voice/join"),
+        &alice.auth_header(),
+        &serde_json::json!({ "self_mute": false, "self_deaf": false }),
+    );
+    let response = server.router().oneshot(req).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = parse_body(response).await;
+    let data = &body["data"];
+    assert_eq!(data["backend"], "livekit");
+    assert_eq!(data["voice_state"]["user_id"], alice.user.id);
+    assert_eq!(data["voice_state"]["channel_id"], vc_id);
+    assert_eq!(data["voice_state"]["self_mute"], false);
+    assert_eq!(data["voice_state"]["self_deaf"], false);
+    assert!(data["token"].as_str().is_some());
+}
+
+#[tokio::test]
+async fn test_voice_join_text_channel_rejected() {
+    let server = TestServer::new().await;
+    let alice = server.create_user_with_token("alice").await;
+    let space_id = server.create_space(&alice.user.id, "VoiceSpace").await;
+    let text_id = server.create_channel(&space_id, "general").await;
+
+    let req = authenticated_json_request(
+        Method::POST,
+        &format!("/api/v1/channels/{text_id}/voice/join"),
+        &alice.auth_header(),
+        &serde_json::json!({}),
+    );
+    let response = server.router().oneshot(req).await.unwrap();
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn test_voice_join_with_self_mute_and_deaf() {
+    let server = TestServer::new().await;
+    let alice = server.create_user_with_token("alice").await;
+    let space_id = server.create_space(&alice.user.id, "VoiceSpace").await;
+    let vc_id = server.create_voice_channel(&space_id, "voice-chat").await;
+
+    let req = authenticated_json_request(
+        Method::POST,
+        &format!("/api/v1/channels/{vc_id}/voice/join"),
+        &alice.auth_header(),
+        &serde_json::json!({ "self_mute": true, "self_deaf": true }),
+    );
+    let response = server.router().oneshot(req).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = parse_body(response).await;
+    assert_eq!(body["data"]["voice_state"]["self_mute"], true);
+    assert_eq!(body["data"]["voice_state"]["self_deaf"], true);
+}
+
+#[tokio::test]
+async fn test_voice_leave_after_join() {
+    let server = TestServer::new().await;
+    let alice = server.create_user_with_token("alice").await;
+    let space_id = server.create_space(&alice.user.id, "VoiceSpace").await;
+    let vc_id = server.create_voice_channel(&space_id, "voice-chat").await;
+
+    // Join first
+    let req = authenticated_json_request(
+        Method::POST,
+        &format!("/api/v1/channels/{vc_id}/voice/join"),
+        &alice.auth_header(),
+        &serde_json::json!({}),
+    );
+    let response = server.router().oneshot(req).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+
+    // Leave
+    let req = authenticated_request(
+        Method::DELETE,
+        &format!("/api/v1/channels/{vc_id}/voice/leave"),
+        &alice.auth_header(),
+    );
+    let response = server.router().oneshot(req).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = parse_body(response).await;
+    assert_eq!(body["data"]["ok"], true);
+}
+
+#[tokio::test]
+async fn test_voice_status_empty() {
+    let server = TestServer::new().await;
+    let alice = server.create_user_with_token("alice").await;
+    let space_id = server.create_space(&alice.user.id, "VoiceSpace").await;
+    let vc_id = server.create_voice_channel(&space_id, "voice-chat").await;
+
+    let req = authenticated_request(
+        Method::GET,
+        &format!("/api/v1/channels/{vc_id}/voice-status"),
+        &alice.auth_header(),
+    );
+    let response = server.router().oneshot(req).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = parse_body(response).await;
+    let states = body["data"].as_array().unwrap();
+    assert!(states.is_empty());
+}
+
+#[tokio::test]
+async fn test_voice_status_after_join() {
+    let server = TestServer::new().await;
+    let alice = server.create_user_with_token("alice").await;
+    let space_id = server.create_space(&alice.user.id, "VoiceSpace").await;
+    let vc_id = server.create_voice_channel(&space_id, "voice-chat").await;
+
+    // Join voice
+    let req = authenticated_json_request(
+        Method::POST,
+        &format!("/api/v1/channels/{vc_id}/voice/join"),
+        &alice.auth_header(),
+        &serde_json::json!({}),
+    );
+    let response = server.router().oneshot(req).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+
+    // Check status
+    let req = authenticated_request(
+        Method::GET,
+        &format!("/api/v1/channels/{vc_id}/voice-status"),
+        &alice.auth_header(),
+    );
+    let response = server.router().oneshot(req).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = parse_body(response).await;
+    let states = body["data"].as_array().unwrap();
+    assert_eq!(states.len(), 1);
+    assert_eq!(states[0]["user_id"], alice.user.id);
+    assert_eq!(states[0]["channel_id"], vc_id);
+}
+
+#[tokio::test]
+async fn test_voice_status_cleared_after_leave() {
+    let server = TestServer::new().await;
+    let alice = server.create_user_with_token("alice").await;
+    let space_id = server.create_space(&alice.user.id, "VoiceSpace").await;
+    let vc_id = server.create_voice_channel(&space_id, "voice-chat").await;
+
+    // Join
+    let req = authenticated_json_request(
+        Method::POST,
+        &format!("/api/v1/channels/{vc_id}/voice/join"),
+        &alice.auth_header(),
+        &serde_json::json!({}),
+    );
+    server.router().oneshot(req).await.unwrap();
+
+    // Leave
+    let req = authenticated_request(
+        Method::DELETE,
+        &format!("/api/v1/channels/{vc_id}/voice/leave"),
+        &alice.auth_header(),
+    );
+    server.router().oneshot(req).await.unwrap();
+
+    // Status should be empty again
+    let req = authenticated_request(
+        Method::GET,
+        &format!("/api/v1/channels/{vc_id}/voice-status"),
+        &alice.auth_header(),
+    );
+    let response = server.router().oneshot(req).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = parse_body(response).await;
+    let states = body["data"].as_array().unwrap();
+    assert!(states.is_empty());
+}
+
+#[tokio::test]
+async fn test_voice_regions_returns_data() {
+    let server = TestServer::new().await;
+    let alice = server.create_user_with_token("alice").await;
+    let space_id = server.create_space(&alice.user.id, "VoiceSpace").await;
+
+    let req = authenticated_request(
+        Method::GET,
+        &format!("/api/v1/spaces/{space_id}/voice-regions"),
+        &alice.auth_header(),
+    );
+    let response = server.router().oneshot(req).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = parse_body(response).await;
+    let regions = body["data"].as_array().unwrap();
+    assert!(!regions.is_empty());
+    assert_eq!(regions[0]["id"], "livekit");
+}
+
+#[tokio::test]
+async fn test_voice_join_non_member_forbidden() {
+    let server = TestServer::new().await;
+    let alice = server.create_user_with_token("alice").await;
+    let bob = server.create_user_with_token("bob").await;
+    let space_id = server.create_space(&alice.user.id, "VoiceSpace").await;
+    let vc_id = server.create_voice_channel(&space_id, "voice-chat").await;
+
+    // Bob (non-member) tries to join voice → 403
+    let req = authenticated_json_request(
+        Method::POST,
+        &format!("/api/v1/channels/{vc_id}/voice/join"),
+        &bob.auth_header(),
+        &serde_json::json!({}),
+    );
+    let response = server.router().oneshot(req).await.unwrap();
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn test_voice_leave_non_member_forbidden() {
+    let server = TestServer::new().await;
+    let alice = server.create_user_with_token("alice").await;
+    let bob = server.create_user_with_token("bob").await;
+    let space_id = server.create_space(&alice.user.id, "VoiceSpace").await;
+    let vc_id = server.create_voice_channel(&space_id, "voice-chat").await;
+
+    // Bob (non-member) tries to leave voice → 403
+    let req = authenticated_request(
+        Method::DELETE,
+        &format!("/api/v1/channels/{vc_id}/voice/leave"),
+        &bob.auth_header(),
+    );
+    let response = server.router().oneshot(req).await.unwrap();
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn test_voice_status_non_member_forbidden() {
+    let server = TestServer::new().await;
+    let alice = server.create_user_with_token("alice").await;
+    let bob = server.create_user_with_token("bob").await;
+    let space_id = server.create_space(&alice.user.id, "VoiceSpace").await;
+    let vc_id = server.create_voice_channel(&space_id, "voice-chat").await;
+
+    // Bob (non-member) tries to check voice status → 403
+    let req = authenticated_request(
+        Method::GET,
+        &format!("/api/v1/channels/{vc_id}/voice-status"),
+        &bob.auth_header(),
+    );
+    let response = server.router().oneshot(req).await.unwrap();
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn test_voice_regions_non_member_forbidden() {
+    let server = TestServer::new().await;
+    let alice = server.create_user_with_token("alice").await;
+    let bob = server.create_user_with_token("bob").await;
+    let space_id = server.create_space(&alice.user.id, "VoiceSpace").await;
+
+    // Bob (non-member) tries to list voice regions → 403
+    let req = authenticated_request(
+        Method::GET,
+        &format!("/api/v1/spaces/{space_id}/voice-regions"),
+        &bob.auth_header(),
+    );
+    let response = server.router().oneshot(req).await.unwrap();
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn test_voice_multiple_users_in_channel() {
+    let server = TestServer::new().await;
+    let alice = server.create_user_with_token("alice").await;
+    let bob = server.create_user_with_token("bob").await;
+    let space_id = server.create_space(&alice.user.id, "VoiceSpace").await;
+    server.add_member(&space_id, &bob.user.id).await;
+    let vc_id = server.create_voice_channel(&space_id, "voice-chat").await;
+
+    // Both join
+    let req = authenticated_json_request(
+        Method::POST,
+        &format!("/api/v1/channels/{vc_id}/voice/join"),
+        &alice.auth_header(),
+        &serde_json::json!({}),
+    );
+    server.router().oneshot(req).await.unwrap();
+
+    let req = authenticated_json_request(
+        Method::POST,
+        &format!("/api/v1/channels/{vc_id}/voice/join"),
+        &bob.auth_header(),
+        &serde_json::json!({}),
+    );
+    server.router().oneshot(req).await.unwrap();
+
+    // Status should show both users
+    let req = authenticated_request(
+        Method::GET,
+        &format!("/api/v1/channels/{vc_id}/voice-status"),
+        &alice.auth_header(),
+    );
+    let response = server.router().oneshot(req).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = parse_body(response).await;
+    let states = body["data"].as_array().unwrap();
+    assert_eq!(states.len(), 2);
+}
+
+#[tokio::test]
+async fn test_voice_join_unauthenticated() {
+    let server = TestServer::new().await;
+    let alice = server.create_user_with_token("alice").await;
+    let space_id = server.create_space(&alice.user.id, "VoiceSpace").await;
+    let vc_id = server.create_voice_channel(&space_id, "voice-chat").await;
+
+    // No auth header
+    let req = Request::builder()
+        .method(Method::POST)
+        .uri(format!("/api/v1/channels/{vc_id}/voice/join"))
+        .header("Content-Type", "application/json")
+        .body(Body::from(
+            serde_json::to_vec(&serde_json::json!({})).unwrap(),
+        ))
+        .unwrap();
+    let response = server.router().oneshot(req).await.unwrap();
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+}
+
+// ---------------------------------------------------------------------------
+// Avatar Upload Tests
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn test_user_avatar_upload() {
+    let server = TestServer::new().await;
+    let alice = server.create_user_with_token("alice").await;
+
+    let req = authenticated_json_request(
+        Method::PATCH,
+        "/api/v1/users/@me",
+        &alice.auth_header(),
+        &serde_json::json!({ "avatar": test_png_data_uri() }),
+    );
+    let response = server.router().oneshot(req).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = parse_body(response).await;
+    let avatar = body["data"]["avatar"].as_str().unwrap();
+    assert!(
+        avatar.starts_with("/cdn/avatars/"),
+        "avatar should be a CDN path, got: {avatar}"
+    );
+    assert!(avatar.ends_with(".png"), "avatar should end with .png");
+
+    // Verify the file exists on disk
+    let file_path = server
+        .state
+        .storage_path
+        .join(avatar.strip_prefix("/cdn/").unwrap());
+    assert!(file_path.exists(), "avatar file should exist on disk");
+}
+
+#[tokio::test]
+async fn test_user_avatar_replace() {
+    let server = TestServer::new().await;
+    let alice = server.create_user_with_token("alice").await;
+
+    // Upload first avatar
+    let req = authenticated_json_request(
+        Method::PATCH,
+        "/api/v1/users/@me",
+        &alice.auth_header(),
+        &serde_json::json!({ "avatar": test_png_data_uri() }),
+    );
+    let response = server.router().oneshot(req).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = parse_body(response).await;
+    let first_avatar = body["data"]["avatar"].as_str().unwrap().to_string();
+
+    let first_path = server
+        .state
+        .storage_path
+        .join(first_avatar.strip_prefix("/cdn/").unwrap());
+    assert!(first_path.exists(), "first avatar should exist");
+
+    // Upload replacement avatar
+    let req = authenticated_json_request(
+        Method::PATCH,
+        "/api/v1/users/@me",
+        &alice.auth_header(),
+        &serde_json::json!({ "avatar": test_png_data_uri() }),
+    );
+    let response = server.router().oneshot(req).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = parse_body(response).await;
+    let second_avatar = body["data"]["avatar"].as_str().unwrap().to_string();
+    assert!(second_avatar.starts_with("/cdn/avatars/"));
+
+    // New file should exist
+    let second_path = server
+        .state
+        .storage_path
+        .join(second_avatar.strip_prefix("/cdn/").unwrap());
+    assert!(second_path.exists(), "replacement avatar should exist");
+}
+
+#[tokio::test]
+async fn test_user_avatar_remove() {
+    let server = TestServer::new().await;
+    let alice = server.create_user_with_token("alice").await;
+
+    // Upload avatar
+    let req = authenticated_json_request(
+        Method::PATCH,
+        "/api/v1/users/@me",
+        &alice.auth_header(),
+        &serde_json::json!({ "avatar": test_png_data_uri() }),
+    );
+    let response = server.router().oneshot(req).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = parse_body(response).await;
+    let avatar_path = body["data"]["avatar"].as_str().unwrap().to_string();
+
+    let file_path = server
+        .state
+        .storage_path
+        .join(avatar_path.strip_prefix("/cdn/").unwrap());
+    assert!(
+        file_path.exists(),
+        "avatar file should exist before removal"
+    );
+
+    // Remove avatar by sending empty string
+    let req = authenticated_json_request(
+        Method::PATCH,
+        "/api/v1/users/@me",
+        &alice.auth_header(),
+        &serde_json::json!({ "avatar": "" }),
+    );
+    let response = server.router().oneshot(req).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = parse_body(response).await;
+    assert!(
+        body["data"]["avatar"].is_null(),
+        "avatar should be null after removal"
+    );
+
+    // Verify the file is deleted
+    assert!(
+        !file_path.exists(),
+        "avatar file should be deleted from disk"
+    );
+}
+
+#[tokio::test]
+async fn test_member_avatar_upload() {
+    let server = TestServer::new().await;
+    let alice = server.create_user_with_token("alice").await;
+    let space_id = server.create_space(&alice.user.id, "AvatarSpace").await;
+
+    // Upload member avatar via own member endpoint
+    let req = authenticated_json_request(
+        Method::PATCH,
+        &format!("/api/v1/spaces/{space_id}/members/@me"),
+        &alice.auth_header(),
+        &serde_json::json!({ "avatar": test_png_data_uri() }),
+    );
+    let response = server.router().oneshot(req).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = parse_body(response).await;
+    let avatar = body["data"]["avatar"].as_str().unwrap();
+    assert!(
+        avatar.starts_with("/cdn/avatars/"),
+        "member avatar should be a CDN path"
+    );
+    assert!(avatar.ends_with(".png"));
+}
+
+#[tokio::test]
+async fn test_list_members_with_user_embeds_public_user() {
+    let server = TestServer::new().await;
+    let alice = server.create_user_with_token("alice").await;
+    let bob = server.create_user_with_token("bob").await;
+    let space_id = server.create_space(&alice.user.id, "MembersSpace").await;
+    server.add_member(&space_id, &bob.user.id).await;
+
+    // Default: no embedded user object (clients fetch users separately).
+    let req = authenticated_request(
+        Method::GET,
+        &format!("/api/v1/spaces/{space_id}/members"),
+        &alice.auth_header(),
+    );
+    let response = server.router().oneshot(req).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = parse_body(response).await;
+    let members = body["data"].as_array().unwrap();
+    assert_eq!(members.len(), 2);
+    assert!(
+        members.iter().all(|m| m.get("user").is_none()),
+        "members must not embed a user object without with_user"
+    );
+
+    // with_user=true: each member carries its public user object, resolved in
+    // a single batched query.
+    let req = authenticated_request(
+        Method::GET,
+        &format!("/api/v1/spaces/{space_id}/members?with_user=true"),
+        &alice.auth_header(),
+    );
+    let response = server.router().oneshot(req).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = parse_body(response).await;
+    let members = body["data"].as_array().unwrap();
+    assert_eq!(members.len(), 2);
+
+    let usernames: Vec<String> = members
+        .iter()
+        .map(|m| {
+            let user = m.get("user").expect("member should embed a user object");
+            // Embedded user is the public shape — sensitive fields are stripped.
+            assert!(user.get("is_admin").is_none(), "must not leak is_admin");
+            assert!(
+                user.get("mfa_enabled").is_none(),
+                "must not leak mfa_enabled"
+            );
+            user["username"].as_str().unwrap().to_string()
+        })
+        .collect();
+    assert!(usernames.contains(&"alice".to_string()));
+    assert!(usernames.contains(&"bob".to_string()));
+}
+
+#[tokio::test]
+async fn test_space_icon_upload() {
+    let server = TestServer::new().await;
+    let alice = server.create_user_with_token("alice").await;
+    let space_id = server.create_space(&alice.user.id, "IconSpace").await;
+
+    let req = authenticated_json_request(
+        Method::PATCH,
+        &format!("/api/v1/spaces/{space_id}"),
+        &alice.auth_header(),
+        &serde_json::json!({ "icon": test_png_data_uri() }),
+    );
+    let response = server.router().oneshot(req).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = parse_body(response).await;
+    let icon = body["data"]["icon"].as_str().unwrap();
+    assert!(
+        icon.starts_with("/cdn/icons/"),
+        "space icon should be a CDN path, got: {icon}"
+    );
+    assert!(icon.ends_with(".png"));
+
+    // Verify the file exists on disk
+    let file_path = server
+        .state
+        .storage_path
+        .join(icon.strip_prefix("/cdn/").unwrap());
+    assert!(file_path.exists(), "icon file should exist on disk");
+}
+
+#[tokio::test]
+async fn test_avatar_invalid_format() {
+    let server = TestServer::new().await;
+    let alice = server.create_user_with_token("alice").await;
+
+    // Send an invalid data URI (text/plain instead of image)
+    let req = authenticated_json_request(
+        Method::PATCH,
+        "/api/v1/users/@me",
+        &alice.auth_header(),
+        &serde_json::json!({ "avatar": "data:text/plain;base64,SGVsbG8=" }),
+    );
+    let response = server.router().oneshot(req).await.unwrap();
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn test_avatar_too_large() {
+    let server = TestServer::new().await;
+    let alice = server.create_user_with_token("alice").await;
+
+    // Create a data URI that exceeds 2 MB
+    let large_data = vec![0u8; 3 * 1024 * 1024]; // 3 MB
+    let b64 = simple_base64_encode(&large_data);
+    let data_uri = format!("data:image/png;base64,{b64}");
+
+    let req = authenticated_json_request(
+        Method::PATCH,
+        "/api/v1/users/@me",
+        &alice.auth_header(),
+        &serde_json::json!({ "avatar": data_uri }),
+    );
+    let response = server.router().oneshot(req).await.unwrap();
+    assert_eq!(response.status(), StatusCode::PAYLOAD_TOO_LARGE);
+}
+
+#[tokio::test]
+async fn test_space_icon_remove() {
+    let server = TestServer::new().await;
+    let alice = server.create_user_with_token("alice").await;
+    let space_id = server.create_space(&alice.user.id, "IconSpace").await;
+
+    // Upload icon
+    let req = authenticated_json_request(
+        Method::PATCH,
+        &format!("/api/v1/spaces/{space_id}"),
+        &alice.auth_header(),
+        &serde_json::json!({ "icon": test_png_data_uri() }),
+    );
+    let response = server.router().oneshot(req).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = parse_body(response).await;
+    let icon_path = body["data"]["icon"].as_str().unwrap().to_string();
+
+    let file_path = server
+        .state
+        .storage_path
+        .join(icon_path.strip_prefix("/cdn/").unwrap());
+    assert!(file_path.exists(), "icon file should exist");
+
+    // Remove icon
+    let req = authenticated_json_request(
+        Method::PATCH,
+        &format!("/api/v1/spaces/{space_id}"),
+        &alice.auth_header(),
+        &serde_json::json!({ "icon": "" }),
+    );
+    let response = server.router().oneshot(req).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = parse_body(response).await;
+    assert!(
+        body["data"]["icon"].is_null(),
+        "icon should be null after removal"
+    );
+    assert!(!file_path.exists(), "icon file should be deleted");
+}
+
+#[tokio::test]
+async fn test_cdn_serves_avatar_image() {
+    let server = TestServer::new().await;
+    let alice = server.create_user_with_token("alice").await;
+
+    // Upload avatar
+    let req = authenticated_json_request(
+        Method::PATCH,
+        "/api/v1/users/@me",
+        &alice.auth_header(),
+        &serde_json::json!({ "avatar": test_png_data_uri() }),
+    );
+    let response = server.router().oneshot(req).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = parse_body(response).await;
+    let avatar_url = body["data"]["avatar"].as_str().unwrap().to_string();
+
+    // Fetch via CDN
+    let req = Request::builder()
+        .uri(&avatar_url)
+        .body(Body::empty())
+        .unwrap();
+    let response = server.router().oneshot(req).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    assert!(!bytes.is_empty(), "CDN should serve the avatar file");
+}
+
+// ---------------------------------------------------------------------------
+// Server settings tests
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn test_get_settings() {
+    let server = TestServer::new().await;
+    let alice = server.create_user_with_token("alice").await;
+
+    let req = authenticated_request(Method::GET, "/api/v1/settings", &alice.auth_header());
+    let response = server.router().oneshot(req).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = parse_body(response).await;
+    assert_eq!(body["data"]["max_emoji_size"], 262144);
+    assert_eq!(body["data"]["max_avatar_size"], 2097152);
+    assert_eq!(body["data"]["max_sound_size"], 2097152);
+    assert_eq!(body["data"]["max_attachment_size"], 26214400);
+    assert_eq!(body["data"]["max_attachments_per_message"], 10);
+}
+
+#[tokio::test]
+async fn test_update_settings_admin() {
+    let server = TestServer::new().await;
+    let admin = server.create_admin_with_token("admin").await;
+
+    let req = authenticated_json_request(
+        Method::PATCH,
+        "/api/v1/admin/settings",
+        &admin.auth_header(),
+        &serde_json::json!({
+            "max_emoji_size": 512000,
+            "max_attachments_per_message": 5
+        }),
+    );
+    let response = server.router().oneshot(req).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = parse_body(response).await;
+    assert_eq!(body["data"]["max_emoji_size"], 512000);
+    assert_eq!(body["data"]["max_attachments_per_message"], 5);
+    // Unchanged fields keep defaults
+    assert_eq!(body["data"]["max_avatar_size"], 2097152);
+}
+
+#[tokio::test]
+async fn test_update_settings_non_admin_forbidden() {
+    let server = TestServer::new().await;
+    let alice = server.create_user_with_token("alice").await;
+
+    let req = authenticated_json_request(
+        Method::PATCH,
+        "/api/v1/admin/settings",
+        &alice.auth_header(),
+        &serde_json::json!({ "max_emoji_size": 512000 }),
+    );
+    let response = server.router().oneshot(req).await.unwrap();
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn test_upload_respects_custom_limit() {
+    let server = TestServer::new().await;
+    let admin = server.create_admin_with_token("admin").await;
+    let space_id = server.create_space(&admin.user.id, "test-space").await;
+
+    // Lower the emoji limit to 10 bytes
+    let req = authenticated_json_request(
+        Method::PATCH,
+        "/api/v1/admin/settings",
+        &admin.auth_header(),
+        &serde_json::json!({ "max_emoji_size": 10 }),
+    );
+    let response = server.router().oneshot(req).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+
+    // Attempt to upload an emoji (the PNG is larger than 10 bytes)
+    let req = authenticated_json_request(
+        Method::POST,
+        &format!("/api/v1/spaces/{space_id}/emojis"),
+        &admin.auth_header(),
+        &serde_json::json!({
+            "name": "test_emoji",
+            "image": test_png_data_uri()
+        }),
+    );
+    let response = server.router().oneshot(req).await.unwrap();
+    assert_eq!(response.status(), StatusCode::PAYLOAD_TOO_LARGE);
+}
+
+// ---------------------------------------------------------------------------
+// Attachment upload regression test (GitHub issue #9)
+//
+// Verifies that the URL returned by POST /channels/{id}/messages/upload
+// resolves to a file that is actually served by /cdn. Previously the URL in
+// the response could disagree with the on-disk path (different filename
+// sanitization, or — under client-side message ID confusion — a different
+// directory name entirely) causing the client to get a 404 when fetching
+// an image it had just successfully uploaded.
+// ---------------------------------------------------------------------------
+
+fn tiny_png_bytes() -> Vec<u8> {
+    vec![
+        0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44,
+        0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x02, 0x00, 0x00, 0x00, 0x90,
+        0x77, 0x53, 0xDE, 0x00, 0x00, 0x00, 0x0C, 0x49, 0x44, 0x41, 0x54, 0x08, 0xD7, 0x63, 0xF8,
+        0xCF, 0xC0, 0x00, 0x00, 0x00, 0x02, 0x00, 0x01, 0xE2, 0x21, 0xBC, 0x33, 0x00, 0x00, 0x00,
+        0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82,
+    ]
+}
+
+#[tokio::test]
+async fn test_attachment_upload_url_resolves_via_cdn() {
+    let server = TestServer::new().await;
+    let alice = server.create_user_with_token("alice").await;
+    let space_id = server.create_space(&alice.user.id, "AttachSpace").await;
+    let channel_id = server.create_channel(&space_id, "general").await;
+
+    let png_bytes = tiny_png_bytes();
+
+    let boundary = "----accordtestboundary";
+    let body = build_multipart_upload_body(
+        boundary,
+        &serde_json::json!({ "content": "look at this picture" }),
+        "image.png",
+        "image/png",
+        &png_bytes,
+    );
+
+    let req = Request::builder()
+        .method(Method::POST)
+        .uri(format!("/api/v1/channels/{channel_id}/messages/upload"))
+        .header("Authorization", alice.auth_header())
+        .header(
+            "Content-Type",
+            format!("multipart/form-data; boundary={boundary}"),
+        )
+        .body(Body::from(body))
+        .unwrap();
+
+    let response = server.router().oneshot(req).await.unwrap();
+    assert_eq!(
+        response.status(),
+        StatusCode::OK,
+        "multipart upload should succeed"
+    );
+    let upload_body = parse_body(response).await;
+
+    let attachments = upload_body["data"]["attachments"]
+        .as_array()
+        .expect("response should include attachments array");
+    assert_eq!(attachments.len(), 1);
+    let url = attachments[0]["url"]
+        .as_str()
+        .expect("attachment should have a url")
+        .to_string();
+    assert!(
+        url.starts_with("/cdn/attachments/"),
+        "unexpected url shape: {url}"
+    );
+
+    // The URL the client just received must resolve via /cdn. This is the
+    // exact failure mode reported in issue #9: upload returns 200 but the
+    // subsequent GET returns 404 because the URL points to a different
+    // path than where the file was actually written.
+    let cdn_req = Request::builder()
+        .method(Method::GET)
+        .uri(&url)
+        .body(Body::empty())
+        .unwrap();
+    let cdn_response = server.router().oneshot(cdn_req).await.unwrap();
+    assert_eq!(
+        cdn_response.status(),
+        StatusCode::OK,
+        "uploaded attachment URL {url} did not resolve"
+    );
+    let served = axum::body::to_bytes(cdn_response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    assert_eq!(&served[..], &png_bytes[..]);
+}
+
+#[tokio::test]
+async fn test_attachment_upload_url_resolves_with_special_filename() {
+    // A filename with characters that get rewritten by the server's
+    // sanitizer (spaces, parentheses) must still produce a URL the client
+    // can resolve. Previously the response URL used the raw filename while
+    // the file on disk used the sanitized filename, producing a 404.
+    let server = TestServer::new().await;
+    let alice = server.create_user_with_token("alice").await;
+    let space_id = server.create_space(&alice.user.id, "AttachSpace").await;
+    let channel_id = server.create_channel(&space_id, "general").await;
+
+    let png_bytes = tiny_png_bytes();
+
+    let boundary = "----accordtestboundary2";
+    let body = build_multipart_upload_body(
+        boundary,
+        &serde_json::json!({ "content": "with spaces" }),
+        "my photo (1).png",
+        "image/png",
+        &png_bytes,
+    );
+
+    let req = Request::builder()
+        .method(Method::POST)
+        .uri(format!("/api/v1/channels/{channel_id}/messages/upload"))
+        .header("Authorization", alice.auth_header())
+        .header(
+            "Content-Type",
+            format!("multipart/form-data; boundary={boundary}"),
+        )
+        .body(Body::from(body))
+        .unwrap();
+
+    let response = server.router().oneshot(req).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let upload_body = parse_body(response).await;
+    let url = upload_body["data"]["attachments"][0]["url"]
+        .as_str()
+        .expect("attachment should have a url")
+        .to_string();
+
+    let cdn_req = Request::builder()
+        .method(Method::GET)
+        .uri(&url)
+        .body(Body::empty())
+        .unwrap();
+    let cdn_response = server.router().oneshot(cdn_req).await.unwrap();
+    assert_eq!(
+        cdn_response.status(),
+        StatusCode::OK,
+        "URL {url} returned by upload did not resolve via /cdn"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Member timeout (#33)
+// ---------------------------------------------------------------------------
+
+const FUTURE_TS: &str = "2999-01-01T00:00:00Z";
+const PAST_TS: &str = "2000-01-01T00:00:00Z";
+
+#[tokio::test]
+async fn test_member_timeout_persists_and_blocks_then_clears() {
+    let server = TestServer::new().await;
+    let alice = server.create_user_with_token("alice").await; // owner
+    let bob = server.create_user_with_token("bob").await;
+    let space_id = server.create_space(&alice.user.id, "Space").await;
+    let channel_id = server.create_channel(&space_id, "general").await;
+    server.add_member(&space_id, &bob.user.id).await;
+
+    // Owner sets a future timeout on bob.
+    let req = authenticated_json_request(
+        Method::PATCH,
+        &format!("/api/v1/spaces/{space_id}/members/{}", bob.user.id),
+        &alice.auth_header(),
+        &serde_json::json!({ "communication_disabled_until": FUTURE_TS }),
+    );
+    let response = server.router().oneshot(req).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = parse_body(response).await;
+    assert!(
+        body["data"]["timed_out_until"].as_str().is_some(),
+        "timeout should be persisted and returned"
+    );
+
+    // Bob is blocked from sending messages while timed out.
+    let req = authenticated_json_request(
+        Method::POST,
+        &format!("/api/v1/channels/{channel_id}/messages"),
+        &bob.auth_header(),
+        &serde_json::json!({ "content": "hello" }),
+    );
+    let response = server.router().oneshot(req).await.unwrap();
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+
+    // Bob is also blocked from reactions.
+    // (Send a message as the owner first so there's something to react to.)
+    let req = authenticated_json_request(
+        Method::POST,
+        &format!("/api/v1/channels/{channel_id}/messages"),
+        &alice.auth_header(),
+        &serde_json::json!({ "content": "owner msg" }),
+    );
+    let response = server.router().oneshot(req).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let msg_id = parse_body(response).await["data"]["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let req = authenticated_request(
+        Method::PUT,
+        &format!("/api/v1/channels/{channel_id}/messages/{msg_id}/reactions/%F0%9F%91%8D/@me"),
+        &bob.auth_header(),
+    );
+    let response = server.router().oneshot(req).await.unwrap();
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+
+    // Clearing the timeout with an explicit null restores access.
+    let req = authenticated_json_request(
+        Method::PATCH,
+        &format!("/api/v1/spaces/{space_id}/members/{}", bob.user.id),
+        &alice.auth_header(),
+        &serde_json::json!({ "communication_disabled_until": serde_json::Value::Null }),
+    );
+    let response = server.router().oneshot(req).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = parse_body(response).await;
+    assert!(body["data"]["timed_out_until"].is_null());
+
+    // Bob can now send again.
+    let req = authenticated_json_request(
+        Method::POST,
+        &format!("/api/v1/channels/{channel_id}/messages"),
+        &bob.auth_header(),
+        &serde_json::json!({ "content": "back" }),
+    );
+    let response = server.router().oneshot(req).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn test_member_timeout_requires_moderate_permission() {
+    let server = TestServer::new().await;
+    let alice = server.create_user_with_token("alice").await; // owner
+    let bob = server.create_user_with_token("bob").await;
+    let carol = server.create_user_with_token("carol").await;
+    let space_id = server.create_space(&alice.user.id, "Space").await;
+    server.add_member(&space_id, &bob.user.id).await;
+    server.add_member(&space_id, &carol.user.id).await;
+
+    // Bob (a plain member without moderate_members) cannot time out carol.
+    let req = authenticated_json_request(
+        Method::PATCH,
+        &format!("/api/v1/spaces/{space_id}/members/{}", carol.user.id),
+        &bob.auth_header(),
+        &serde_json::json!({ "communication_disabled_until": FUTURE_TS }),
+    );
+    let response = server.router().oneshot(req).await.unwrap();
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn test_member_timeout_expired_does_not_block() {
+    let server = TestServer::new().await;
+    let alice = server.create_user_with_token("alice").await; // owner
+    let bob = server.create_user_with_token("bob").await;
+    let space_id = server.create_space(&alice.user.id, "Space").await;
+    let channel_id = server.create_channel(&space_id, "general").await;
+    server.add_member(&space_id, &bob.user.id).await;
+
+    // A timeout in the past is already expired and must not block.
+    let req = authenticated_json_request(
+        Method::PATCH,
+        &format!("/api/v1/spaces/{space_id}/members/{}", bob.user.id),
+        &alice.auth_header(),
+        &serde_json::json!({ "communication_disabled_until": PAST_TS }),
+    );
+    let response = server.router().oneshot(req).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let req = authenticated_json_request(
+        Method::POST,
+        &format!("/api/v1/channels/{channel_id}/messages"),
+        &bob.auth_header(),
+        &serde_json::json!({ "content": "still works" }),
+    );
+    let response = server.router().oneshot(req).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn test_member_timeout_rejects_invalid_timestamp() {
+    let server = TestServer::new().await;
+    let alice = server.create_user_with_token("alice").await;
+    let bob = server.create_user_with_token("bob").await;
+    let space_id = server.create_space(&alice.user.id, "Space").await;
+    server.add_member(&space_id, &bob.user.id).await;
+
+    let req = authenticated_json_request(
+        Method::PATCH,
+        &format!("/api/v1/spaces/{space_id}/members/{}", bob.user.id),
+        &alice.auth_header(),
+        &serde_json::json!({ "communication_disabled_until": "not-a-date" }),
+    );
+    let response = server.router().oneshot(req).await.unwrap();
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn test_member_timeout_blocks_voice_join() {
+    let server = TestServer::new().await;
+    let alice = server.create_user_with_token("alice").await; // owner
+    let bob = server.create_user_with_token("bob").await;
+    let space_id = server.create_space(&alice.user.id, "Space").await;
+    let vc_id = server.create_voice_channel(&space_id, "voice").await;
+    server.add_member(&space_id, &bob.user.id).await;
+
+    let req = authenticated_json_request(
+        Method::PATCH,
+        &format!("/api/v1/spaces/{space_id}/members/{}", bob.user.id),
+        &alice.auth_header(),
+        &serde_json::json!({ "communication_disabled_until": FUTURE_TS }),
+    );
+    let response = server.router().oneshot(req).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let req = authenticated_json_request(
+        Method::POST,
+        &format!("/api/v1/channels/{vc_id}/voice/join"),
+        &bob.auth_header(),
+        &serde_json::json!({}),
+    );
+    let response = server.router().oneshot(req).await.unwrap();
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+}
+
+// ---------------------------------------------------------------------------
+// DM voice calls + signaling (#32)
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn test_voice_join_dm_channel_success() {
+    let server = TestServer::new().await;
+    let alice = server.create_user_with_token("alice").await;
+    let bob = server.create_user_with_token("bob").await;
+    let dm_id = server.create_dm(&alice.user.id, &bob.user.id).await;
+
+    let req = authenticated_json_request(
+        Method::POST,
+        &format!("/api/v1/channels/{dm_id}/voice/join"),
+        &alice.auth_header(),
+        &serde_json::json!({}),
+    );
+    let response = server.router().oneshot(req).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = parse_body(response).await;
+    let data = &body["data"];
+    assert_eq!(data["backend"], "livekit");
+    assert_eq!(data["voice_state"]["channel_id"], dm_id);
+    assert!(data["voice_state"]["space_id"].is_null());
+    assert!(data["token"].as_str().is_some());
+}
+
+#[tokio::test]
+async fn test_voice_join_dm_non_participant_rejected() {
+    let server = TestServer::new().await;
+    let alice = server.create_user_with_token("alice").await;
+    let bob = server.create_user_with_token("bob").await;
+    let carol = server.create_user_with_token("carol").await;
+    let dm_id = server.create_dm(&alice.user.id, &bob.user.id).await;
+
+    let req = authenticated_json_request(
+        Method::POST,
+        &format!("/api/v1/channels/{dm_id}/voice/join"),
+        &carol.auth_header(),
+        &serde_json::json!({}),
+    );
+    let response = server.router().oneshot(req).await.unwrap();
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn test_call_ring_dm_success() {
+    let server = TestServer::new().await;
+    let alice = server.create_user_with_token("alice").await;
+    let bob = server.create_user_with_token("bob").await;
+    let dm_id = server.create_dm(&alice.user.id, &bob.user.id).await;
+
+    let req = authenticated_json_request(
+        Method::POST,
+        &format!("/api/v1/channels/{dm_id}/call/ring"),
+        &alice.auth_header(),
+        &serde_json::json!({}),
+    );
+    let response = server.router().oneshot(req).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn test_call_ring_non_dm_rejected() {
+    let server = TestServer::new().await;
+    let alice = server.create_user_with_token("alice").await;
+    let space_id = server.create_space(&alice.user.id, "Space").await;
+    let channel_id = server.create_channel(&space_id, "general").await;
+
+    let req = authenticated_json_request(
+        Method::POST,
+        &format!("/api/v1/channels/{channel_id}/call/ring"),
+        &alice.auth_header(),
+        &serde_json::json!({}),
+    );
+    let response = server.router().oneshot(req).await.unwrap();
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn test_call_decline_and_cancel_dm() {
+    let server = TestServer::new().await;
+    let alice = server.create_user_with_token("alice").await;
+    let bob = server.create_user_with_token("bob").await;
+    let dm_id = server.create_dm(&alice.user.id, &bob.user.id).await;
+
+    let req = authenticated_request(
+        Method::POST,
+        &format!("/api/v1/channels/{dm_id}/call/decline"),
+        &bob.auth_header(),
+    );
+    let response = server.router().oneshot(req).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let req = authenticated_request(
+        Method::POST,
+        &format!("/api/v1/channels/{dm_id}/call/cancel"),
+        &alice.auth_header(),
+    );
+    let response = server.router().oneshot(req).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+}
+
+// -------------------------------------------------------------------------
+// Report categories (ChunchunOwO/vokusz#204)
+// -------------------------------------------------------------------------
+
+#[tokio::test]
+async fn test_list_report_categories() {
+    let app = common::test_app().await;
+    let req = Request::builder()
+        .uri("/api/v1/reports/categories")
+        .body(Body::empty())
+        .unwrap();
+    let response = app.oneshot(req).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let body = parse_body(response).await;
+    let values: Vec<&str> = body["data"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| c["value"].as_str().unwrap())
+        .collect();
+
+    for expected in [
+        "spam",
+        "harassment",
+        "hate",
+        "nsfw",
+        "violence",
+        "self_harm",
+        "csam",
+        "terrorism",
+        "fraud",
+        "other",
+    ] {
+        assert!(values.contains(&expected), "missing category {expected}");
+    }
+    // Every category must carry a display label for the report dialog.
+    for c in body["data"].as_array().unwrap() {
+        assert!(!c["label"].as_str().unwrap().is_empty());
+    }
+}
+
+// Every category the server advertises must actually be accepted by
+// create_report, and the legacy `hate_speech` spelling must normalise to
+// `hate` rather than 400.
+#[tokio::test]
+async fn test_report_accepts_every_advertised_category() {
+    let server = TestServer::new().await;
+    let alice = server.create_user_with_token("alice").await;
+    let space_id = server.create_space(&alice.user.id, "Alice's Space").await;
+    let channel_id = server.create_channel(&space_id, "general").await;
+
+    let req = authenticated_json_request(
+        Method::POST,
+        &format!("/api/v1/channels/{channel_id}/messages"),
+        &alice.auth_header(),
+        &serde_json::json!({ "content": "message to report" }),
+    );
+    let response = server.router().oneshot(req).await.unwrap();
+    let msg_id = parse_body(response).await["data"]["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    let req = Request::builder()
+        .uri("/api/v1/reports/categories")
+        .body(Body::empty())
+        .unwrap();
+    let response = server.router().oneshot(req).await.unwrap();
+    let listed = parse_body(response).await;
+    let mut categories: Vec<String> = listed["data"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| c["value"].as_str().unwrap().to_string())
+        .collect();
+    categories.push("hate_speech".to_string());
+
+    for category in categories {
+        let req = authenticated_json_request(
+            Method::POST,
+            &format!("/api/v1/spaces/{space_id}/reports"),
+            &alice.auth_header(),
+            &serde_json::json!({
+                "target_type": "message",
+                "target_id": msg_id,
+                "category": category,
+            }),
+        );
+        let response = server.router().oneshot(req).await.unwrap();
+        assert_eq!(
+            response.status(),
+            StatusCode::OK,
+            "category {category} was rejected"
+        );
+
+        let stored = parse_body(response).await["data"]["category"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        let expected = if category == "hate_speech" {
+            "hate"
+        } else {
+            &category
+        };
+        assert_eq!(stored, expected, "category {category} stored as {stored}");
+    }
+}
+
+#[tokio::test]
+async fn test_report_unknown_category_rejected() {
+    let server = TestServer::new().await;
+    let alice = server.create_user_with_token("alice").await;
+    let space_id = server.create_space(&alice.user.id, "Alice's Space").await;
+    let channel_id = server.create_channel(&space_id, "general").await;
+
+    let req = authenticated_json_request(
+        Method::POST,
+        &format!("/api/v1/channels/{channel_id}/messages"),
+        &alice.auth_header(),
+        &serde_json::json!({ "content": "message to report" }),
+    );
+    let response = server.router().oneshot(req).await.unwrap();
+    let msg_id = parse_body(response).await["data"]["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    let req = authenticated_json_request(
+        Method::POST,
+        &format!("/api/v1/spaces/{space_id}/reports"),
+        &alice.auth_header(),
+        &serde_json::json!({
+            "target_type": "message",
+            "target_id": msg_id,
+            "category": "not_a_category",
+        }),
+    );
+    let response = server.router().oneshot(req).await.unwrap();
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+}
+
+/// A report filed from a DM has no space to belong to: it is stored without
+/// one, so it can reach the instance operator instead of a moderator team that
+/// does not exist for that conversation.
+#[tokio::test]
+async fn test_direct_report_from_a_dm_has_no_space() {
+    let server = TestServer::new().await;
+    let alice = server.create_user_with_token("alice").await;
+    let bob = server.create_user_with_token("bob").await;
+    let dm_id = server.create_dm(&bob.user.id, &alice.user.id).await;
+
+    let req = authenticated_json_request(
+        Method::POST,
+        &format!("/api/v1/channels/{dm_id}/messages"),
+        &bob.auth_header(),
+        &serde_json::json!({ "content": "you are a waste of space" }),
+    );
+    let response = server.router().oneshot(req).await.unwrap();
+    let msg_id = parse_body(response).await["data"]["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    let req = authenticated_json_request(
+        Method::POST,
+        "/api/v1/reports",
+        &alice.auth_header(),
+        &serde_json::json!({
+            "target_type": "message",
+            "target_id": msg_id,
+            "channel_id": dm_id,
+            "category": "harassment",
+        }),
+    );
+    let response = server.router().oneshot(req).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let body = parse_body(response).await;
+    assert!(
+        body["data"]["space_id"].is_null(),
+        "a DM report must not be attributed to a space: {}",
+        body["data"]
+    );
+    assert_eq!(body["data"]["status"], "pending");
+    assert_eq!(body["data"]["reporter_id"], alice.user.id);
+}
+
+/// Reporting a user with no channel at all — the "Report user" action from a
+/// profile opened outside any space.
+#[tokio::test]
+async fn test_direct_report_of_a_user_without_a_channel() {
+    let server = TestServer::new().await;
+    let alice = server.create_user_with_token("alice").await;
+    let bob = server.create_user_with_token("bob").await;
+
+    let req = authenticated_json_request(
+        Method::POST,
+        "/api/v1/reports",
+        &alice.auth_header(),
+        &serde_json::json!({
+            "target_type": "user",
+            "target_id": bob.user.id,
+            "category": "harassment",
+        }),
+    );
+    let response = server.router().oneshot(req).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = parse_body(response).await;
+    assert!(body["data"]["space_id"].is_null());
+    assert_eq!(body["data"]["target_id"], bob.user.id);
+}
+
+/// Membership cannot gate this route, so channel read access does: naming
+/// someone else's DM must not file a report about it.
+#[tokio::test]
+async fn test_direct_report_rejects_a_channel_the_reporter_cannot_read() {
+    let server = TestServer::new().await;
+    let alice = server.create_user_with_token("alice").await;
+    let bob = server.create_user_with_token("bob").await;
+    let carol = server.create_user_with_token("carol").await;
+    let dm_id = server.create_dm(&bob.user.id, &alice.user.id).await;
+
+    let req = authenticated_json_request(
+        Method::POST,
+        &format!("/api/v1/channels/{dm_id}/messages"),
+        &bob.auth_header(),
+        &serde_json::json!({ "content": "private" }),
+    );
+    let response = server.router().oneshot(req).await.unwrap();
+    let msg_id = parse_body(response).await["data"]["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    let req = authenticated_json_request(
+        Method::POST,
+        "/api/v1/reports",
+        &carol.auth_header(),
+        &serde_json::json!({
+            "target_type": "message",
+            "target_id": msg_id,
+            "channel_id": dm_id,
+            "category": "harassment",
+        }),
+    );
+    let response = server.router().oneshot(req).await.unwrap();
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+}
+
+/// A channel that turns out to belong to a space routes to that space's
+/// moderators rather than disappearing into the operator queue.
+#[tokio::test]
+async fn test_direct_report_of_a_space_channel_is_attributed_to_the_space() {
+    let server = TestServer::new().await;
+    let alice = server.create_user_with_token("alice").await;
+    let space_id = server.create_space(&alice.user.id, "Alice's Space").await;
+    let channel_id = server.create_channel(&space_id, "general").await;
+
+    let req = authenticated_json_request(
+        Method::POST,
+        &format!("/api/v1/channels/{channel_id}/messages"),
+        &alice.auth_header(),
+        &serde_json::json!({ "content": "message to report" }),
+    );
+    let response = server.router().oneshot(req).await.unwrap();
+    let msg_id = parse_body(response).await["data"]["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    let req = authenticated_json_request(
+        Method::POST,
+        "/api/v1/reports",
+        &alice.auth_header(),
+        &serde_json::json!({
+            "target_type": "message",
+            "target_id": msg_id,
+            "channel_id": channel_id,
+            "category": "spam",
+        }),
+    );
+    let response = server.router().oneshot(req).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(parse_body(response).await["data"]["space_id"], space_id);
+}
+
+#[tokio::test]
+async fn test_direct_report_rejects_an_unknown_category() {
+    let server = TestServer::new().await;
+    let alice = server.create_user_with_token("alice").await;
+    let bob = server.create_user_with_token("bob").await;
+
+    let req = authenticated_json_request(
+        Method::POST,
+        "/api/v1/reports",
+        &alice.auth_header(),
+        &serde_json::json!({
+            "target_type": "user",
+            "target_id": bob.user.id,
+            "category": "not_a_category",
+        }),
+    );
+    let response = server.router().oneshot(req).await.unwrap();
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+}
+
+/// The queue that makes a space-less report actionable. Per-space queues cannot
+/// show one, so without this the client's promise that the report reaches the
+/// server operator would be empty.
+#[tokio::test]
+async fn test_admin_report_queue_serves_space_less_reports() {
+    let server = TestServer::new().await;
+    let admin = server.create_admin_with_token("root").await;
+    let alice = server.create_user_with_token("alice").await;
+    let bob = server.create_user_with_token("bob").await;
+    let dm_id = server.create_dm(&bob.user.id, &alice.user.id).await;
+
+    let req = authenticated_json_request(
+        Method::POST,
+        &format!("/api/v1/channels/{dm_id}/messages"),
+        &bob.auth_header(),
+        &serde_json::json!({ "content": "abuse" }),
+    );
+    let response = server.router().oneshot(req).await.unwrap();
+    let msg_id = parse_body(response).await["data"]["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    let req = authenticated_json_request(
+        Method::POST,
+        "/api/v1/reports",
+        &alice.auth_header(),
+        &serde_json::json!({
+            "target_type": "message",
+            "target_id": msg_id,
+            "channel_id": dm_id,
+            "category": "harassment",
+        }),
+    );
+    let response = server.router().oneshot(req).await.unwrap();
+    let report_id = parse_body(response).await["data"]["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    // A space report, to prove the scope filter separates the two.
+    let space_id = server.create_space(&alice.user.id, "Alice's Space").await;
+    let req = authenticated_json_request(
+        Method::POST,
+        &format!("/api/v1/spaces/{space_id}/reports"),
+        &alice.auth_header(),
+        &serde_json::json!({
+            "target_type": "user",
+            "target_id": bob.user.id,
+            "category": "spam",
+        }),
+    );
+    let response = server.router().oneshot(req).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let req = authenticated_request(
+        Method::GET,
+        "/api/v1/admin/reports?scope=direct",
+        &admin.auth_header(),
+    );
+    let response = server.router().oneshot(req).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let listed = parse_body(response).await;
+    let ids: Vec<String> = listed["data"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| r["id"].as_str().unwrap().to_string())
+        .collect();
+    assert_eq!(
+        ids,
+        vec![report_id.clone()],
+        "scope=direct must return only the report with no space"
+    );
+
+    let req = authenticated_request(Method::GET, "/api/v1/admin/reports", &admin.auth_header());
+    let response = server.router().oneshot(req).await.unwrap();
+    assert_eq!(
+        parse_body(response).await["data"].as_array().unwrap().len(),
+        2
+    );
+
+    // Resolving it is the operator's half of the promise.
+    let req = authenticated_json_request(
+        Method::PATCH,
+        &format!("/api/v1/admin/reports/{report_id}"),
+        &admin.auth_header(),
+        &serde_json::json!({ "status": "actioned", "action_taken": "account suspended" }),
+    );
+    let response = server.router().oneshot(req).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = parse_body(response).await;
+    assert_eq!(body["data"]["status"], "actioned");
+    assert_eq!(body["data"]["actioned_by"], admin.user.id);
+}
+
+#[tokio::test]
+async fn test_admin_report_queue_refuses_a_non_admin() {
+    let server = TestServer::new().await;
+    let alice = server.create_user_with_token("alice").await;
+
+    let req = authenticated_request(Method::GET, "/api/v1/admin/reports", &alice.auth_header());
+    let response = server.router().oneshot(req).await.unwrap();
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+
+    let req = authenticated_json_request(
+        Method::PATCH,
+        "/api/v1/admin/reports/123",
+        &alice.auth_header(),
+        &serde_json::json!({ "status": "dismissed" }),
+    );
+    let response = server.router().oneshot(req).await.unwrap();
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+}

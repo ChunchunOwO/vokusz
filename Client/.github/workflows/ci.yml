@@ -1,0 +1,761 @@
+name: CI
+
+# Continuous integration for the Vokusz Flutter client.
+#
+# - `analyze`  : code generation + static analysis + unit tests (the gate).
+#                Runs on every push/PR — this is what blocks merges.
+# - `accordkit` / `markdown-viewer`: blocking full suites for the vendored
+#                protocol and rendering packages.
+# - `livekit-android`: blocking native unit tests for the supported Android
+#                plugin seam.
+# - `protocol-integration`: blocking accordkit↔accordserver REST/gateway seam
+#                against an immutable server fixture image.
+# - `integration`: client↔accordserver end-to-end tests against the ghcr.io
+#                server image. GitHub-hosted — it needs docker, which the
+#                self-hosted runners don't have (see the job's note).
+#                Non-blocking (continue-on-error) so a server-side problem
+#                can't wedge merges; see integration/README.md.
+# - `ui-e2e`   : the real app driven on Linux under xvfb against the same
+#                server image. GitHub-hosted (see the job's own note) and also
+#                non-blocking; see integration_test/README.md.
+# - `multi-instance`: two real app processes driven over the in-app MCP
+#                surface, against the same server image. Non-blocking; the
+#                most expensive suite (release build + two apps).
+#                See multi_instance/README.md.
+# - `livekit-sfu`: manual/advisory two-process voice run against a real SFU;
+#                enable it from workflow_dispatch with the livekit_sfu input.
+# - `build`    : release builds for Web (JavaScript) / Android / Linux /
+#                Windows, uploaded as artifacts. Only runs on manual
+#                `workflow_dispatch` — PRs
+#                don't need four release builds to merge, and tagged releases
+#                build every platform themselves in release.yml.
+#
+# This workflow is also `workflow_call`-able so the Release workflow can reuse
+# the analyze/test gate (see release.yml).
+
+on:
+  push:
+    # Keep direct pushes to master (and every other branch) in the trigger
+    # contract instead of relying on the implicit branch default.
+    branches:
+      - "**"
+    # Tag pushes are handled by release.yml, which calls this workflow via
+    # workflow_call — without this, a release tag would trigger CI twice.
+    tags-ignore:
+      - "**"
+  pull_request:
+  workflow_call:
+    inputs:
+      build_artifacts:
+        description: Build smoke-test artifacts in addition to the test gate
+        type: boolean
+        default: false
+  workflow_dispatch:
+    inputs:
+      build_artifacts:
+        description: Build Web, Android, Linux, and Windows smoke-test artifacts
+        type: boolean
+        default: true
+      livekit_sfu:
+        description: Run the advisory real-LiveKit two-client voice fixture
+        required: false
+        type: boolean
+        default: false
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  # Channel used by the *build* job below. The *analyze* job now matrix-tests
+  # both beta and stable (see strategy.matrix.channel), so it ignores this.
+  # Keep in sync with .fvmrc and release.yml.
+  FLUTTER_CHANNEL: beta
+  # Workspace-local pub cache so actions/cache can persist it (incl. the
+  # flutter_webrtc git checkout + its downloaded libwebrtc binary).
+  PUB_CACHE: ${{ github.workspace }}/.pub-cache
+  # Reviewed accordserver fixture. Update this and the default in
+  # integration/support/accord_test_server.dart together, after the blocking
+  # protocol suite passes against the candidate image.
+  ACCORD_SERVER_IMAGE: ghcr.io/chunchunowo/vokusz-server@sha256:9f76756599fded6ec3f8b5f9638ed436e3ff73b96df24afd880c40673da8acf2
+  # Reviewed SFU fixture for the opt-in real-media job. Never replace this with
+  # a mutable tag; keep it in sync with accord_test_server.dart.
+  ACCORD_TEST_LIVEKIT_IMAGE: livekit/livekit-server@sha256:9e34703b97ceb9f622bcbb533107e4786c7aa65966f0494966a452ad41a0c0d4
+
+jobs:
+  release-tools:
+    name: Release tooling
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1.321.0
+        with:
+          ruby-version: '3.3'
+          bundler-cache: true
+
+      - name: Verify Mac upload metadata isolation
+        run: bundle exec ruby fastlane/test/mac_upload_metadata_test.rb
+
+      - name: Verify package manifest generation
+        run: python3 -m unittest discover -s test/packaging -p 'test_*.py'
+
+  analyze:
+    name: Analyze & Test (${{ matrix.channel }})
+    runs-on: ubuntu-latest
+    strategy:
+      # Run every channel even if one fails, so a stable-only break and a
+      # beta-only break are both reported in the same run.
+      fail-fast: false
+      matrix:
+        # Gate on both the pinned dev channel (.fvmrc) AND stable. A widget/SDK
+        # API that diverges between channels — e.g. ReorderableListView's
+        # onReorder vs onReorderItem (#138, #107) — is a hard error on one and
+        # silently tolerated on the other; analyzing a single channel lets that
+        # land on master. Catching it here is the cheap smoke test.
+        channel: [beta, stable]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Verify executable-file allowlist
+        shell: bash
+        run: |
+          set -euo pipefail
+          tracked="$(mktemp)"
+          expected="$(mktemp)"
+          trap 'rm -f "$tracked" "$expected"' EXIT
+          git ls-files --stage \
+            | awk '$1 == "100755" { print $4 }' \
+            | LC_ALL=C sort > "$tracked"
+          LC_ALL=C sort .github/executable-files.txt > "$expected"
+          if ! diff -u "$expected" "$tracked"; then
+            echo "Executable files differ from .github/executable-files.txt" >&2
+            exit 1
+          fi
+
+      - name: Cache pub + native deps
+        uses: actions/cache@v6
+        with:
+          # Channel in the key so beta/stable don't clobber each other's cache.
+          key: pub-${{ runner.os }}-${{ matrix.channel }}-${{ hashFiles('pubspec.lock') }}
+          path: ${{ github.workspace }}/.pub-cache
+          restore-keys: |
+            pub-${{ runner.os }}-${{ matrix.channel }}-
+
+      - name: Cache codegen (build_runner)
+        uses: actions/cache@v6
+        with:
+          path: .dart_tool/build
+          key: codegen-${{ runner.os }}-${{ matrix.channel }}-${{ hashFiles('pubspec.lock') }}
+          restore-keys: |
+            codegen-${{ runner.os }}-${{ matrix.channel }}-
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: ${{ matrix.channel }}
+          cache: true
+
+      - name: Install dependencies
+        # `pub get` fetches git dependencies (flutter_webrtc and its libwebrtc
+        # download); a reset connection there is a transient failure, not a
+        # broken build, so retry before giving up. `shell: bash` is required —
+        # the Windows runner would otherwise run this under PowerShell.
+        shell: bash
+        run: |
+          set -uo pipefail
+          n=0
+          max=3
+          until flutter pub get; do
+            n=$((n + 1))
+            if [ "$n" -ge "$max" ]; then
+              echo "::error::flutter pub get failed after $max attempts" >&2
+              exit 1
+            fi
+            echo "::warning::flutter pub get attempt $n failed; retrying in $((n * 15))s"
+            sleep $((n * 15))
+          done
+
+      - name: Verify generated code is up to date
+        run: scripts/codegen.sh --check
+
+      - name: Analyze
+        # --no-fatal-infos keeps inherited Bonfire style lints from blocking the
+        # gate while still failing on real errors and warnings. Tighten once the
+        # port settles.
+        run: flutter analyze --no-fatal-infos
+
+      - name: Test
+        run: flutter test
+
+  accordkit:
+    name: Vendored accordkit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Cache pub dependencies
+        uses: actions/cache@v6
+        with:
+          path: ${{ env.PUB_CACHE }}
+          key: accordkit-pub-${{ runner.os }}-${{ hashFiles('packages/accordkit/pubspec.yaml') }}
+          restore-keys: |
+            accordkit-pub-${{ runner.os }}-
+
+      - name: Set up Dart
+        uses: dart-lang/setup-dart@6afc89df92d6eb3834022f73cd65adc8cdfcb92d # v1
+        with:
+          sdk: stable
+
+      - name: Install dependencies
+        working-directory: packages/accordkit
+        run: dart pub get
+
+      - name: Analyze
+        working-directory: packages/accordkit
+        run: dart analyze
+
+      - name: Test
+        working-directory: packages/accordkit
+        run: dart test
+
+  markdown-viewer:
+    name: Vendored markdown_viewer
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Cache pub dependencies
+        uses: actions/cache@v6
+        with:
+          path: ${{ env.PUB_CACHE }}
+          key: markdown-pub-${{ runner.os }}-${{ env.FLUTTER_CHANNEL }}-${{ hashFiles('packages/markdown_viewer/pubspec.yaml') }}
+          restore-keys: |
+            markdown-pub-${{ runner.os }}-${{ env.FLUTTER_CHANNEL }}-
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: ${{ env.FLUTTER_CHANNEL }}
+          cache: true
+
+      - name: Install dependencies
+        working-directory: packages/markdown_viewer
+        run: flutter pub get
+
+      - name: Analyze
+        working-directory: packages/markdown_viewer
+        run: flutter analyze --no-fatal-infos
+
+      - name: Test full package, including GFM corpus
+        working-directory: packages/markdown_viewer
+        run: flutter test
+
+  livekit-android:
+    name: LiveKit Android native tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Cache pub dependencies
+        uses: actions/cache@v6
+        with:
+          path: ${{ env.PUB_CACHE }}
+          key: livekit-native-pub-${{ runner.os }}-${{ env.FLUTTER_CHANNEL }}-${{ hashFiles('pubspec.lock') }}
+          restore-keys: |
+            livekit-native-pub-${{ runner.os }}-${{ env.FLUTTER_CHANNEL }}-
+
+      - name: Set up Java 17
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
+        with:
+          gradle-version: '8.14.3'
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: ${{ env.FLUTTER_CHANNEL }}
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Test LiveKit Android audio resampling
+        run: >-
+          gradle --project-dir android
+          :livekit_client:testDebugUnitTest
+          --tests io.livekit.plugin.AudioResamplerTest
+
+  protocol-integration:
+    name: Protocol integration (release gate)
+    # This intentionally covers only the stable accordkit REST/gateway seam.
+    # The broader controller/UI scenarios below remain advisory until their
+    # external toolchain and display flakes have been removed.
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Cache pub + native deps
+        uses: actions/cache@v6
+        with:
+          key: protocol-pub-${{ runner.os }}-${{ env.FLUTTER_CHANNEL }}-${{ hashFiles('pubspec.lock') }}
+          path: ${{ env.PUB_CACHE }}
+          restore-keys: |
+            protocol-pub-${{ runner.os }}-${{ env.FLUTTER_CHANNEL }}-
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: ${{ env.FLUTTER_CHANNEL }}
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Pull reviewed accordserver fixture
+        run: docker pull "${{ env.ACCORD_SERVER_IMAGE }}"
+
+      - name: Test accordkit REST and gateway protocol seam
+        shell: bash
+        run: |
+          set -uo pipefail
+          flutter test integration/accordkit_protocol_test.dart 2>&1 | tee /tmp/protocol-integration.log
+          status=${PIPESTATUS[0]}
+          if [ "$status" -ne 0 ]; then
+            exit "$status"
+          fi
+          if ! grep -Eq "All tests passed!|[1-9][0-9]* tests? passed\\." /tmp/protocol-integration.log; then
+            echo "::error::The blocking protocol suite did not run to completion. See integration/README.md."
+            exit 1
+          fi
+
+  integration:
+    name: Integration (client ↔ accordserver)
+    # GitHub-hosted, because this job needs docker to run the server image.
+    #
+    # Tried on the self-hosted runners (run 31913534062, portainer-vokusz-1):
+    # the job "passed" in 2m50s having run nothing — 0 tests passed, 16
+    # skipped, because docker isn't available there. Only the
+    # `portainer-accord-*` runners carry a `docker` label, and no runner has
+    # both `docker` and `flutter`. On ubuntu-latest the same suite is 15/15 in
+    # ~2m13s.
+    #
+    # To move it back: expose docker to the `flutter` runners, or stand up a
+    # long-lived test server and set ACCORD_TEST_SERVER_URL on this job — the
+    # fixture prefers that over spawning anything (integration/README.md).
+    runs-on: ubuntu-latest
+    # Separate from `analyze` on purpose: these need a real server, so a
+    # registry outage or a server-side regression must not redden the unit
+    # gate. See integration/README.md and #217.
+    continue-on-error: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Cache pub + native deps
+        uses: actions/cache@v6
+        with:
+          key: pub-${{ runner.os }}-${{ env.FLUTTER_CHANNEL }}-${{ hashFiles('pubspec.lock') }}
+          path: ${{ github.workspace }}/.pub-cache
+          restore-keys: |
+            pub-${{ runner.os }}-${{ env.FLUTTER_CHANNEL }}-
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: ${{ env.FLUTTER_CHANNEL }}
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Code generation (build_runner)
+        run: dart run build_runner build --delete-conflicting-outputs
+
+      - name: Pull accordserver image
+        # Pre-pull so a slow first pull doesn't eat the fixture's boot timeout.
+        run: docker pull "${{ env.ACCORD_SERVER_IMAGE }}"
+
+      - name: Integration tests
+        # The suite skips itself when it can't find a server, which is the right
+        # behaviour locally but would make this job a green no-op in CI — that's
+        # exactly what the self-hosted attempt did (0 passed, 16 skipped, job
+        # reported success). Fail instead if nothing actually ran.
+        shell: bash
+        run: |
+          set -uo pipefail
+          flutter test integration/ 2>&1 | tee /tmp/integration.log
+          status=${PIPESTATUS[0]}
+          if grep -qE "^0 tests passed|🎉 0 tests passed" /tmp/integration.log; then
+            echo "::error::No integration tests ran — the fixture found no server. See integration/README.md."
+            exit 1
+          fi
+          exit $status
+
+  ui-e2e:
+    name: UI end-to-end (Linux)
+    # NOT self-hosted, for the same reason the Linux `build` isn't: this
+    # compiles and runs the Linux desktop app, and the runner container is
+    # Ubuntu 20.04 — CMake 3.16 predates the file(ARCHIVE_EXTRACT) that
+    # flutter_webrtc needs (3.18+), its libmpv is far older than media_kit
+    # expects, and installing the build deps on EOL focal took ~100 minutes.
+    # Revisit if the runner image is ever rebuilt on 24.04.
+    runs-on: ubuntu-latest
+    # Non-blocking for the same reason as `integration`, plus this one also
+    # depends on a working display and the Linux desktop toolchain.
+    # See integration_test/README.md and #221.
+    continue-on-error: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Cache pub + native deps
+        uses: actions/cache@v6
+        with:
+          key: pub-${{ runner.os }}-${{ env.FLUTTER_CHANNEL }}-${{ hashFiles('pubspec.lock') }}
+          path: ${{ github.workspace }}/.pub-cache
+          restore-keys: |
+            pub-${{ runner.os }}-${{ env.FLUTTER_CHANNEL }}-
+
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y \
+            clang cmake ninja-build pkg-config \
+            libgtk-3-dev liblzma-dev libsecret-1-dev \
+            libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
+            libunwind-dev libdw-dev \
+            libmpv-dev mpv ffmpeg \
+            xvfb
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: ${{ env.FLUTTER_CHANNEL }}
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Code generation (build_runner)
+        run: dart run build_runner build --delete-conflicting-outputs
+
+      - name: Pull accordserver image
+        run: docker pull "${{ env.ACCORD_SERVER_IMAGE }}"
+
+      - name: UI end-to-end tests
+        # One `flutter test` per file, not one over the directory. Each file
+        # launches the app on the device, and a second launch inside a single
+        # invocation fails with "Error waiting for a debug connection: The log
+        # reader stopped unexpectedly, or never started" — the previous app
+        # process is still holding the connection. Reproduces locally too.
+        shell: bash
+        run: |
+          set -uo pipefail
+          status=0
+          for f in integration_test/*_test.dart; do
+            echo "::group::$f"
+            xvfb-run -a flutter test "$f" -d linux || status=1
+            echo "::endgroup::"
+          done
+          exit $status
+
+  multi-instance:
+    name: Multi-instance (two clients)
+    # GitHub-hosted for the same reason as ui-e2e: it builds and runs the Linux
+    # desktop app, which the Ubuntu 20.04 self-hosted runners can't do.
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Cache pub + native deps
+        uses: actions/cache@v6
+        with:
+          key: pub-${{ runner.os }}-${{ env.FLUTTER_CHANNEL }}-${{ hashFiles('pubspec.lock') }}
+          path: ${{ github.workspace }}/.pub-cache
+          restore-keys: |
+            pub-${{ runner.os }}-${{ env.FLUTTER_CHANNEL }}-
+
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y \
+            clang cmake ninja-build pkg-config \
+            libgtk-3-dev liblzma-dev libsecret-1-dev gnome-keyring \
+            libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
+            libunwind-dev libdw-dev \
+            libmpv-dev mpv \
+            xvfb xdg-user-dirs
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: ${{ env.FLUTTER_CHANNEL }}
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Code generation (build_runner)
+        run: dart run build_runner build --delete-conflicting-outputs
+
+      - name: Pull accordserver image
+        run: docker pull "${{ env.ACCORD_SERVER_IMAGE }}"
+
+      - name: Build the app
+        # Release, not debug: a debug bundle launched directly never runs its
+        # Dart entrypoint. See multi_instance/README.md.
+        run: flutter build linux --release
+
+      - name: Multi-instance tests
+        shell: bash
+        run: |
+          set -uo pipefail
+          dbus-run-session -- bash -c '
+            eval "$(printf "ci-test-vault" | gnome-keyring-daemon --unlock --components=secrets)"
+            xvfb-run -a flutter test multi_instance/
+          ' 2>&1 | tee /tmp/multi.log
+          status=${PIPESTATUS[0]}
+          if grep -qE "^0 tests passed|🎉 0 tests passed" /tmp/multi.log; then
+            echo "::error::No multi-instance tests ran — no server or no app bundle. See multi_instance/README.md."
+            exit 1
+          fi
+          exit $status
+
+  livekit-sfu:
+    name: Real LiveKit SFU (two clients, opt-in)
+    # Native WebRTC/UDP plus two release app processes is too expensive and
+    # host-sensitive for the default gate. It is visible and runnable from
+    # workflow_dispatch via the livekit_sfu checkbox, and remains advisory.
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.livekit_sfu }}
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Cache pub + native deps
+        uses: actions/cache@v6
+        with:
+          key: pub-${{ runner.os }}-${{ env.FLUTTER_CHANNEL }}-${{ hashFiles('pubspec.lock') }}
+          path: ${{ github.workspace }}/.pub-cache
+          restore-keys: |
+            pub-${{ runner.os }}-${{ env.FLUTTER_CHANNEL }}-
+
+      - name: Install Linux build and virtual-audio dependencies
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y \
+            clang cmake ninja-build pkg-config \
+            libgtk-3-dev liblzma-dev libsecret-1-dev gnome-keyring \
+            libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
+            libunwind-dev libdw-dev \
+            libmpv-dev mpv \
+            pulseaudio pulseaudio-utils \
+            xvfb xdg-user-dirs
+
+      - name: Start deterministic virtual audio devices
+        shell: bash
+        run: |
+          pulseaudio --start --exit-idle-time=-1
+          pactl load-module module-null-sink sink_name=vokusz_test \
+            sink_properties=device.description=vokusz_test
+          pactl set-default-sink vokusz_test
+          pactl set-default-source vokusz_test.monitor
+          pactl info
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: ${{ env.FLUTTER_CHANNEL }}
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Code generation (build_runner)
+        run: dart run build_runner build --delete-conflicting-outputs
+
+      - name: Pull immutable server and SFU fixtures
+        run: |
+          docker pull "${{ env.ACCORD_SERVER_IMAGE }}"
+          docker pull "${{ env.ACCORD_TEST_LIVEKIT_IMAGE }}"
+
+      - name: Build the app
+        run: flutter build linux --release
+
+      - name: Exercise real LiveKit session
+        env:
+          ACCORD_TEST_LIVEKIT: "1"
+        run: |
+          dbus-run-session -- bash -c '
+            eval "$(printf "ci-test-vault" | gnome-keyring-daemon --unlock --components=secrets)"
+            xvfb-run -a flutter test multi_instance/livekit_voice_test.dart --reporter expanded
+          '
+
+  build:
+    name: Build ${{ matrix.name }}
+    needs: analyze
+    # Smoke-test artifacts only — run on demand, never automatically on push/PR
+    # (analyze is the merge gate) or workflow_call (release.yml builds its own).
+    # A called workflow inherits its caller's event, so event_name alone also
+    # enables this matrix during manual App Store recovery. Callers opt in.
+    if: ${{ inputs.build_artifacts }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Web (JavaScript)
+            platform: web
+            os: ubuntu-latest
+            artifact: vokusz-web
+            path: build/web/
+          - name: Android
+            platform: android
+            os: ubuntu-latest
+            artifact: vokusz-android
+            path: build/app/outputs/flutter-apk/*.apk
+          - name: Linux
+            platform: linux
+            os: ubuntu-latest
+            artifact: vokusz-linux
+            path: build/linux/x64/release/bundle/
+          - name: Windows
+            platform: windows
+            # See release.yml: windows-latest's bundled CMake refuses to extract
+            # flutter_webrtc's libwebrtc zip through Flutter's plugin symlink.
+            os: windows-2022
+            artifact: vokusz-windows
+            path: build/windows/x64/runner/Release/
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Cache pub + native deps
+        uses: actions/cache@v6
+        with:
+          path: ${{ github.workspace }}/.pub-cache
+          key: pub-${{ runner.os }}-${{ hashFiles('pubspec.lock') }}
+          restore-keys: |
+            pub-${{ runner.os }}-
+
+      - name: Cache codegen (build_runner)
+        uses: actions/cache@v6
+        with:
+          path: .dart_tool/build
+          key: codegen-${{ runner.os }}-${{ hashFiles('pubspec.lock') }}
+          restore-keys: |
+            codegen-${{ runner.os }}-
+
+      - name: Set up Java 17 (Android)
+        if: matrix.platform == 'android'
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Cache Gradle (Android)
+        if: matrix.platform == 'android'
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('android/**/*.gradle*', 'android/gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: |
+            gradle-${{ runner.os }}-
+
+      - name: Install Linux build dependencies
+        if: matrix.platform == 'linux'
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y \
+            clang cmake ninja-build pkg-config \
+            libgtk-3-dev liblzma-dev libsecret-1-dev \
+            libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
+            libunwind-dev libdw-dev \
+            libmpv-dev mpv
+
+      - name: Install NASM (Windows)
+        if: matrix.platform == 'windows'
+        run: choco install nasm -y
+        shell: powershell
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: ${{ env.FLUTTER_CHANNEL }}
+          cache: true
+
+      - name: Install dependencies
+        # `pub get` fetches git dependencies (flutter_webrtc and its libwebrtc
+        # download); a reset connection there is a transient failure, not a
+        # broken build, so retry before giving up. `shell: bash` is required —
+        # the Windows runner would otherwise run this under PowerShell.
+        shell: bash
+        run: |
+          set -uo pipefail
+          n=0
+          max=3
+          until flutter pub get; do
+            n=$((n + 1))
+            if [ "$n" -ge "$max" ]; then
+              echo "::error::flutter pub get failed after $max attempts" >&2
+              exit 1
+            fi
+            echo "::warning::flutter pub get attempt $n failed; retrying in $((n * 15))s"
+            sleep $((n * 15))
+          done
+
+      - name: Code generation (build_runner)
+        run: dart run build_runner build --delete-conflicting-outputs
+
+      - name: Build ${{ matrix.name }}
+        shell: bash
+        # Desktop builds fetch large prebuilt native archives (libwebrtc, mpv)
+        # at CMake-configure time; those fetches intermittently 504 or arrive
+        # corrupted. Retry with backoff so a transient fetch failure doesn't
+        # fail CI.
+        run: |
+          set -uo pipefail
+          build_once() {
+            case "${{ matrix.platform }}" in
+              web)     flutter build web     --no-tree-shake-icons --release ;;
+              android) flutter build apk     --no-tree-shake-icons --flavor github ;;
+              linux)   flutter build linux ;;
+              windows) flutter build windows ;;
+            esac
+          }
+          n=0; max=3
+          until build_once; do
+            n=$((n + 1))
+            if [ "$n" -ge "$max" ]; then
+              echo "::error::build failed after $max attempts" >&2
+              exit 1
+            fi
+            echo "::warning::build attempt $n failed; retrying in $((n * 30))s"
+            sleep $((n * 30))
+          done
+
+      - name: Upload ${{ matrix.name }} artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.path }}
+          if-no-files-found: error

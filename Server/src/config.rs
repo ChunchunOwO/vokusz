@@ -1,0 +1,346 @@
+use clap::Parser;
+use std::path::PathBuf;
+
+#[derive(Debug, Clone)]
+pub struct MasterServerConfig {
+    pub url: String,
+    pub server_id: String,
+    pub server_name: String,
+    pub public_url: String,
+    pub heartbeat_interval: u64,
+}
+
+/// Peer-to-peer federation configuration. Present only when `FEDERATION_DOMAIN`
+/// is set.
+#[derive(Debug, Clone)]
+pub struct FederationConfig {
+    /// This server's domain, used to qualify local IDs (`<snowflake>@<domain>`)
+    /// and as the signing key id in outbound requests.
+    pub domain: String,
+    /// Public base URL where this server's federation endpoints are reachable.
+    pub public_url: String,
+    /// Whether the outbound sender + inbox are active.
+    pub enabled: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct LiveKitConfig {
+    pub internal_url: String,
+    pub external_url: String,
+    pub api_key: String,
+    pub api_secret: String,
+}
+
+/// Command-line flags. Used by the desktop installer's tray app to launch the
+/// server with a specific data directory and LiveKit endpoint. All flags are
+/// optional; when omitted the existing env-var-driven defaults apply.
+#[derive(Parser, Debug, Default, Clone)]
+#[command(name = "accordserver", version, about = "Accord chat & voice server")]
+pub struct Cli {
+    /// Create a local administrator and exit; password comes from ACCORD_BOOTSTRAP_PASSWORD.
+    #[arg(long)]
+    pub bootstrap_admin: Option<String>,
+    /// Base directory for the SQLite database, uploads, and runtime state.
+    /// If set, DATABASE_URL and ACCORD_STORAGE_PATH default to paths under
+    /// this directory.
+    #[arg(long)]
+    pub data_dir: Option<PathBuf>,
+
+    /// Port to listen on. Overrides PORT env var.
+    #[arg(long)]
+    pub port: Option<u16>,
+
+    /// Address to bind to. Defaults to 0.0.0.0.
+    #[arg(long)]
+    pub bind: Option<String>,
+
+    /// LiveKit internal URL. Overrides LIVEKIT_URL / LIVEKIT_INTERNAL_URL.
+    #[arg(long)]
+    pub livekit_url: Option<String>,
+
+    /// LiveKit API key. Overrides LIVEKIT_API_KEY.
+    #[arg(long)]
+    pub livekit_key: Option<String>,
+
+    /// LiveKit API secret. Overrides LIVEKIT_API_SECRET.
+    #[arg(long)]
+    pub livekit_secret: Option<String>,
+}
+
+pub struct Config {
+    pub bootstrap_admin: Option<String>,
+    pub port: u16,
+    pub bind: String,
+    pub database_url: String,
+    pub test_mode: bool,
+    pub livekit: Option<LiveKitConfig>,
+    pub master_server: Option<MasterServerConfig>,
+    pub federation: Option<FederationConfig>,
+    pub storage_path: std::path::PathBuf,
+    /// AES-256-GCM key for encrypting TOTP secrets at rest.
+    /// Derived from TOTP_ENCRYPTION_KEY env var via SHA-256.
+    pub totp_key: Option<[u8; 32]>,
+    /// Optional API key for MCP endpoint authentication.
+    pub mcp_api_key: Option<String>,
+}
+
+/// Resolves the master server ID: env var > persisted file > generate and save.
+/// The ID file is stored alongside the CDN storage directory (e.g. `data/master_server_id`).
+fn resolve_master_server_id(storage_path: &std::path::Path) -> String {
+    if let Ok(id) = std::env::var("MASTER_SERVER_ID") {
+        return id;
+    }
+
+    // data/cdn -> data/master_server_id
+    let id_path = storage_path
+        .parent()
+        .unwrap_or(storage_path)
+        .join("master_server_id");
+
+    if let Ok(id) = std::fs::read_to_string(&id_path) {
+        let id = id.trim().to_string();
+        if !id.is_empty() {
+            return id;
+        }
+    }
+
+    let id = crate::snowflake::generate();
+    if let Some(parent) = id_path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let _ = std::fs::write(&id_path, &id);
+    id
+}
+
+impl Config {
+    pub fn from_env() -> Self {
+        Self::from_cli(&Cli::default())
+    }
+
+    pub fn from_cli(cli: &Cli) -> Self {
+        let livekit_url = cli
+            .livekit_url
+            .clone()
+            .or_else(|| std::env::var("LIVEKIT_INTERNAL_URL").ok())
+            .or_else(|| std::env::var("LIVEKIT_URL").ok());
+
+        let livekit = livekit_url.map(|internal_url| {
+            let external_url =
+                std::env::var("LIVEKIT_EXTERNAL_URL").unwrap_or_else(|_| internal_url.clone());
+            let api_key = cli
+                .livekit_key
+                .clone()
+                .or_else(|| std::env::var("LIVEKIT_API_KEY").ok())
+                .expect("LIVEKIT_API_KEY is required when LIVEKIT_URL is set");
+            let api_secret = cli
+                .livekit_secret
+                .clone()
+                .or_else(|| std::env::var("LIVEKIT_API_SECRET").ok())
+                .expect("LIVEKIT_API_SECRET is required when LIVEKIT_URL is set");
+            assert!(api_key != "devkey" && !["secret", "changeme"].contains(&api_secret.as_str()),
+                "development LiveKit credentials are unsafe; configure unique LIVEKIT_API_KEY and LIVEKIT_API_SECRET");
+            LiveKitConfig {
+                internal_url,
+                external_url,
+                api_key,
+                api_secret,
+            }
+        });
+
+        let storage_path = std::env::var("ACCORD_STORAGE_PATH")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|_| match &cli.data_dir {
+                Some(dir) => dir.join("cdn"),
+                None => std::path::PathBuf::from("./data/cdn"),
+            });
+
+        let database_url = std::env::var("DATABASE_URL").unwrap_or_else(|_| match &cli.data_dir {
+            Some(dir) => format!("sqlite:{}?mode=rwc", dir.join("accord.db").display()),
+            None => "sqlite:data/accord.db?mode=rwc".to_string(),
+        });
+
+        let master_server = std::env::var("MASTER_SERVER_PUBLIC_URL")
+            .ok()
+            .map(|public_url| MasterServerConfig {
+                url: std::env::var("MASTER_SERVER_URL")
+                    .unwrap_or_else(|_| "https://master.vokusz.app".to_string()),
+                server_id: resolve_master_server_id(&storage_path),
+                server_name: std::env::var("MASTER_SERVER_NAME")
+                    .unwrap_or_else(|_| "Accord Server".to_string()),
+                public_url,
+                heartbeat_interval: std::env::var("MASTER_HEARTBEAT_INTERVAL")
+                    .ok()
+                    .and_then(|v| v.parse().ok())
+                    .unwrap_or(60),
+            });
+
+        let federation = std::env::var("FEDERATION_DOMAIN")
+            .ok()
+            .filter(|d| !d.is_empty())
+            .map(|domain| {
+                let public_url = std::env::var("FEDERATION_PUBLIC_URL")
+                    .or_else(|_| std::env::var("MASTER_SERVER_PUBLIC_URL"))
+                    .unwrap_or_else(|_| format!("https://{domain}"));
+                let enabled = std::env::var("FEDERATION_ENABLED")
+                    .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+                    .unwrap_or(true);
+                FederationConfig {
+                    domain,
+                    public_url,
+                    enabled,
+                }
+            });
+
+        let totp_key = std::env::var("TOTP_ENCRYPTION_KEY").ok().map(|key| {
+            use sha2::{Digest, Sha256};
+            let mut hasher = Sha256::new();
+            hasher.update(key.as_bytes());
+            let result = hasher.finalize();
+            let mut key_bytes = [0u8; 32];
+            key_bytes.copy_from_slice(&result);
+            key_bytes
+        });
+
+        if totp_key.is_none() {
+            tracing::warn!("TOTP_ENCRYPTION_KEY not set — TOTP secrets will be stored in plaintext. Set this env var for defense-in-depth.");
+        }
+
+        let mcp_api_key = std::env::var("MCP_API_KEY").ok().filter(|k| !k.is_empty());
+
+        let port = cli
+            .port
+            .or_else(|| std::env::var("PORT").ok().and_then(|p| p.parse().ok()))
+            .unwrap_or(39099);
+
+        let bind = cli
+            .bind
+            .clone()
+            .or_else(|| std::env::var("ACCORD_BIND").ok())
+            .unwrap_or_else(|| "0.0.0.0".to_string());
+
+        Self {
+            bootstrap_admin: cli.bootstrap_admin.clone(),
+            port,
+            bind,
+            database_url,
+            test_mode: std::env::var("ACCORD_TEST_MODE")
+                .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+                .unwrap_or(false),
+            livekit,
+            master_server,
+            federation,
+            storage_path,
+            totp_key,
+            mcp_api_key,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serial_test::serial;
+
+    fn clear_env() {
+        std::env::remove_var("PORT");
+        std::env::remove_var("ACCORD_BIND");
+        std::env::remove_var("DATABASE_URL");
+        std::env::remove_var("ACCORD_STORAGE_PATH");
+        std::env::remove_var("ACCORD_TEST_MODE");
+        std::env::remove_var("LIVEKIT_URL");
+        std::env::remove_var("LIVEKIT_INTERNAL_URL");
+        std::env::remove_var("LIVEKIT_EXTERNAL_URL");
+        std::env::remove_var("LIVEKIT_API_KEY");
+        std::env::remove_var("LIVEKIT_API_SECRET");
+        std::env::remove_var("MASTER_SERVER_URL");
+        std::env::remove_var("MASTER_SERVER_ID");
+        std::env::remove_var("MASTER_SERVER_NAME");
+        std::env::remove_var("MASTER_SERVER_PUBLIC_URL");
+        std::env::remove_var("MASTER_HEARTBEAT_INTERVAL");
+        std::env::remove_var("MCP_API_KEY");
+        std::env::remove_var("FEDERATION_DOMAIN");
+        std::env::remove_var("FEDERATION_PUBLIC_URL");
+        std::env::remove_var("FEDERATION_ENABLED");
+    }
+
+    #[test]
+    #[serial]
+    fn test_missing_livekit() {
+        clear_env();
+        let config = Config::from_env();
+        assert!(config.livekit.is_none());
+    }
+
+    #[test]
+    #[serial]
+    fn test_livekit_config() {
+        clear_env();
+        std::env::set_var("LIVEKIT_INTERNAL_URL", "http://livekit:7880");
+        std::env::set_var("LIVEKIT_EXTERNAL_URL", "wss://livekit.example.com");
+        std::env::set_var("LIVEKIT_API_KEY", "my-api-key");
+        std::env::set_var("LIVEKIT_API_SECRET", "my-api-secret");
+
+        let config = Config::from_env();
+        assert_eq!(config.port, 39099);
+        assert_eq!(config.database_url, "sqlite:data/accord.db?mode=rwc");
+
+        let lk = config.livekit.unwrap();
+        assert_eq!(lk.internal_url, "http://livekit:7880");
+        assert_eq!(lk.external_url, "wss://livekit.example.com");
+        assert_eq!(lk.api_key, "my-api-key");
+        assert_eq!(lk.api_secret, "my-api-secret");
+    }
+
+    #[test]
+    #[serial]
+    fn test_data_dir_redirects_paths() {
+        clear_env();
+        let cli = Cli {
+            data_dir: Some(std::path::PathBuf::from("/var/lib/accord")),
+            ..Default::default()
+        };
+        let config = Config::from_cli(&cli);
+        assert_eq!(
+            config.database_url,
+            "sqlite:/var/lib/accord/accord.db?mode=rwc"
+        );
+        assert_eq!(config.storage_path, PathBuf::from("/var/lib/accord/cdn"));
+        assert_eq!(config.bind, "0.0.0.0");
+        assert_eq!(config.port, 39099);
+    }
+
+    #[test]
+    #[serial]
+    fn test_cli_overrides_env_for_livekit() {
+        clear_env();
+        std::env::set_var("LIVEKIT_URL", "http://env-url:7880");
+        std::env::set_var("LIVEKIT_API_KEY", "env-key");
+        std::env::set_var("LIVEKIT_API_SECRET", "env-secret");
+
+        let cli = Cli {
+            livekit_url: Some("http://cli-url:7880".to_string()),
+            livekit_key: Some("cli-key".to_string()),
+            livekit_secret: Some("cli-secret".to_string()),
+            ..Default::default()
+        };
+        let config = Config::from_cli(&cli);
+        let lk = config.livekit.unwrap();
+        assert_eq!(lk.internal_url, "http://cli-url:7880");
+        assert_eq!(lk.api_key, "cli-key");
+        assert_eq!(lk.api_secret, "cli-secret");
+    }
+
+    #[test]
+    #[serial]
+    fn test_cli_port_and_bind() {
+        clear_env();
+        let cli = Cli {
+            port: Some(54321),
+            bind: Some("127.0.0.1".to_string()),
+            ..Default::default()
+        };
+        let config = Config::from_cli(&cli);
+        assert_eq!(config.port, 54321);
+        assert_eq!(config.bind, "127.0.0.1");
+    }
+}

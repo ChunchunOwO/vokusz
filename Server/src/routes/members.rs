@@ -1,0 +1,580 @@
+use std::collections::HashMap;
+
+use axum::extract::{Path, Query, State};
+use axum::Json;
+use serde::Deserialize;
+
+use crate::db;
+use crate::error::AppError;
+use crate::gateway::events::GatewayBroadcast;
+use crate::middleware::auth::AuthUser;
+use crate::middleware::permissions::{
+    require_hierarchy, require_membership, require_permission, require_role_hierarchy,
+};
+use crate::models::member::{MemberRow, UpdateMember};
+use crate::models::user::PublicUser;
+use crate::state::AppState;
+use crate::storage;
+
+#[derive(Deserialize)]
+pub struct ListMembersQuery {
+    pub after: Option<String>,
+    pub limit: Option<i64>,
+    /// When `true`, embed each member's public `user` object (resolved in a
+    /// single batched query) so clients don't have to fetch users one by one.
+    #[serde(default)]
+    pub with_user: bool,
+}
+
+#[derive(Deserialize)]
+pub struct SearchMembersQuery {
+    pub query: String,
+    pub limit: Option<i64>,
+    #[serde(default)]
+    pub with_user: bool,
+}
+
+/// Batch-resolves the public `user` object for each row's `user_id` when
+/// [want] is set, returning a `user_id -> user JSON` map. Empty (and does no
+/// query) when [want] is false. Lets the list/search handlers embed users
+/// without an N+1 fetch.
+async fn resolve_member_users(
+    state: &AppState,
+    rows: &[MemberRow],
+    want: bool,
+) -> Result<HashMap<String, serde_json::Value>, AppError> {
+    if !want || rows.is_empty() {
+        return Ok(HashMap::new());
+    }
+    let ids: Vec<String> = rows.iter().map(|r| r.user_id.clone()).collect();
+    let users = db::users::get_users_by_ids(&state.db, &ids).await?;
+    Ok(users
+        .into_iter()
+        .filter_map(|u| {
+            let id = u.id.clone();
+            serde_json::to_value(PublicUser::from(u))
+                .ok()
+                .map(|json| (id, json))
+        })
+        .collect())
+}
+
+pub async fn list_members(
+    state: State<AppState>,
+    Path(space_id): Path<String>,
+    auth: AuthUser,
+    Query(params): Query<ListMembersQuery>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    // Guest tokens: allowed to list members for their scoped space
+    if auth.is_guest {
+        if auth.guest_space_id.as_deref() != Some(&space_id) {
+            return Err(AppError::Forbidden(
+                "guest token not valid for this space".into(),
+            ));
+        }
+    } else {
+        require_membership(&state.db, &space_id, &auth.user_id).await?;
+    }
+    let limit = params.limit.unwrap_or(50).clamp(1, 1000);
+    let mut rows =
+        db::members::list_members(&state.db, &space_id, params.after.as_deref(), limit).await?;
+
+    let has_more = rows.len() as i64 > limit;
+    if has_more {
+        rows.truncate(limit as usize);
+    }
+
+    let user_json = resolve_member_users(&state, &rows, params.with_user).await?;
+
+    let mut members = Vec::new();
+    for row in &rows {
+        let role_ids = db::members::get_member_role_ids(&state.db, &space_id, &row.user_id).await?;
+        let mut member = member_row_to_json(row, &role_ids);
+        if let Some(user) = user_json.get(&row.user_id) {
+            member["user"] = user.clone();
+        }
+        members.push(member);
+    }
+
+    let last_id = rows.last().map(|m| m.user_id.clone());
+    let mut response = serde_json::json!({ "data": members });
+    if has_more {
+        response["cursor"] = serde_json::json!({
+            "after": last_id.unwrap_or_default(),
+            "has_more": has_more
+        });
+    }
+    Ok(Json(response))
+}
+
+pub async fn search_members(
+    state: State<AppState>,
+    Path(space_id): Path<String>,
+    auth: AuthUser,
+    Query(params): Query<SearchMembersQuery>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    require_membership(&state.db, &space_id, &auth.user_id).await?;
+    let limit = params.limit.unwrap_or(25).clamp(1, 100);
+    let rows = db::members::search_members(&state.db, &space_id, &params.query, limit).await?;
+
+    let user_json = resolve_member_users(&state, &rows, params.with_user).await?;
+
+    let mut members = Vec::new();
+    for row in &rows {
+        let role_ids = db::members::get_member_role_ids(&state.db, &space_id, &row.user_id).await?;
+        let mut member = member_row_to_json(row, &role_ids);
+        if let Some(user) = user_json.get(&row.user_id) {
+            member["user"] = user.clone();
+        }
+        members.push(member);
+    }
+
+    Ok(Json(serde_json::json!({ "data": members })))
+}
+
+pub async fn get_member(
+    state: State<AppState>,
+    Path((space_id, user_id)): Path<(String, String)>,
+    auth: AuthUser,
+) -> Result<Json<serde_json::Value>, AppError> {
+    require_membership(&state.db, &space_id, &auth.user_id).await?;
+    let row = db::members::get_member_row(&state.db, &space_id, &user_id).await?;
+    let role_ids = db::members::get_member_role_ids(&state.db, &space_id, &user_id).await?;
+    Ok(Json(
+        serde_json::json!({ "data": member_row_to_json(&row, &role_ids) }),
+    ))
+}
+
+pub async fn update_member(
+    state: State<AppState>,
+    Path((space_id, user_id)): Path<(String, String)>,
+    auth: AuthUser,
+    Json(mut input): Json<UpdateMember>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    // Nickname changes require manage_nicknames
+    if input.nickname.is_some() {
+        require_permission(&state.db, &space_id, &auth, "manage_nicknames").await?;
+    }
+
+    // Avatar changes on other members require manage_nicknames
+    if input.avatar.is_some() {
+        require_permission(&state.db, &space_id, &auth, "manage_nicknames").await?;
+    }
+
+    // Role changes require manage_roles + hierarchy checks
+    if let Some(ref roles) = input.roles {
+        require_permission(&state.db, &space_id, &auth, "manage_roles").await?;
+        require_hierarchy(&state.db, &space_id, &auth, &user_id).await?;
+        // Verify each role being assigned is below the actor's highest role
+        for role_id in roles {
+            let role = db::roles::get_role_row(&state.db, role_id).await?;
+            if role.space_id != space_id {
+                return Err(AppError::NotFound("role not found in this space".into()));
+            }
+            require_role_hierarchy(&state.db, &space_id, &auth.user_id, role.position).await?;
+        }
+    }
+
+    // Mute/deafen require their respective permissions
+    if input.mute.is_some() {
+        require_permission(&state.db, &space_id, &auth, "mute_members").await?;
+    }
+    if input.deaf.is_some() {
+        require_permission(&state.db, &space_id, &auth, "deafen_members").await?;
+    }
+
+    // Setting or clearing a moderation timeout requires moderate_members plus
+    // the hierarchy check, so you cannot time out someone ranked above you.
+    if let Some(timeout) = &input.communication_disabled_until {
+        require_permission(&state.db, &space_id, &auth, "moderate_members").await?;
+        require_hierarchy(&state.db, &space_id, &auth, &user_id).await?;
+        // Normalize a provided timestamp to a canonical RFC3339 form so stored
+        // values are consistent and lexicographically comparable. Reject input
+        // we cannot parse rather than silently storing garbage.
+        if let Some(ts) = timeout {
+            let parsed = chrono::DateTime::parse_from_rfc3339(ts).map_err(|_| {
+                AppError::BadRequest(
+                    "communication_disabled_until must be an RFC3339 timestamp".into(),
+                )
+            })?;
+            input.communication_disabled_until = Some(Some(
+                parsed
+                    .with_timezone(&chrono::Utc)
+                    .format("%Y-%m-%dT%H:%M:%S+00:00")
+                    .to_string(),
+            ));
+        }
+    }
+
+    let max_avatar_size = state.settings.load().max_avatar_size as usize;
+
+    // Process avatar data URI
+    let entity_id = format!("{}_{}", space_id, user_id);
+    if let Some(ref avatar) = input.avatar {
+        if avatar.starts_with("data:") {
+            let old_member = db::members::get_member_row(&state.db, &space_id, &user_id).await?;
+            if let Some(ref old_avatar) = old_member.avatar {
+                let _ = storage::delete_file(&state.storage_path, old_avatar).await;
+            }
+            let (url, _, _, _) = storage::save_avatar_image(
+                &state,
+                &auth.user_id,
+                Some(&space_id),
+                "avatars",
+                &entity_id,
+                avatar,
+                max_avatar_size,
+            )
+            .await?;
+            input.avatar = Some(url);
+        } else if avatar.is_empty() {
+            let old_member = db::members::get_member_row(&state.db, &space_id, &user_id).await?;
+            if let Some(ref old_avatar) = old_member.avatar {
+                let _ = storage::delete_file(&state.storage_path, old_avatar).await;
+            }
+            storage::delete_avatar(&state.storage_path, "avatars", &entity_id).await?;
+            // Keep as Some("") — DB layer will treat empty string as NULL
+        }
+    }
+
+    let row = db::members::update_member(&state.db, &space_id, &user_id, &input).await?;
+    let role_ids = db::members::get_member_role_ids(&state.db, &space_id, &user_id).await?;
+    let member_json = member_row_to_json(&row, &role_ids);
+
+    // Broadcast member.update to the space
+    if let Some(ref dispatcher) = *state.gateway_tx.read().await {
+        let event = serde_json::json!({
+            "op": 0,
+            "type": "member.update",
+            "data": member_json
+        });
+        let _ = dispatcher.send(GatewayBroadcast {
+            space_id: Some(space_id),
+            target_user_ids: None,
+            event,
+            intent: "members".to_string(),
+            required_permission: None,
+        });
+    }
+
+    Ok(Json(serde_json::json!({ "data": member_json })))
+}
+
+pub async fn kick_member(
+    state: State<AppState>,
+    Path((space_id, user_id)): Path<(String, String)>,
+    auth: AuthUser,
+) -> Result<Json<serde_json::Value>, AppError> {
+    require_permission(&state.db, &space_id, &auth, "kick_members").await?;
+    require_hierarchy(&state.db, &space_id, &auth, &user_id).await?;
+
+    // Capture interested peers BEFORE removal: once the kicked member's row is
+    // gone, their home server may no longer appear in the interested set and
+    // would never learn of the departure.
+    let fanout_targets = crate::db::federation::interested_servers(&state.db, &space_id)
+        .await
+        .unwrap_or_default();
+
+    db::members::remove_member(&state.db, &space_id, &user_id).await?;
+
+    // Losing membership has to take voice with it: a kicked member who stays in
+    // a LiveKit room keeps sending and receiving media from the space.
+    crate::security::revoke_space_voice_access(&state, &space_id, Some(&user_id)).await;
+
+    // Broadcast member.leave to the space
+    if let Some(ref dispatcher) = *state.gateway_tx.read().await {
+        let event = serde_json::json!({
+            "op": 0,
+            "type": "member.leave",
+            "data": {
+                "space_id": space_id,
+                "user_id": user_id
+            }
+        });
+        let _ = dispatcher.send(GatewayBroadcast {
+            space_id: Some(space_id.clone()),
+            target_user_ids: None,
+            event,
+            intent: "members".to_string(),
+            required_permission: None,
+        });
+    }
+
+    // Fan the kick out to interested peers for a locally-homed space.
+    if let Some(fed) = state.federation.as_ref() {
+        let payload = crate::federation::outbound::member_leave_payload(&fed.domain, &user_id);
+        let _ = crate::federation::outbound::fanout_to_targets(
+            &state,
+            &space_id,
+            "m.member.leave",
+            payload,
+            &fanout_targets,
+        )
+        .await;
+    }
+
+    Ok(Json(serde_json::json!({ "data": null })))
+}
+
+#[derive(Deserialize)]
+pub struct LeaveQuery {
+    pub delete_data: Option<bool>,
+}
+
+/// DELETE /spaces/{space_id}/members/@me — leave a space. If
+/// `?delete_data=true` is provided, all of the user's messages, reactions,
+/// read states, and channel mutes within the space are also deleted (GDPR
+/// right to erasure, per-space).
+pub async fn leave_space(
+    state: State<AppState>,
+    Path(space_id): Path<String>,
+    auth: AuthUser,
+    Query(params): Query<LeaveQuery>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    require_membership(&state.db, &space_id, &auth.user_id).await?;
+
+    // Prevent the space owner from leaving without transferring ownership
+    let space = db::spaces::get_space_row(&state.db, &space_id).await?;
+    if space.owner_id == auth.user_id {
+        return Err(AppError::BadRequest(
+            "space owner must transfer ownership before leaving".to_string(),
+        ));
+    }
+
+    // Remote-homed space: forward the departure to the authoritative home, then
+    // drop our local replica membership.
+    if let Some(home) = crate::db::federation::space_origin(&state.db, &space_id).await? {
+        let actor = db::users::get_user(&state.db, &auth.user_id).await?;
+        crate::federation::forward::forward_leave(&state, &home, &space_id, &actor).await?;
+        db::members::remove_member(&state.db, &space_id, &auth.user_id).await?;
+        crate::security::revoke_space_voice_access(&state, &space_id, Some(&auth.user_id)).await;
+        if let Some(ref dispatcher) = *state.gateway_tx.read().await {
+            let event = serde_json::json!({
+                "op": 0,
+                "type": "member.leave",
+                "data": { "space_id": space_id, "user_id": auth.user_id }
+            });
+            let _ = dispatcher.send(GatewayBroadcast {
+                space_id: Some(space_id.clone()),
+                target_user_ids: None,
+                event,
+                intent: "members".to_string(),
+                required_permission: None,
+            });
+        }
+        return Ok(Json(serde_json::json!({ "data": null })));
+    }
+
+    // Capture interested peers BEFORE removal so the leaving member's home
+    // server is still in the target set (see kick_member).
+    let fanout_targets = crate::db::federation::interested_servers(&state.db, &space_id)
+        .await
+        .unwrap_or_default();
+
+    if params.delete_data.unwrap_or(false) {
+        db::members::remove_member_and_data(&state.db, &space_id, &auth.user_id).await?;
+    } else {
+        db::members::remove_member(&state.db, &space_id, &auth.user_id).await?;
+    }
+
+    crate::security::revoke_space_voice_access(&state, &space_id, Some(&auth.user_id)).await;
+
+    // Broadcast member.leave to the space
+    if let Some(ref dispatcher) = *state.gateway_tx.read().await {
+        let event = serde_json::json!({
+            "op": 0,
+            "type": "member.leave",
+            "data": {
+                "space_id": space_id,
+                "user_id": auth.user_id
+            }
+        });
+        let _ = dispatcher.send(GatewayBroadcast {
+            space_id: Some(space_id.clone()),
+            target_user_ids: None,
+            event,
+            intent: "members".to_string(),
+            required_permission: None,
+        });
+    }
+
+    // Fan the departure out to interested peers for a locally-homed space.
+    if let Some(fed) = state.federation.as_ref() {
+        let payload = crate::federation::outbound::member_leave_payload(&fed.domain, &auth.user_id);
+        let _ = crate::federation::outbound::fanout_to_targets(
+            &state,
+            &space_id,
+            "m.member.leave",
+            payload,
+            &fanout_targets,
+        )
+        .await;
+    }
+
+    Ok(Json(serde_json::json!({ "data": null })))
+}
+
+pub async fn update_own_member(
+    state: State<AppState>,
+    Path(space_id): Path<String>,
+    auth: AuthUser,
+    Json(mut input): Json<UpdateMember>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    require_permission(&state.db, &space_id, &auth, "change_nickname").await?;
+
+    let max_avatar_size = state.settings.load().max_avatar_size as usize;
+
+    // Process avatar data URI for self
+    let entity_id = format!("{}_{}", space_id, auth.user_id);
+    if let Some(ref avatar) = input.avatar {
+        if avatar.starts_with("data:") {
+            let old_member =
+                db::members::get_member_row(&state.db, &space_id, &auth.user_id).await?;
+            if let Some(ref old_avatar) = old_member.avatar {
+                let _ = storage::delete_file(&state.storage_path, old_avatar).await;
+            }
+            let (url, _, _, _) = storage::save_avatar_image(
+                &state,
+                &auth.user_id,
+                Some(&space_id),
+                "avatars",
+                &entity_id,
+                avatar,
+                max_avatar_size,
+            )
+            .await?;
+            input.avatar = Some(url);
+        } else if avatar.is_empty() {
+            let old_member =
+                db::members::get_member_row(&state.db, &space_id, &auth.user_id).await?;
+            if let Some(ref old_avatar) = old_member.avatar {
+                let _ = storage::delete_file(&state.storage_path, old_avatar).await;
+            }
+            storage::delete_avatar(&state.storage_path, "avatars", &entity_id).await?;
+            // Keep as Some("") — DB layer will treat empty string as NULL
+        }
+    }
+
+    let limited = UpdateMember {
+        nickname: input.nickname,
+        avatar: input.avatar,
+        roles: None,
+        mute: None,
+        deaf: None,
+        // Members can never set their own timeout.
+        communication_disabled_until: None,
+    };
+    let row = db::members::update_member(&state.db, &space_id, &auth.user_id, &limited).await?;
+    let role_ids = db::members::get_member_role_ids(&state.db, &space_id, &auth.user_id).await?;
+    let member_json = member_row_to_json(&row, &role_ids);
+
+    // Broadcast member.update to the space
+    if let Some(ref dispatcher) = *state.gateway_tx.read().await {
+        let event = serde_json::json!({
+            "op": 0,
+            "type": "member.update",
+            "data": member_json
+        });
+        let _ = dispatcher.send(GatewayBroadcast {
+            space_id: Some(space_id),
+            target_user_ids: None,
+            event,
+            intent: "members".to_string(),
+            required_permission: None,
+        });
+    }
+
+    Ok(Json(serde_json::json!({ "data": member_json })))
+}
+
+pub async fn add_role(
+    state: State<AppState>,
+    Path((space_id, user_id, role_id)): Path<(String, String, String)>,
+    auth: AuthUser,
+) -> Result<Json<serde_json::Value>, AppError> {
+    require_permission(&state.db, &space_id, &auth, "manage_roles").await?;
+    let role = db::roles::get_role_row(&state.db, &role_id).await?;
+    if role.space_id != space_id {
+        return Err(AppError::NotFound("role not found in this space".into()));
+    }
+    require_role_hierarchy(&state.db, &space_id, &auth.user_id, role.position).await?;
+    db::members::add_role_to_member(
+        &state.db,
+        &space_id,
+        &user_id,
+        &role_id,
+        state.db_is_postgres,
+    )
+    .await?;
+
+    // Broadcast member.update to the space
+    let row = db::members::get_member_row(&state.db, &space_id, &user_id).await?;
+    let role_ids = db::members::get_member_role_ids(&state.db, &space_id, &user_id).await?;
+    if let Some(ref dispatcher) = *state.gateway_tx.read().await {
+        let event = serde_json::json!({
+            "op": 0,
+            "type": "member.update",
+            "data": member_row_to_json(&row, &role_ids)
+        });
+        let _ = dispatcher.send(GatewayBroadcast {
+            space_id: Some(space_id),
+            target_user_ids: None,
+            event,
+            intent: "members".to_string(),
+            required_permission: None,
+        });
+    }
+
+    Ok(Json(serde_json::json!({ "data": null })))
+}
+
+pub async fn remove_role(
+    state: State<AppState>,
+    Path((space_id, user_id, role_id)): Path<(String, String, String)>,
+    auth: AuthUser,
+) -> Result<Json<serde_json::Value>, AppError> {
+    require_permission(&state.db, &space_id, &auth, "manage_roles").await?;
+    let role = db::roles::get_role_row(&state.db, &role_id).await?;
+    if role.space_id != space_id {
+        return Err(AppError::NotFound("role not found in this space".into()));
+    }
+    require_role_hierarchy(&state.db, &space_id, &auth.user_id, role.position).await?;
+    db::members::remove_role_from_member(&state.db, &space_id, &user_id, &role_id).await?;
+
+    // Broadcast member.update to the space
+    let row = db::members::get_member_row(&state.db, &space_id, &user_id).await?;
+    let role_ids = db::members::get_member_role_ids(&state.db, &space_id, &user_id).await?;
+    if let Some(ref dispatcher) = *state.gateway_tx.read().await {
+        let event = serde_json::json!({
+            "op": 0,
+            "type": "member.update",
+            "data": member_row_to_json(&row, &role_ids)
+        });
+        let _ = dispatcher.send(GatewayBroadcast {
+            space_id: Some(space_id),
+            target_user_ids: None,
+            event,
+            intent: "members".to_string(),
+            required_permission: None,
+        });
+    }
+
+    Ok(Json(serde_json::json!({ "data": null })))
+}
+
+pub fn member_row_to_json(row: &MemberRow, role_ids: &[String]) -> serde_json::Value {
+    serde_json::json!({
+        "user_id": row.user_id,
+        "space_id": row.space_id,
+        "nickname": row.nickname,
+        "avatar": row.avatar,
+        "roles": role_ids,
+        "joined_at": row.joined_at,
+        "premium_since": row.premium_since,
+        "deaf": row.deaf,
+        "mute": row.mute,
+        "pending": row.pending,
+        "timed_out_until": row.timed_out_until,
+        "permissions": null
+    })
+}

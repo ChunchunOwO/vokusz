@@ -1,0 +1,4 @@
+#!/bin/sh
+export VOKUSZ_PACKAGE_MANAGER=flatpak
+export LD_LIBRARY_PATH="/app/vokusz/lib:/app/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+exec /app/vokusz/vokusz "$@"

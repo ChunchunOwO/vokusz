@@ -1,0 +1,72 @@
+# Miscellaneous
+*.class
+*.log
+*.pyc
+*.swp
+.DS_Store
+.atom/
+.build/
+.buildlog/
+.history
+.svn/
+.swiftpm/
+migrate_working_dir/
+
+# IntelliJ related
+*.iml
+*.ipr
+*.iws
+.idea/
+
+# The .vscode folder contains launch configuration and tasks you configure in
+# VS Code which you may wish to be included in version control, so this line
+# is commented out by default.
+#.vscode/
+
+# Flutter/Dart/Pub related
+**/doc/api/
+**/ios/Flutter/.last_build_id
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+
+# macOS uses Flutter's generated local Swift package only; Xcode may leave
+# remote-package resolution files from removed plugins behind.
+macos/Runner.xcworkspace/xcshareddata/swiftpm/Package.resolved
+macos/Runner.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
+.pub-cache/
+.pub/
+/build/
+
+# Symbolication related
+app.*.symbols
+
+# Obfuscation related
+app.*.map.json
+
+# Android Studio will place build artifacts here
+/android/app/debug
+/android/app/profile
+/android/app/release
+/android/build/
+
+# Local Android release/upload signing material. Production credentials belong
+# in the platform key store or GitHub Actions secrets, never source control.
+/android/key.properties
+*.jks
+*.keystore
+
+# Generated at release time by dist/app-store-release-notes.sh — the App Store
+# "What's New" text is derived from the commit range, not committed.
+/fastlane/metadata/*
+!/fastlane/metadata/ios/
+/fastlane/metadata/ios/*
+!/fastlane/metadata/ios/en-US/
+/fastlane/metadata/ios/en-US/*
+!/fastlane/metadata/ios/en-US/marketing_url.txt
+!/fastlane/metadata/ios/en-US/privacy_url.txt
+!/fastlane/metadata/ios/en-US/support_url.txt
+/fastlane/report.xml
+
+# Scratch output from store-media/ios-generator/render.sh.
+store-media/ios-generator/out/

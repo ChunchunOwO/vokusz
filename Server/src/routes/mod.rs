@@ -1,0 +1,667 @@
+mod admin;
+mod applications;
+pub mod audit_log;
+mod auth;
+mod bans;
+pub mod channels;
+mod emojis;
+mod gateway;
+mod health;
+mod interactions;
+mod invite_page;
+mod invites;
+mod landing;
+pub mod members;
+pub mod messages;
+mod mutes;
+mod plugins;
+mod reactions;
+mod read_states;
+mod relationships;
+pub mod reports;
+pub mod roles;
+pub mod seo;
+mod settings;
+mod soundboard;
+pub mod spaces;
+pub mod system_messages;
+#[cfg(feature = "test-seed")]
+mod test_seed;
+mod users;
+pub(crate) mod voice;
+
+use axum::middleware as axum_mw;
+use axum::routing::{delete, get, patch, post, put};
+use axum::Router;
+use tower_http::cors::{Any, CorsLayer};
+use tower_http::services::ServeDir;
+use tower_http::trace::TraceLayer;
+
+use crate::middleware::rate_limit::rate_limit_middleware;
+use crate::state::AppState;
+
+/// Build the full application router. Consumes the state so middleware
+/// layers that need `State<AppState>` (e.g. rate limiter) can be wired up.
+pub fn router(state: AppState) -> Router {
+    let api = api_routes(&state);
+
+    let seo = Router::new()
+        .route("/{space_slug}", get(seo::space_snapshot))
+        .route("/{space_slug}/{channel_name}", get(seo::channel_snapshot))
+        .route(
+            "/{space_slug}/{channel_name}/{post_id}",
+            get(seo::post_snapshot),
+        );
+
+    let base = Router::new()
+        .route("/", get(landing::landing))
+        .route("/update-status", get(landing::update_status))
+        .route("/robots.txt", get(seo::robots))
+        .route("/sitemap.xml", get(seo::sitemap))
+        .route("/oembed", get(seo::oembed))
+        .route("/health", get(health::health))
+        .route("/ws", get(crate::gateway::ws_upgrade))
+        .route("/mcp", post(crate::mcp::handle_mcp))
+        .route("/invite/{code}", get(invite_page::invite_page))
+        // Federation: signature-authed (not bearer/rate-limited), so wired here
+        // rather than under /api/v1.
+        .route(
+            crate::federation::peers::WELL_KNOWN_PATH,
+            get(crate::federation::wellknown::handle_well_known),
+        )
+        .route(
+            crate::federation::inbox::INBOX_PATH,
+            post(crate::federation::inbox::handle_inbox),
+        )
+        .route(
+            crate::federation::handshake::JOIN_PATH,
+            post(crate::federation::handshake::handle_join),
+        )
+        .route(
+            crate::federation::forward::SEND_PATH,
+            post(crate::federation::forward::handle_send),
+        )
+        .route(
+            crate::federation::forward::REACT_PATH,
+            post(crate::federation::forward::handle_react),
+        )
+        .route(
+            crate::federation::forward::LEAVE_PATH,
+            post(crate::federation::forward::handle_leave),
+        )
+        .route(
+            crate::federation::forward::EDIT_PATH,
+            post(crate::federation::forward::handle_edit),
+        )
+        .route(
+            crate::federation::forward::DELETE_PATH,
+            post(crate::federation::forward::handle_delete),
+        )
+        .route(
+            crate::federation::forward::TYPING_PATH,
+            post(crate::federation::forward::handle_typing),
+        )
+        .route(
+            crate::federation::dm::DM_OPEN_PATH,
+            post(crate::federation::dm::handle_open),
+        )
+        .route(
+            crate::federation::dm::DM_ANNOUNCE_PATH,
+            post(crate::federation::dm::handle_announce),
+        )
+        .route(
+            crate::federation::dm::DM_SEND_PATH,
+            post(crate::federation::dm::handle_send),
+        )
+        .route(
+            "/cdn/attachments/{*path}",
+            get(crate::storage::serve_attachment),
+        )
+        .nest_service(
+            "/cdn/emojis",
+            ServeDir::new(state.storage_path.join("emojis")),
+        )
+        .nest_service(
+            "/cdn/sounds",
+            ServeDir::new(state.storage_path.join("sounds")),
+        )
+        .nest_service(
+            "/cdn/avatars",
+            ServeDir::new(state.storage_path.join("avatars")),
+        )
+        .nest_service(
+            "/cdn/icons",
+            ServeDir::new(state.storage_path.join("icons")),
+        )
+        .nest_service(
+            "/cdn/banners",
+            ServeDir::new(state.storage_path.join("banners")),
+        )
+        .nest_service(
+            "/cdn/splashes",
+            ServeDir::new(state.storage_path.join("splashes")),
+        )
+        .nest("/s", seo)
+        .nest("/api/v1", api);
+
+    // The /test/seed route is only compiled in when the "test-seed" feature
+    // is explicitly enabled. It must never be set in production builds.
+    #[cfg(feature = "test-seed")]
+    let base = base.route("/test/seed", post(test_seed::seed));
+
+    base.layer(axum_mw::from_fn(cdn_security_headers))
+        .layer(TraceLayer::new_for_http())
+        .layer(build_cors_layer())
+        .with_state(state)
+}
+
+fn api_routes(state: &AppState) -> Router<AppState> {
+    Router::new()
+        // Auth (register/login are public, logout requires auth)
+        .route("/auth/register", post(auth::register))
+        .route("/auth/login", post(auth::login))
+        .route("/auth/login/mfa", post(auth::login_mfa))
+        .route("/auth/guest", post(auth::guest))
+        .route("/auth/logout", post(auth::logout))
+        .route("/auth/sessions/revoke-all", post(auth::revoke_all_sessions))
+        .route("/auth/change-password", post(auth::change_password))
+        // 2FA (all require auth)
+        .route("/auth/2fa/enable", post(auth::enable_2fa))
+        .route("/auth/2fa/verify", post(auth::verify_2fa))
+        .route("/auth/2fa/disable", post(auth::disable_2fa))
+        .route(
+            "/auth/2fa/backup-codes",
+            post(auth::regenerate_backup_codes),
+        )
+        // Gateway (public, no auth needed)
+        .route("/gateway", get(gateway::get_gateway))
+        // Users
+        .route(
+            "/users/@me",
+            get(users::get_current_user)
+                .patch(users::update_current_user)
+                .delete(users::delete_current_user),
+        )
+        .route(
+            "/users/@me/data-export",
+            get(users::export_current_user_data),
+        )
+        .route("/users/@me/spaces", get(users::get_current_user_spaces))
+        .route(
+            "/users/@me/channels",
+            get(users::get_current_user_channels).post(users::create_dm_channel),
+        )
+        .route(
+            "/users/@me/read-states",
+            get(read_states::get_unread_channels),
+        )
+        .route("/users/@me/mutes", get(mutes::list_mutes))
+        .route(
+            "/users/@me/relationships",
+            get(relationships::list_relationships),
+        )
+        .route(
+            "/users/@me/relationships/{user_id}",
+            put(relationships::put_relationship).delete(relationships::delete_relationship),
+        )
+        .route("/users/{user_id}", get(users::get_user))
+        // Spaces
+        .route("/spaces/public", get(spaces::list_public_spaces))
+        .route("/spaces", post(spaces::create_space))
+        .route(
+            "/spaces/{space_id}",
+            get(spaces::get_space)
+                .patch(spaces::update_space)
+                .delete(spaces::delete_space),
+        )
+        .route(
+            "/spaces/{space_id}/channels",
+            get(spaces::list_channels)
+                .post(spaces::create_channel)
+                .patch(spaces::reorder_channels),
+        )
+        // Members
+        .route("/spaces/{space_id}/members", get(members::list_members))
+        .route(
+            "/spaces/{space_id}/members/search",
+            get(members::search_members),
+        )
+        .route(
+            "/spaces/{space_id}/members/@me",
+            patch(members::update_own_member).delete(members::leave_space),
+        )
+        .route(
+            "/spaces/{space_id}/members/{user_id}",
+            get(members::get_member)
+                .patch(members::update_member)
+                .delete(members::kick_member),
+        )
+        .route(
+            "/spaces/{space_id}/members/{user_id}/roles/{role_id}",
+            put(members::add_role).delete(members::remove_role),
+        )
+        // Message search
+        .route(
+            "/spaces/{space_id}/messages/search",
+            get(messages::search_messages),
+        )
+        // Bans
+        .route("/spaces/{space_id}/bans", get(bans::list_bans))
+        .route(
+            "/spaces/{space_id}/bans/{user_id}",
+            get(bans::get_ban)
+                .put(bans::create_ban)
+                .delete(bans::delete_ban),
+        )
+        // Audit log
+        .route(
+            "/spaces/{space_id}/audit-log",
+            get(audit_log::list_audit_log),
+        )
+        // Reports
+        .route("/reports/categories", get(reports::list_report_categories))
+        // Reports that belong to no space (a DM, or a user reported from
+        // outside a space): they go to the instance operator, not to space
+        // moderators who do not exist for that content.
+        .route("/reports", post(reports::create_direct_report))
+        .route(
+            "/spaces/{space_id}/reports",
+            get(reports::list_reports).post(reports::create_report),
+        )
+        .route(
+            "/spaces/{space_id}/reports/{report_id}",
+            get(reports::get_report).patch(reports::resolve_report),
+        )
+        // Roles
+        .route(
+            "/spaces/{space_id}/roles",
+            get(roles::list_roles)
+                .post(roles::create_role)
+                .patch(roles::reorder_roles),
+        )
+        .route(
+            "/spaces/{space_id}/roles/{role_id}",
+            patch(roles::update_role).delete(roles::delete_role),
+        )
+        // Channels
+        .route(
+            "/channels/{channel_id}",
+            get(channels::get_channel)
+                .patch(channels::update_channel)
+                .delete(channels::delete_channel),
+        )
+        .route(
+            "/channels/{channel_id}/recipients/{user_id}",
+            put(channels::add_recipient).delete(channels::remove_recipient),
+        )
+        // Read states
+        .route("/channels/{channel_id}/ack", post(read_states::ack_channel))
+        // Channel mutes
+        .route(
+            "/channels/{channel_id}/mute",
+            put(mutes::mute_channel).delete(mutes::unmute_channel),
+        )
+        .route(
+            "/channels/{channel_id}/permissions",
+            get(channels::list_overwrites),
+        )
+        .route(
+            "/channels/{channel_id}/permissions/{overwrite_id}",
+            put(channels::upsert_overwrite).delete(channels::delete_overwrite),
+        )
+        // Messages
+        .route(
+            "/channels/{channel_id}/messages",
+            get(messages::list_messages).post(messages::create_message),
+        )
+        .route(
+            "/channels/{channel_id}/messages/upload",
+            post(messages::create_message_multipart),
+        )
+        .route(
+            "/channels/{channel_id}/messages/{message_id}",
+            get(messages::get_message)
+                .patch(messages::update_message)
+                .delete(messages::delete_message),
+        )
+        .route(
+            "/channels/{channel_id}/messages/bulk-delete",
+            post(messages::bulk_delete_messages),
+        )
+        .route(
+            "/channels/{channel_id}/messages/{message_id}/threads",
+            get(messages::get_thread_info),
+        )
+        .route(
+            "/channels/{channel_id}/threads",
+            get(messages::list_active_threads),
+        )
+        .route("/channels/{channel_id}/pins", get(messages::list_pins))
+        .route(
+            "/channels/{channel_id}/pins/{message_id}",
+            put(messages::pin_message).delete(messages::unpin_message),
+        )
+        .route(
+            "/channels/{channel_id}/typing",
+            post(messages::typing_indicator),
+        )
+        // Reactions
+        .route(
+            "/channels/{channel_id}/messages/{message_id}/reactions/{emoji}/@me",
+            put(reactions::add_reaction).delete(reactions::remove_own_reaction),
+        )
+        .route(
+            "/channels/{channel_id}/messages/{message_id}/reactions/{emoji}/{user_id}",
+            delete(reactions::remove_user_reaction),
+        )
+        .route(
+            "/channels/{channel_id}/messages/{message_id}/reactions/{emoji}",
+            get(reactions::list_reactions).delete(reactions::remove_all_reactions_emoji),
+        )
+        .route(
+            "/channels/{channel_id}/messages/{message_id}/reactions",
+            delete(reactions::remove_all_reactions),
+        )
+        // Invites
+        .route(
+            "/invites/{code}",
+            get(invites::get_invite).delete(invites::delete_invite),
+        )
+        .route("/invites/{code}/accept", post(invites::accept_invite))
+        .route(
+            "/spaces/{space_id}/invites",
+            get(invites::list_space_invites).post(invites::create_space_invite),
+        )
+        .route("/spaces/{space_id}/join", post(spaces::join_public_space))
+        .route(
+            "/federation/spaces/join",
+            post(spaces::join_federated_space),
+        )
+        .route(
+            "/spaces/{space_id}/anonymous-count",
+            get(spaces::get_anonymous_count),
+        )
+        .route(
+            "/channels/{channel_id}/invites",
+            get(invites::list_channel_invites).post(invites::create_channel_invite),
+        )
+        // Emojis
+        .route(
+            "/spaces/{space_id}/emojis",
+            get(emojis::list_emojis).post(emojis::create_emoji),
+        )
+        .route(
+            "/spaces/{space_id}/emojis/{emoji_id}",
+            get(emojis::get_emoji)
+                .patch(emojis::update_emoji)
+                .delete(emojis::delete_emoji),
+        )
+        // Plugins
+        .route(
+            "/spaces/{space_id}/plugins",
+            get(plugins::list_plugins).post(plugins::install_plugin),
+        )
+        .route(
+            "/spaces/{space_id}/plugins/{plugin_id}",
+            delete(plugins::uninstall_plugin),
+        )
+        .route(
+            "/plugins/{plugin_id}/source",
+            get(plugins::get_plugin_source),
+        )
+        .route(
+            "/plugins/{plugin_id}/bundle",
+            get(plugins::get_plugin_bundle),
+        )
+        .route("/plugins/{plugin_id}/icon", get(plugins::get_plugin_icon))
+        .route(
+            "/channels/{channel_id}/sessions/active",
+            get(plugins::get_channel_active_sessions),
+        )
+        .route(
+            "/spaces/{space_id}/sessions/active",
+            get(plugins::get_space_active_sessions),
+        )
+        .route(
+            "/plugins/{plugin_id}/sessions",
+            post(plugins::create_session),
+        )
+        .route(
+            "/plugins/{plugin_id}/sessions/{session_id}",
+            patch(plugins::update_session_state).delete(plugins::delete_session),
+        )
+        .route(
+            "/plugins/{plugin_id}/sessions/{session_id}/leave",
+            post(plugins::leave_session),
+        )
+        .route(
+            "/plugins/{plugin_id}/sessions/{session_id}/roles",
+            post(plugins::assign_role),
+        )
+        .route(
+            "/plugins/{plugin_id}/sessions/{session_id}/actions",
+            post(plugins::send_action),
+        )
+        // Plugin leaderboards
+        .route(
+            "/plugins/{plugin_id}/leaderboards/{board_id}/submit",
+            post(plugins::leaderboard_submit),
+        )
+        .route(
+            "/plugins/{plugin_id}/leaderboards/{board_id}",
+            get(plugins::leaderboard_list),
+        )
+        .route(
+            "/plugins/{plugin_id}/leaderboards/{board_id}/around",
+            get(plugins::leaderboard_around),
+        )
+        .route(
+            "/plugins/{plugin_id}/leaderboards/{board_id}/user/{user_id}",
+            get(plugins::leaderboard_get_user),
+        )
+        // Soundboard
+        .route(
+            "/spaces/{space_id}/soundboard",
+            get(soundboard::list_sounds).post(soundboard::create_sound),
+        )
+        .route(
+            "/spaces/{space_id}/soundboard/{sound_id}",
+            get(soundboard::get_sound)
+                .patch(soundboard::update_sound)
+                .delete(soundboard::delete_sound),
+        )
+        .route(
+            "/spaces/{space_id}/soundboard/{sound_id}/play",
+            post(soundboard::play_sound),
+        )
+        // Voice
+        .route("/voice/info", get(voice::voice_info))
+        .route(
+            "/spaces/{space_id}/voice-regions",
+            get(voice::list_voice_regions),
+        )
+        .route(
+            "/channels/{channel_id}/voice-status",
+            get(voice::get_voice_status),
+        )
+        .route("/channels/{channel_id}/voice/join", post(voice::join_voice))
+        .route(
+            "/channels/{channel_id}/voice/leave",
+            delete(voice::leave_voice),
+        )
+        // DM call signaling
+        .route("/channels/{channel_id}/call/ring", post(voice::ring_call))
+        .route(
+            "/channels/{channel_id}/call/decline",
+            post(voice::decline_call),
+        )
+        .route(
+            "/channels/{channel_id}/call/cancel",
+            post(voice::cancel_call),
+        )
+        // Applications
+        .route("/applications", post(applications::create_application))
+        .route(
+            "/applications/@me",
+            get(applications::get_current_application)
+                .patch(applications::update_current_application),
+        )
+        .route(
+            "/applications/@me/reset-token",
+            post(applications::reset_token),
+        )
+        // Interactions (stubs)
+        .route(
+            "/applications/{app_id}/commands",
+            get(interactions::list_global_commands).post(interactions::create_global_command),
+        )
+        .route(
+            "/interactions/{interaction_id}/{token}/callback",
+            post(interactions::interaction_callback),
+        )
+        // Attachment moderation: authenticated and rate-limited with the API.
+        .route("/automod/health", get(crate::automod::routes::health))
+        .route(
+            "/automod/{scope}/attachments/{id}/block",
+            post(crate::automod::routes::block_attachment),
+        )
+        .route(
+            "/automod/{scope}/policy",
+            get(crate::automod::routes::get_policy)
+                .put(crate::automod::routes::set_policy)
+                .delete(crate::automod::routes::reset_policy),
+        )
+        .route(
+            "/automod/{scope}/uploads",
+            get(crate::automod::routes::list_uploads),
+        )
+        .route(
+            "/automod/uploads/{id}",
+            get(crate::automod::routes::status).patch(crate::automod::routes::review),
+        )
+        .route(
+            "/automod/uploads/{id}/content",
+            get(crate::automod::routes::content),
+        )
+        .route(
+            "/automod/{scope}/hashes",
+            get(crate::automod::routes::list_hashes),
+        )
+        .route(
+            "/automod/{scope}/hashes/{hash}",
+            axum::routing::put(crate::automod::routes::block_hash)
+                .delete(crate::automod::routes::unblock_hash),
+        )
+        .route(
+            "/automod/{scope}/events",
+            get(crate::automod::routes::events),
+        )
+        // Admin
+        // The instance-wide report queue — the only place a space-less report
+        // is visible, since per-space queues cannot show one.
+        .route("/admin/reports", get(reports::list_all_reports))
+        .route(
+            "/admin/reports/{report_id}",
+            patch(reports::resolve_any_report),
+        )
+        .route("/admin/spaces", get(admin::list_spaces))
+        .route("/admin/spaces/{space_id}", patch(admin::update_space))
+        .route("/admin/users", get(admin::list_users))
+        .route(
+            "/admin/users/{user_id}",
+            patch(admin::update_user).delete(admin::delete_user),
+        )
+        .route(
+            "/admin/users/{user_id}/reset-password",
+            post(admin::reset_user_password),
+        )
+        // Admin: federation peer management
+        .route(
+            "/admin/federation/peers",
+            get(admin::list_federation_peers).post(admin::add_federation_peer),
+        )
+        .route(
+            "/admin/federation/peers/{domain}",
+            patch(admin::update_federation_peer).delete(admin::delete_federation_peer),
+        )
+        // Admin settings (GET + PATCH, admin-only)
+        .route(
+            "/admin/settings",
+            get(settings::get_settings).patch(settings::update_settings),
+        )
+        // Public settings (GET only, any authenticated user — for client upload limits, etc.)
+        .route("/settings", get(settings::get_public_settings))
+        // Version
+        .route("/version", get(health::version))
+        // Gateway info (authenticated)
+        .route("/gateway/bot", get(gateway::get_gateway_bot))
+        // Rate limit on all API routes
+        .layer(axum_mw::from_fn_with_state(
+            state.clone(),
+            rate_limit_middleware,
+        ))
+}
+
+/// Build the CORS layer. If `CORS_ALLOWED_ORIGINS` is set, restrict to those
+/// origins (comma-separated). Otherwise, allow any origin for backward
+/// compatibility with game clients that don't send an Origin header.
+fn build_cors_layer() -> CorsLayer {
+    use axum::http::{HeaderName, Method};
+
+    let methods = [
+        Method::GET,
+        Method::POST,
+        Method::PUT,
+        Method::PATCH,
+        Method::DELETE,
+        Method::OPTIONS,
+    ];
+    let headers = [
+        HeaderName::from_static("authorization"),
+        HeaderName::from_static("content-type"),
+        HeaderName::from_static("accept"),
+        HeaderName::from_static("user-agent"),
+    ];
+
+    match std::env::var("CORS_ALLOWED_ORIGINS") {
+        Ok(origins) if !origins.is_empty() => {
+            let origins: Vec<_> = origins
+                .split(',')
+                .filter_map(|o| o.trim().parse().ok())
+                .collect();
+            CorsLayer::new()
+                .allow_origin(origins)
+                .allow_methods(methods)
+                .allow_headers(headers)
+        }
+        _ => CorsLayer::new()
+            .allow_origin(Any)
+            .allow_methods(methods)
+            .allow_headers(headers),
+    }
+}
+
+// Uploaded files can contain active HTML even when their filename looks benign.
+async fn cdn_security_headers(
+    req: axum::extract::Request,
+    next: axum_mw::Next,
+) -> axum::response::Response {
+    let cdn = req.uri().path().starts_with("/cdn/");
+    let attachment = req.uri().path().starts_with("/cdn/attachments/");
+    let mut response = next.run(req).await;
+    if cdn {
+        response
+            .headers_mut()
+            .insert("X-Content-Type-Options", "nosniff".parse().unwrap());
+        response.headers_mut().insert(
+            "Content-Security-Policy",
+            "sandbox; default-src 'none'".parse().unwrap(),
+        );
+    }
+    if attachment {
+        response
+            .headers_mut()
+            .insert("Content-Disposition", "attachment".parse().unwrap());
+    }
+    response
+}

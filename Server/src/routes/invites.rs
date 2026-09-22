@@ -1,0 +1,163 @@
+use axum::extract::{Path, State};
+use axum::Json;
+
+use crate::db;
+use crate::error::AppError;
+use crate::gateway::events::GatewayBroadcast;
+use crate::middleware::auth::AuthUser;
+use crate::middleware::permissions::{require_channel_permission, require_permission};
+use crate::models::invite::CreateInvite;
+use crate::state::AppState;
+
+pub async fn get_invite(
+    state: State<AppState>,
+    Path(code): Path<String>,
+    _auth: AuthUser,
+) -> Result<Json<serde_json::Value>, AppError> {
+    // get_invite is accessible to any authenticated user (they need the code to look it up)
+    let invite = db::invites::get_invite(&state.db, &code).await?;
+    Ok(Json(serde_json::json!({ "data": invite })))
+}
+
+pub async fn delete_invite(
+    state: State<AppState>,
+    Path(code): Path<String>,
+    auth: AuthUser,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let invite = db::invites::get_invite(&state.db, &code).await?;
+    require_permission(&state.db, &invite.space_id, &auth, "manage_channels").await?;
+    db::invites::delete_invite(&state.db, &code).await?;
+    Ok(Json(serde_json::json!({ "data": null })))
+}
+
+pub async fn accept_invite(
+    state: State<AppState>,
+    Path(code): Path<String>,
+    auth: AuthUser,
+) -> Result<Json<serde_json::Value>, AppError> {
+    if auth.is_guest {
+        return Err(AppError::Forbidden("guests cannot accept invites".into()));
+    }
+    let (invite, newly_added) = db::invites::accept_invite(&state.db, &code, &auth.user_id).await?;
+
+    if newly_added {
+        let member =
+            db::members::get_member_row(&state.db, &invite.space_id, &auth.user_id).await?;
+        // Broadcast member.join to the space
+        let user = db::users::get_user(&state.db, &auth.user_id).await?;
+        if let Some(ref dispatcher) = *state.gateway_tx.read().await {
+            let event = serde_json::json!({
+                "op": 0,
+                "type": "member.join",
+                "data": {
+                    "space_id": invite.space_id,
+                    "user": user,
+                    "joined_at": member.joined_at
+                }
+            });
+            let _ = dispatcher.send(GatewayBroadcast {
+                space_id: Some(invite.space_id.clone()),
+                target_user_ids: None,
+                event,
+                intent: "members".to_string(),
+                required_permission: None,
+            });
+        }
+
+        // Fan the new member out to interested peers for a locally-homed space.
+        if let Some(fed) = state.federation.as_ref() {
+            let payload = crate::federation::outbound::member_join_payload(&fed.domain, &user);
+            let _ = crate::federation::outbound::fanout_to_space(
+                &state,
+                &invite.space_id,
+                "m.member.join",
+                payload,
+            )
+            .await;
+        }
+
+        // Audit log: record invite acceptance
+        if let Ok(entry) = db::audit_log::create_entry(
+            &state.db,
+            &invite.space_id,
+            &auth.user_id,
+            "invite_accept",
+            invite.inviter_id.as_deref(),
+            Some("invite"),
+            None,
+            Some(
+                &serde_json::json!({
+                    "invite_code": invite.code,
+                    "inviter_id": invite.inviter_id
+                })
+                .to_string(),
+            ),
+        )
+        .await
+        {
+            super::audit_log::broadcast_entry(&state, &entry).await;
+        }
+
+        // Post a system message in the welcome/system channel (if configured)
+        super::system_messages::broadcast_member_join_message(
+            &state,
+            &invite.space_id,
+            &auth.user_id,
+        )
+        .await;
+    }
+
+    Ok(Json(serde_json::json!({ "data": invite })))
+}
+
+pub async fn list_space_invites(
+    state: State<AppState>,
+    Path(space_id): Path<String>,
+    auth: AuthUser,
+) -> Result<Json<serde_json::Value>, AppError> {
+    require_permission(&state.db, &space_id, &auth, "manage_channels").await?;
+    let invites = db::invites::list_space_invites(&state.db, &space_id).await?;
+    Ok(Json(serde_json::json!({ "data": invites })))
+}
+
+pub async fn list_channel_invites(
+    state: State<AppState>,
+    Path(channel_id): Path<String>,
+    auth: AuthUser,
+) -> Result<Json<serde_json::Value>, AppError> {
+    require_channel_permission(&state.db, &channel_id, &auth, "manage_channels").await?;
+    let invites = db::invites::list_channel_invites(&state.db, &channel_id).await?;
+    Ok(Json(serde_json::json!({ "data": invites })))
+}
+
+pub async fn create_channel_invite(
+    state: State<AppState>,
+    Path(channel_id): Path<String>,
+    auth: AuthUser,
+    Json(input): Json<CreateInvite>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let space_id =
+        require_channel_permission(&state.db, &channel_id, &auth, "create_invites").await?;
+    let invite = db::invites::create_invite(
+        &state.db,
+        &space_id,
+        Some(channel_id.as_str()),
+        &auth.user_id,
+        &input,
+    )
+    .await?;
+    Ok(Json(serde_json::json!({ "data": invite })))
+}
+
+pub async fn create_space_invite(
+    state: State<AppState>,
+    Path(space_id): Path<String>,
+    auth: AuthUser,
+    Json(input): Json<CreateInvite>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    require_permission(&state.db, &space_id, &auth, "create_invites").await?;
+    let _space = db::spaces::get_space_row(&state.db, &space_id).await?;
+    let invite =
+        db::invites::create_invite(&state.db, &space_id, None, &auth.user_id, &input).await?;
+    Ok(Json(serde_json::json!({ "data": invite })))
+}

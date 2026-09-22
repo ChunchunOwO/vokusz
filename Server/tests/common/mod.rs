@@ -1,0 +1,561 @@
+#![allow(dead_code)]
+
+use accordserver::db;
+use accordserver::gateway::dispatcher::Dispatcher;
+use accordserver::middleware::auth::{create_token_hash, generate_token};
+use accordserver::models::user::{CreateUser, User};
+use accordserver::routes;
+use accordserver::state::AppState;
+use accordserver::storage;
+use accordserver::voice::livekit::LiveKitClient;
+use arc_swap::ArcSwap;
+use axum::body::Body;
+use dashmap::DashMap;
+use http::{Method, Request};
+use sqlx::AnyPool;
+use std::sync::Arc;
+use tokio::sync::{Mutex, RwLock};
+
+/// A user created for testing, bundling the User record with its raw token.
+pub struct TestUser {
+    pub user: User,
+    pub token: String,
+    pub is_bot: bool,
+}
+
+impl TestUser {
+    /// Returns the Authorization header value (e.g. `"Bearer xxx"` or `"Bot xxx"`).
+    pub fn auth_header(&self) -> String {
+        if self.is_bot {
+            format!("Bot {}", self.token)
+        } else {
+            format!("Bearer {}", self.token)
+        }
+    }
+
+    /// Returns the token string formatted for gateway IDENTIFY (includes prefix).
+    pub fn gateway_token(&self) -> String {
+        self.auth_header()
+    }
+}
+
+/// Test server that owns a database pool and full AppState.
+/// Uses DATABASE_URL from the environment if set (e.g. for Postgres CI),
+/// otherwise falls back to an in-memory SQLite database.
+pub struct TestServer {
+    pub state: AppState,
+}
+
+impl TestServer {
+    /// Create a new TestServer. Uses DATABASE_URL if set, otherwise in-memory SQLite.
+    pub async fn new() -> Self {
+        sqlx::any::install_default_drivers();
+        let db_url =
+            std::env::var("DATABASE_URL").unwrap_or_else(|_| "sqlite::memory:".to_string());
+        let is_postgres = db::url_is_postgres(&db_url);
+        let pool = db::create_pool(&db_url)
+            .await
+            .expect("failed to create test pool");
+
+        // For Postgres, truncate all tables to ensure test isolation.
+        // In-memory SQLite starts empty each time so this is not needed there.
+        if is_postgres {
+            // Truncate all application tables (order doesn't matter with CASCADE).
+            // server_settings is re-created by get_settings() below.
+            for table in &[
+                "message_cooldowns",
+                "automod_events",
+                "automod_uploads",
+                "automod_cache",
+                "automod_hashes",
+                "automod_policies",
+                "voice_evictions",
+                "attachment_deletions",
+                "read_states",
+                "reactions",
+                "pinned_messages",
+                "attachments",
+                "messages",
+                "permission_overwrites",
+                "channel_mutes",
+                "dm_participants",
+                "member_roles",
+                "space_introductions",
+                "members",
+                "bans",
+                "invites",
+                "emoji_roles",
+                "emojis",
+                "soundboard_sounds",
+                "bot_tokens",
+                "applications",
+                "user_tokens",
+                "backup_codes",
+                "channels",
+                "roles",
+                "reports",
+                "relationships",
+                "federation_peers",
+                "federation_inbox_dedup",
+                "federation_outbox",
+                "spaces",
+                "users",
+                "server_settings",
+            ] {
+                let sql = format!("TRUNCATE TABLE {} CASCADE", table);
+                sqlx::query(&sql)
+                    .execute(&pool)
+                    .await
+                    .unwrap_or_else(|e| panic!("failed to truncate {}: {}", table, e));
+            }
+            // Re-insert the singleton settings row after truncation
+            sqlx::query("INSERT INTO server_settings (id) VALUES (1) ON CONFLICT DO NOTHING")
+                .execute(&pool)
+                .await
+                .expect("failed to re-insert server_settings row");
+        }
+
+        let (dispatcher, gateway_tx) = Dispatcher::new();
+
+        let storage_path = storage::temp_storage_path();
+        // Create storage subdirectories
+        for subdir in &["emojis", "sounds", "avatars", "icons", "banners"] {
+            std::fs::create_dir_all(storage_path.join(subdir)).ok();
+        }
+
+        let livekit_client = Some(LiveKitClient::new(
+            "http://localhost:7880",
+            "ws://localhost:7880",
+            "devkey",
+            "secret",
+        ));
+
+        let settings = db::settings::get_settings(&pool).await.unwrap_or_default();
+
+        let state = AppState {
+            automod: Arc::new(accordserver::automod::AutoMod::default()),
+            security: Arc::new(accordserver::security::SecurityState::default()),
+            db: pool,
+            db_is_postgres: is_postgres,
+            voice_states: Arc::new(DashMap::new()),
+            presences: Arc::new(DashMap::new()),
+            dispatcher: Arc::new(RwLock::new(Some(dispatcher))),
+            gateway_tx: Arc::new(RwLock::new(Some(gateway_tx))),
+            test_mode: true,
+            livekit_client,
+            rate_limits: Arc::new(DashMap::new()),
+            storage_path,
+            update_status_path: None,
+            settings: Arc::new(ArcSwap::from_pointee(settings)),
+            master_config: None,
+            master_task: Arc::new(Mutex::new(None)),
+            federation: None,
+            mfa_tickets: Arc::new(DashMap::new()),
+            totp_attempts: Arc::new(DashMap::new()),
+            totp_key: None,
+            mcp_api_key: None,
+            login_failures: Arc::new(DashMap::new()),
+            register_attempts: Arc::new(DashMap::new()),
+            guest_attempts: Arc::new(DashMap::new()),
+            guest_counts: Arc::new(DashMap::new()),
+            resumable_sessions: Arc::new(DashMap::new()),
+        };
+
+        Self { state }
+    }
+
+    /// Returns an Axum Router wired to this server's state for `oneshot()` calls.
+    pub fn router(&self) -> axum::Router {
+        routes::router(self.state.clone())
+    }
+
+    /// Enable peer-to-peer federation on this server with the given domain.
+    /// Generates an Ed25519 identity under the server's temp storage path.
+    pub fn enable_federation(&mut self, domain: &str) {
+        let cfg = accordserver::config::FederationConfig {
+            domain: domain.to_string(),
+            public_url: format!("https://{domain}"),
+            enabled: true,
+        };
+        let ctx =
+            accordserver::federation::FederationContext::build(&cfg, &self.state.storage_path)
+                .expect("failed to build federation context");
+        self.state.federation = Some(Arc::new(ctx));
+    }
+
+    /// Returns a reference to the underlying database pool.
+    pub fn pool(&self) -> &AnyPool {
+        &self.state.db
+    }
+
+    /// Mirror a minimal remote space + channel homed on `origin` so inbound
+    /// federated events for it can be applied. Returns (space_id, channel_id),
+    /// both qualified. Upserts the remote owner user first to satisfy FKs.
+    pub async fn mirror_remote_space(&self, origin: &str) -> (String, String) {
+        let owner_id = format!("owner@{origin}");
+        let space_id = format!("space1@{origin}");
+        let channel_id = format!("chan1@{origin}");
+        db::users::upsert_remote_user(
+            self.pool(),
+            &owner_id,
+            origin,
+            &format!("owner@{origin}"),
+            Some("Owner"),
+            None,
+        )
+        .await
+        .unwrap();
+        db::federation::upsert_remote_space(
+            self.pool(),
+            &space_id,
+            origin,
+            "Remote Space",
+            &format!("remote-{origin}"),
+            &owner_id,
+        )
+        .await
+        .unwrap();
+        db::federation::upsert_remote_channel(
+            self.pool(),
+            &channel_id,
+            origin,
+            &space_id,
+            "general",
+            "text",
+            0,
+        )
+        .await
+        .unwrap();
+        (space_id, channel_id)
+    }
+
+    /// Binds a TCP listener on port 0, spawns the server, and returns the base URL.
+    pub async fn spawn(&self) -> String {
+        let app = self.router();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+        format!("http://127.0.0.1:{}", addr.port())
+    }
+
+    /// Create a user and insert a bearer token into `user_tokens` with far-future expiry.
+    /// Returns a `TestUser` with `is_bot = false`.
+    pub async fn create_user_with_token(&self, username: &str) -> TestUser {
+        let user = db::users::create_user(
+            self.pool(),
+            &CreateUser {
+                username: username.to_string(),
+                display_name: None,
+            },
+        )
+        .await
+        .expect("failed to create test user");
+
+        let token = generate_token();
+        let token_hash = create_token_hash(&token);
+
+        sqlx::query(
+            &accordserver::db::q("INSERT INTO user_tokens (token_hash, user_id, expires_at) VALUES (?, ?, '2099-12-31T23:59:59')"),
+        )
+        .bind(&token_hash)
+        .bind(&user.id)
+        .execute(self.pool())
+        .await
+        .expect("failed to insert test token");
+
+        TestUser {
+            user,
+            token,
+            is_bot: false,
+        }
+    }
+
+    /// Create an application with a bot user and token.
+    /// Returns `(owner TestUser, bot TestUser)`.
+    pub async fn create_bot_with_token(
+        &self,
+        owner_username: &str,
+        app_name: &str,
+    ) -> (TestUser, TestUser) {
+        let owner = self.create_user_with_token(owner_username).await;
+
+        let (_app, bot_token) =
+            db::auth::create_application(self.pool(), &owner.user.id, app_name, "test bot")
+                .await
+                .expect("failed to create test application");
+
+        // Fetch the bot user (created by create_application)
+        let bot_user_id: String = sqlx::query_scalar(&accordserver::db::q(
+            "SELECT bot_user_id FROM applications WHERE name = ?",
+        ))
+        .bind(app_name)
+        .fetch_one(self.pool())
+        .await
+        .expect("failed to find bot user");
+
+        let bot_user = db::users::get_user(self.pool(), &bot_user_id)
+            .await
+            .expect("failed to get bot user");
+
+        let bot = TestUser {
+            user: bot_user,
+            token: bot_token,
+            is_bot: true,
+        };
+
+        (owner, bot)
+    }
+
+    /// Create a space owned by the given user. Returns the space ID.
+    pub async fn create_space(&self, owner_id: &str, name: &str) -> String {
+        let space = db::spaces::create_space(
+            self.pool(),
+            owner_id,
+            &accordserver::models::space::CreateSpace {
+                name: name.to_string(),
+                slug: None,
+                description: None,
+                public: None,
+                allow_guest_access: None,
+            },
+        )
+        .await
+        .expect("failed to create test space");
+        space.id
+    }
+
+    /// Create a public space owned by the given user. Returns the space ID.
+    pub async fn create_public_space(&self, owner_id: &str, name: &str) -> String {
+        let space = db::spaces::create_space(
+            self.pool(),
+            owner_id,
+            &accordserver::models::space::CreateSpace {
+                name: name.to_string(),
+                slug: None,
+                description: None,
+                public: Some(true),
+                allow_guest_access: None,
+            },
+        )
+        .await
+        .expect("failed to create test public space");
+        space.id
+    }
+
+    /// Ban a user from a space.
+    pub async fn ban_user(&self, space_id: &str, user_id: &str, banned_by: &str) {
+        db::bans::create_ban(
+            self.pool(),
+            space_id,
+            user_id,
+            Some("test ban"),
+            banned_by,
+            self.state.db_is_postgres,
+        )
+        .await
+        .expect("failed to ban test user");
+    }
+
+    /// Create a channel in the given space. Returns the channel ID.
+    pub async fn create_channel(&self, space_id: &str, name: &str) -> String {
+        let channel = db::channels::create_channel(
+            self.pool(),
+            space_id,
+            &accordserver::models::channel::CreateChannel {
+                name: name.to_string(),
+                channel_type: "text".to_string(),
+                topic: None,
+                parent_id: None,
+                nsfw: None,
+                bitrate: None,
+                user_limit: None,
+                rate_limit: None,
+                position: None,
+                allow_anonymous_read: None,
+            },
+        )
+        .await
+        .expect("failed to create test channel");
+        channel.id
+    }
+
+    /// Create a voice channel in the given space. Returns the channel ID.
+    pub async fn create_voice_channel(&self, space_id: &str, name: &str) -> String {
+        let channel = db::channels::create_channel(
+            self.pool(),
+            space_id,
+            &accordserver::models::channel::CreateChannel {
+                name: name.to_string(),
+                channel_type: "voice".to_string(),
+                topic: None,
+                parent_id: None,
+                nsfw: None,
+                bitrate: None,
+                user_limit: None,
+                rate_limit: None,
+                position: None,
+                allow_anonymous_read: None,
+            },
+        )
+        .await
+        .expect("failed to create test voice channel");
+        channel.id
+    }
+
+    /// Create a 1:1 DM channel between two users. Returns the channel ID.
+    pub async fn create_dm(&self, creator_id: &str, recipient_id: &str) -> String {
+        let channel = db::dm_participants::create_dm_channel(
+            self.pool(),
+            creator_id,
+            &[recipient_id.to_string()],
+            self.state.db_is_postgres,
+        )
+        .await
+        .expect("failed to create test DM channel");
+        channel.id
+    }
+
+    /// Add a user as a member of a space.
+    pub async fn add_member(&self, space_id: &str, user_id: &str) {
+        db::members::add_member(self.pool(), space_id, user_id, self.state.db_is_postgres)
+            .await
+            .expect("failed to add test member");
+    }
+
+    /// Create a role in a space via the DB. Returns the role ID.
+    pub async fn create_role(&self, space_id: &str, name: &str, permissions: &[&str]) -> String {
+        let input = accordserver::models::role::CreateRole {
+            name: name.to_string(),
+            color: None,
+            hoist: None,
+            permissions: Some(permissions.iter().map(|s| s.to_string()).collect()),
+            mentionable: None,
+        };
+        let row = db::roles::create_role(self.pool(), space_id, &input)
+            .await
+            .expect("failed to create test role");
+        row.id
+    }
+
+    /// Assign a role to a member via the DB.
+    pub async fn assign_role(&self, space_id: &str, user_id: &str, role_id: &str) {
+        db::members::add_role_to_member(
+            self.pool(),
+            space_id,
+            user_id,
+            role_id,
+            self.state.db_is_postgres,
+        )
+        .await
+        .expect("failed to assign test role");
+    }
+
+    /// Create an admin user with a token. Sets `is_admin = true` on the user.
+    pub async fn create_admin_with_token(&self, username: &str) -> TestUser {
+        let test_user = self.create_user_with_token(username).await;
+        sqlx::query(&accordserver::db::q(
+            "UPDATE users SET is_admin = TRUE WHERE id = ?",
+        ))
+        .bind(&test_user.user.id)
+        .execute(self.pool())
+        .await
+        .expect("failed to set admin flag");
+        test_user
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Request builder helpers
+// ---------------------------------------------------------------------------
+
+/// Build an authenticated request with no body.
+pub fn authenticated_request(method: Method, uri: &str, auth_header: &str) -> Request<Body> {
+    Request::builder()
+        .method(method)
+        .uri(uri)
+        .header("Authorization", auth_header)
+        .body(Body::empty())
+        .unwrap()
+}
+
+/// Build an authenticated request with a JSON body.
+pub fn authenticated_json_request(
+    method: Method,
+    uri: &str,
+    auth_header: &str,
+    body: &serde_json::Value,
+) -> Request<Body> {
+    Request::builder()
+        .method(method)
+        .uri(uri)
+        .header("Authorization", auth_header)
+        .header("Content-Type", "application/json")
+        .body(Body::from(serde_json::to_vec(body).unwrap()))
+        .unwrap()
+}
+
+/// Build an unauthenticated request with a JSON body.
+pub fn json_request(method: Method, uri: &str, body: &serde_json::Value) -> Request<Body> {
+    Request::builder()
+        .method(method)
+        .uri(uri)
+        .header("Content-Type", "application/json")
+        .body(Body::from(serde_json::to_vec(body).unwrap()))
+        .unwrap()
+}
+
+/// Parse a response body into a `serde_json::Value`.
+pub async fn parse_body(response: axum::response::Response) -> serde_json::Value {
+    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    serde_json::from_slice(&bytes).unwrap()
+}
+
+// ---------------------------------------------------------------------------
+// Backward-compatible shim for existing tests
+// ---------------------------------------------------------------------------
+
+/// Creates a test app the same way the old `test_app()` did.
+/// Existing tests in `http.rs` and `ws.rs` continue to work unchanged.
+pub async fn test_app() -> axum::Router {
+    let server = TestServer::new().await;
+    routes::router(server.state)
+}
+
+/// Build a `multipart/form-data` body for `POST /channels/{id}/messages/upload`,
+/// with a `payload_json` part and a single `files[0]` part.
+pub fn build_multipart_upload_body(
+    boundary: &str,
+    payload_json: &serde_json::Value,
+    filename: &str,
+    content_type: &str,
+    file_bytes: &[u8],
+) -> Vec<u8> {
+    let mut body: Vec<u8> = Vec::new();
+    let payload_str = serde_json::to_string(payload_json).unwrap();
+
+    body.extend_from_slice(format!("--{boundary}\r\n").as_bytes());
+    body.extend_from_slice(
+        b"Content-Disposition: form-data; name=\"payload_json\"\r\n\
+          Content-Type: application/json\r\n\r\n",
+    );
+    body.extend_from_slice(payload_str.as_bytes());
+    body.extend_from_slice(b"\r\n");
+
+    body.extend_from_slice(format!("--{boundary}\r\n").as_bytes());
+    body.extend_from_slice(
+        format!(
+            "Content-Disposition: form-data; name=\"files[0]\"; filename=\"{filename}\"\r\n\
+             Content-Type: {content_type}\r\n\r\n"
+        )
+        .as_bytes(),
+    );
+    body.extend_from_slice(file_bytes);
+    body.extend_from_slice(b"\r\n");
+
+    body.extend_from_slice(format!("--{boundary}--\r\n").as_bytes());
+    body
+}

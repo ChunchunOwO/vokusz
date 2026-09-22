@@ -1,0 +1,500 @@
+use axum::extract::{Path, State};
+use axum::Json;
+
+use crate::db;
+use crate::error::AppError;
+use crate::gateway::events::GatewayBroadcast;
+use crate::middleware::auth::AuthUser;
+use crate::middleware::permissions::{
+    require_channel_membership, require_channel_permission, require_dm_access,
+};
+use crate::models::channel::UpdateChannel;
+use crate::models::permission::{PermissionOverwrite, ALL_PERMISSIONS};
+use crate::state::AppState;
+
+#[derive(serde::Deserialize)]
+pub struct UpsertOverwriteRequest {
+    #[serde(rename = "type")]
+    pub overwrite_type: String,
+    pub allow: Vec<String>,
+    pub deny: Vec<String>,
+}
+
+pub async fn get_channel(
+    state: State<AppState>,
+    Path(channel_id): Path<String>,
+    auth: AuthUser,
+) -> Result<Json<serde_json::Value>, AppError> {
+    require_channel_membership(&state.db, &channel_id, &auth.user_id).await?;
+    let channel = db::channels::get_channel_row(&state.db, &channel_id).await?;
+    let json = super::spaces::channel_row_to_json_pub(&state.db, &channel).await;
+    Ok(Json(serde_json::json!({ "data": json })))
+}
+
+/// Whether a channel's `type` may be changed from `from` to `to` without losing
+/// data. Only the message-backed text channels are interchangeable: `text` and
+/// `announcement` share an identical storage and rendering model, so switching
+/// between them is purely cosmetic. Voice, category, forum, and DM channels have
+/// incompatible storage/semantics, so conversions to or from them are rejected.
+fn is_non_destructive_type_change(from: &str, to: &str) -> bool {
+    const TEXT_LIKE: &[&str] = &["text", "announcement"];
+    TEXT_LIKE.contains(&from) && TEXT_LIKE.contains(&to)
+}
+
+pub async fn update_channel(
+    state: State<AppState>,
+    Path(channel_id): Path<String>,
+    auth: AuthUser,
+    Json(input): Json<UpdateChannel>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let existing = db::channels::get_channel_row(&state.db, &channel_id).await?;
+    if existing.channel_type == "group_dm" {
+        require_dm_access(&state.db, &channel_id, &auth.user_id).await?;
+        if existing.owner_id.as_deref() != Some(&auth.user_id) {
+            return Err(AppError::Forbidden(
+                "only the group owner can rename".into(),
+            ));
+        }
+    } else if existing.channel_type == "dm" {
+        return Err(AppError::BadRequest("cannot rename a 1:1 DM".into()));
+    } else {
+        require_channel_permission(&state.db, &channel_id, &auth, "manage_channels").await?;
+    }
+
+    // A channel's type may only be changed retroactively when the conversion is
+    // non-destructive (no stored data becomes orphaned or unreadable). Anything
+    // else — including any conversion to/from voice, category, or a DM — is
+    // rejected so a mistaken PATCH can't strand a channel's contents.
+    if let Some(ref new_type) = input.channel_type {
+        if *new_type != existing.channel_type
+            && !is_non_destructive_type_change(&existing.channel_type, new_type)
+        {
+            return Err(AppError::BadRequest(format!(
+                "cannot change channel type from '{}' to '{}'",
+                existing.channel_type, new_type
+            )));
+        }
+    }
+
+    let channel =
+        db::channels::update_channel(&state.db, &channel_id, &input, state.db_is_postgres).await?;
+    let json = super::spaces::channel_row_to_json_pub(&state.db, &channel).await;
+
+    // Broadcast channel.update
+    if existing.channel_type == "dm" || existing.channel_type == "group_dm" {
+        let participant_ids =
+            db::dm_participants::list_participant_ids(&state.db, &channel_id).await?;
+        if let Some(ref dispatcher) = *state.gateway_tx.read().await {
+            let event = serde_json::json!({
+                "op": 0,
+                "type": "channel.update",
+                "data": json
+            });
+            let _ = dispatcher.send(GatewayBroadcast {
+                space_id: None,
+                target_user_ids: Some(participant_ids),
+                event,
+                intent: "channels".to_string(),
+                required_permission: None,
+            });
+        }
+    } else if let Some(ref space_id) = existing.space_id {
+        if let Some(ref dispatcher) = *state.gateway_tx.read().await {
+            let event = serde_json::json!({
+                "op": 0,
+                "type": "channel.update",
+                "data": json
+            });
+            let _ = dispatcher.send(GatewayBroadcast {
+                space_id: Some(space_id.clone()),
+                target_user_ids: None,
+                event,
+                intent: "channels".to_string(),
+                required_permission: None,
+            });
+        }
+    }
+
+    Ok(Json(serde_json::json!({ "data": json })))
+}
+
+pub async fn delete_channel(
+    state: State<AppState>,
+    Path(channel_id): Path<String>,
+    auth: AuthUser,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let existing = db::channels::get_channel_row(&state.db, &channel_id).await?;
+    if existing.channel_type == "dm" || existing.channel_type == "group_dm" {
+        // For DM channels, "delete" means remove the caller from participants
+        require_dm_access(&state.db, &channel_id, &auth.user_id).await?;
+        db::dm_participants::remove_participant(&state.db, &channel_id, &auth.user_id).await?;
+        // Leaving the DM ends any call the caller still has open in it.
+        crate::security::revoke_channel_voice_access(&state, &channel_id, Some(&auth.user_id))
+            .await;
+
+        let remaining = db::dm_participants::count_participants(&state.db, &channel_id).await?;
+        if remaining <= 0 {
+            // No participants left — actually delete the channel
+            db::channels::delete_channel(&state.db, &channel_id).await?;
+        } else if existing.channel_type == "group_dm"
+            && existing.owner_id.as_deref() == Some(&auth.user_id)
+        {
+            // Owner left — transfer ownership to first remaining participant
+            let ids = db::dm_participants::list_participant_ids(&state.db, &channel_id).await?;
+            if let Some(new_owner) = ids.first() {
+                let update = UpdateChannel {
+                    name: None,
+                    channel_type: None,
+                    topic: None,
+                    position: None,
+                    parent_id: None,
+                    nsfw: None,
+                    rate_limit: None,
+                    bitrate: None,
+                    user_limit: None,
+                    archived: None,
+                    allow_anonymous_read: None,
+                };
+                // We need to update owner_id directly since UpdateChannel doesn't have it
+                sqlx::query(&crate::db::q(
+                    "UPDATE channels SET owner_id = ? WHERE id = ?",
+                ))
+                .bind(new_owner)
+                .bind(&channel_id)
+                .execute(&state.db)
+                .await?;
+                let _ = update; // unused, just for clarity
+            }
+        }
+
+        // Broadcast channel.update to remaining participants
+        let participant_ids =
+            db::dm_participants::list_participant_ids(&state.db, &channel_id).await?;
+        if !participant_ids.is_empty() {
+            let updated_channel = db::channels::get_channel_row(&state.db, &channel_id).await?;
+            let json = super::spaces::channel_row_to_json_pub(&state.db, &updated_channel).await;
+            if let Some(ref dispatcher) = *state.gateway_tx.read().await {
+                let event = serde_json::json!({
+                    "op": 0,
+                    "type": "channel.update",
+                    "data": json
+                });
+                let _ = dispatcher.send(GatewayBroadcast {
+                    space_id: None,
+                    target_user_ids: Some(participant_ids),
+                    event,
+                    intent: "channels".to_string(),
+                    required_permission: None,
+                });
+            }
+        }
+
+        return Ok(Json(serde_json::json!({ "data": null })));
+    }
+
+    require_channel_permission(&state.db, &channel_id, &auth, "manage_channels").await?;
+
+    // Broadcast channel.delete to space members before deleting
+    if let Some(ref space_id) = existing.space_id {
+        if let Some(ref dispatcher) = *state.gateway_tx.read().await {
+            let event = serde_json::json!({
+                "op": 0,
+                "type": "channel.delete",
+                "data": { "id": channel_id, "space_id": space_id }
+            });
+            let _ = dispatcher.send(GatewayBroadcast {
+                space_id: Some(space_id.clone()),
+                target_user_ids: None,
+                event,
+                intent: "channels".to_string(),
+                required_permission: None,
+            });
+        }
+    }
+
+    db::channels::delete_channel(&state.db, &channel_id).await?;
+    // The room no longer belongs to anything; disconnect whoever is still in it.
+    crate::security::revoke_channel_voice_access(&state, &channel_id, None).await;
+    Ok(Json(serde_json::json!({ "data": null })))
+}
+
+pub async fn list_overwrites(
+    state: State<AppState>,
+    Path(channel_id): Path<String>,
+    auth: AuthUser,
+) -> Result<Json<serde_json::Value>, AppError> {
+    require_channel_permission(&state.db, &channel_id, &auth, "manage_roles").await?;
+    let overwrites = db::permission_overwrites::list_overwrites(&state.db, &channel_id).await?;
+    Ok(Json(serde_json::json!({ "data": overwrites })))
+}
+
+pub async fn upsert_overwrite(
+    state: State<AppState>,
+    Path((channel_id, overwrite_id)): Path<(String, String)>,
+    auth: AuthUser,
+    Json(input): Json<UpsertOverwriteRequest>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    require_channel_permission(&state.db, &channel_id, &auth, "manage_roles").await?;
+
+    // Validate overwrite_type
+    if input.overwrite_type != "role" && input.overwrite_type != "member" {
+        return Err(AppError::BadRequest(
+            "type must be 'role' or 'member'".into(),
+        ));
+    }
+
+    // Validate permission strings
+    for perm in input.allow.iter().chain(input.deny.iter()) {
+        if !ALL_PERMISSIONS.contains(&perm.as_str()) {
+            return Err(AppError::BadRequest(format!("unknown permission: {perm}")));
+        }
+    }
+
+    let channel = db::channels::get_channel_row(&state.db, &channel_id).await?;
+    let space_id = channel
+        .space_id
+        .as_deref()
+        .ok_or_else(|| AppError::BadRequest("DMs do not support permission overwrites".into()))?;
+    let actor_perms = if auth.is_admin {
+        vec!["administrator".to_string()]
+    } else {
+        crate::middleware::permissions::resolve_channel_permissions(
+            &state.db,
+            &channel_id,
+            space_id,
+            &auth.user_id,
+        )
+        .await?
+    };
+    for perm in input.allow.iter().chain(&input.deny) {
+        // Administrator is a space-level privilege, never a channel overwrite.
+        if perm == "administrator" {
+            return Err(AppError::BadRequest(
+                "administrator cannot be overwritten".into(),
+            ));
+        }
+        if !crate::models::permission::has_permission(&actor_perms, perm) {
+            return Err(AppError::Forbidden(format!(
+                "you cannot overwrite a permission you do not have: {perm}"
+            )));
+        }
+    }
+    validate_existing_overwrite(&state.db, &channel_id, &overwrite_id, &actor_perms).await?;
+    if input.overwrite_type == "member" {
+        db::members::get_member_row(&state.db, space_id, &overwrite_id).await?;
+    }
+
+    // Validate that role/member belongs to the same space as the channel
+    if input.overwrite_type == "role" {
+        let channel = db::channels::get_channel_row(&state.db, &channel_id).await?;
+        if let Some(ref space_id) = channel.space_id {
+            let role = db::roles::get_role_row(&state.db, &overwrite_id)
+                .await
+                .map_err(|_| AppError::NotFound("role not found".into()))?;
+            if role.space_id != *space_id {
+                return Err(AppError::NotFound("role not found in this space".into()));
+            }
+        }
+    }
+
+    let overwrite = PermissionOverwrite {
+        id: overwrite_id,
+        overwrite_type: input.overwrite_type,
+        allow: input.allow,
+        deny: input.deny,
+    };
+    db::permission_overwrites::upsert_overwrite(&state.db, &channel_id, &overwrite).await?;
+
+    Ok(Json(serde_json::json!({ "data": overwrite })))
+}
+
+// Replacing or deleting an overwrite also changes its old grants/denials.
+// Checking only the new arrays would let an actor clear their own restriction.
+async fn validate_existing_overwrite(
+    pool: &sqlx::AnyPool,
+    channel_id: &str,
+    overwrite_id: &str,
+    actor_perms: &[String],
+) -> Result<(), AppError> {
+    let overwrites = db::permission_overwrites::list_overwrites(pool, channel_id).await?;
+    if let Some(old) = overwrites.iter().find(|o| o.id == overwrite_id) {
+        for perm in old.allow.iter().chain(&old.deny) {
+            if !crate::models::permission::has_permission(actor_perms, perm) {
+                return Err(AppError::Forbidden(format!(
+                    "you cannot remove an overwrite for a permission you do not have: {perm}"
+                )));
+            }
+        }
+    }
+    Ok(())
+}
+
+pub async fn delete_overwrite(
+    state: State<AppState>,
+    Path((channel_id, overwrite_id)): Path<(String, String)>,
+    auth: AuthUser,
+) -> Result<Json<serde_json::Value>, AppError> {
+    require_channel_permission(&state.db, &channel_id, &auth, "manage_roles").await?;
+    let channel = db::channels::get_channel_row(&state.db, &channel_id).await?;
+    let space_id = channel
+        .space_id
+        .as_deref()
+        .ok_or_else(|| AppError::BadRequest("DMs do not support permission overwrites".into()))?;
+    let actor_perms = if auth.is_admin {
+        vec!["administrator".into()]
+    } else {
+        crate::middleware::permissions::resolve_channel_permissions(
+            &state.db,
+            &channel_id,
+            space_id,
+            &auth.user_id,
+        )
+        .await?
+    };
+    validate_existing_overwrite(&state.db, &channel_id, &overwrite_id, &actor_perms).await?;
+    db::permission_overwrites::delete_overwrite(&state.db, &channel_id, &overwrite_id).await?;
+    Ok(Json(serde_json::json!({ "data": null })))
+}
+
+pub async fn add_recipient(
+    state: State<AppState>,
+    Path((channel_id, user_id)): Path<(String, String)>,
+    auth: AuthUser,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let channel = db::channels::get_channel_row(&state.db, &channel_id).await?;
+    if channel.channel_type != "group_dm" {
+        return Err(AppError::BadRequest(
+            "can only add recipients to group DMs".into(),
+        ));
+    }
+    require_dm_access(&state.db, &channel_id, &auth.user_id).await?;
+    if channel.owner_id.as_deref() != Some(&auth.user_id) {
+        return Err(AppError::Forbidden(
+            "only the group owner can add members".into(),
+        ));
+    }
+
+    // Validate target user exists
+    db::users::get_user(&state.db, &user_id).await?;
+
+    // Check participant count
+    let count = db::dm_participants::count_participants(&state.db, &channel_id).await?;
+    if count >= 10 {
+        return Err(AppError::BadRequest(
+            "group DMs cannot have more than 10 participants".into(),
+        ));
+    }
+
+    db::dm_participants::add_participant(&state.db, &channel_id, &user_id, state.db_is_postgres)
+        .await?;
+
+    let updated = db::channels::get_channel_row(&state.db, &channel_id).await?;
+    let json = super::spaces::channel_row_to_json_pub(&state.db, &updated).await;
+
+    // Broadcast channel.update to all participants (including the new one)
+    let participant_ids = db::dm_participants::list_participant_ids(&state.db, &channel_id).await?;
+    if let Some(ref dispatcher) = *state.gateway_tx.read().await {
+        let event = serde_json::json!({
+            "op": 0,
+            "type": "channel.update",
+            "data": json
+        });
+        let _ = dispatcher.send(GatewayBroadcast {
+            space_id: None,
+            target_user_ids: Some(participant_ids),
+            event,
+            intent: "channels".to_string(),
+            required_permission: None,
+        });
+    }
+
+    Ok(Json(serde_json::json!({ "data": json })))
+}
+
+pub async fn remove_recipient(
+    state: State<AppState>,
+    Path((channel_id, user_id)): Path<(String, String)>,
+    auth: AuthUser,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let channel = db::channels::get_channel_row(&state.db, &channel_id).await?;
+    if channel.channel_type != "group_dm" {
+        return Err(AppError::BadRequest(
+            "can only remove recipients from group DMs".into(),
+        ));
+    }
+    require_dm_access(&state.db, &channel_id, &auth.user_id).await?;
+
+    // Can remove self, or owner can remove others
+    if user_id != auth.user_id && channel.owner_id.as_deref() != Some(&auth.user_id) {
+        return Err(AppError::Forbidden(
+            "only the group owner can remove members".into(),
+        ));
+    }
+
+    db::dm_participants::remove_participant(&state.db, &channel_id, &user_id).await?;
+    // Removal from the group revokes the call along with the channel.
+    crate::security::revoke_channel_voice_access(&state, &channel_id, Some(&user_id)).await;
+
+    let remaining = db::dm_participants::count_participants(&state.db, &channel_id).await?;
+    if remaining <= 1 {
+        // Not enough participants — delete the channel
+        db::channels::delete_channel(&state.db, &channel_id).await?;
+        crate::security::revoke_channel_voice_access(&state, &channel_id, None).await;
+        // Broadcast channel.delete to remaining participant if any
+        let remaining_ids =
+            db::dm_participants::list_participant_ids(&state.db, &channel_id).await?;
+        if !remaining_ids.is_empty() {
+            if let Some(ref dispatcher) = *state.gateway_tx.read().await {
+                let event = serde_json::json!({
+                    "op": 0,
+                    "type": "channel.delete",
+                    "data": { "id": channel_id }
+                });
+                let _ = dispatcher.send(GatewayBroadcast {
+                    space_id: None,
+                    target_user_ids: Some(remaining_ids),
+                    event,
+                    intent: "channels".to_string(),
+                    required_permission: None,
+                });
+            }
+        }
+        return Ok(Json(serde_json::json!({ "data": null })));
+    }
+
+    // Transfer ownership if the owner left
+    if channel.owner_id.as_deref() == Some(&user_id) {
+        let ids = db::dm_participants::list_participant_ids(&state.db, &channel_id).await?;
+        if let Some(new_owner) = ids.first() {
+            sqlx::query(&crate::db::q(
+                "UPDATE channels SET owner_id = ? WHERE id = ?",
+            ))
+            .bind(new_owner)
+            .bind(&channel_id)
+            .execute(&state.db)
+            .await?;
+        }
+    }
+
+    let updated = db::channels::get_channel_row(&state.db, &channel_id).await?;
+    let json = super::spaces::channel_row_to_json_pub(&state.db, &updated).await;
+
+    // Broadcast channel.update to remaining participants
+    let participant_ids = db::dm_participants::list_participant_ids(&state.db, &channel_id).await?;
+    if let Some(ref dispatcher) = *state.gateway_tx.read().await {
+        let event = serde_json::json!({
+            "op": 0,
+            "type": "channel.update",
+            "data": json
+        });
+        let _ = dispatcher.send(GatewayBroadcast {
+            space_id: None,
+            target_user_ids: Some(participant_ids),
+            event,
+            intent: "channels".to_string(),
+            required_permission: None,
+        });
+    }
+
+    Ok(Json(serde_json::json!({ "data": json })))
+}

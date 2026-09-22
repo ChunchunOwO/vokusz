@@ -1,0 +1,631 @@
+import 'dart:convert';
+import 'dart:typed_data';
+
+import 'package:accordkit/accordkit.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
+import 'package:test/test.dart';
+
+import 'support/test_helpers.dart';
+
+late List<CapturedRequest> log;
+late AccordRest rest;
+
+CapturedRequest get req => log.single;
+
+void main() {
+  setUp(() {
+    log = <CapturedRequest>[];
+  });
+
+  group('UsersApi', () {
+    test('getMe deserializes user', () async {
+      rest = mockRest(
+          log: log, responder: (_) => jsonData({'id': '1', 'username': 'me'}));
+      final result = await UsersApi(rest).getMe();
+      expect(req.url.path, '/api/v1/users/@me');
+      expect((result.data as AccordUser).username, 'me');
+    });
+
+    test('searchUsers passes query params', () async {
+      rest = mockRest(log: log, responder: (_) => jsonData([]));
+      await UsersApi(rest).searchUsers('alice', limit: 5);
+      expect(req.url.path, '/api/v1/users/search');
+      expect(req.url.queryParameters['query'], 'alice');
+      expect(req.url.queryParameters['limit'], '5');
+    });
+
+    test('listRelationships deserializes array', () async {
+      rest = mockRest(
+          log: log,
+          responder: (_) => jsonData([
+                {
+                  'id': '1',
+                  'type': 1,
+                  'user': {'id': '2', 'username': 'x'}
+                },
+              ]));
+      final result = await UsersApi(rest).listRelationships();
+      expect((result.data as List).single, isA<AccordRelationship>());
+    });
+  });
+
+  group('SpacesApi', () {
+    test('create posts body and deserializes', () async {
+      rest = mockRest(
+          log: log, responder: (_) => jsonData({'id': '9', 'name': 'New'}));
+      final result = await SpacesApi(rest).create({'name': 'New'});
+      expect(req.method, 'POST');
+      expect(req.url.path, '/api/v1/spaces');
+      expect(req.jsonBody, {'name': 'New'});
+      expect((result.data as AccordSpace).name, 'New');
+    });
+
+    test('listChannels deserializes array', () async {
+      rest = mockRest(
+          log: log,
+          responder: (_) => jsonData([
+                {'id': '1', 'type': 'text'},
+              ]));
+      final result = await SpacesApi(rest).listChannels('7');
+      expect(req.url.path, '/api/v1/spaces/7/channels');
+      expect((result.data as List).single, isA<AccordChannel>());
+    });
+
+    test('anonymousCount path', () async {
+      rest = mockRest(log: log, responder: (_) => jsonData({'count': 3}));
+      await SpacesApi(rest).anonymousCount('7');
+      expect(req.url.path, '/api/v1/spaces/7/anonymous-count');
+    });
+  });
+
+  group('MessagesApi', () {
+    test('create message', () async {
+      rest = mockRest(
+          log: log,
+          responder: (_) =>
+              jsonData({'id': '1', 'channel_id': '5', 'content': 'hi'}));
+      final result = await MessagesApi(rest).create('5', {'content': 'hi'});
+      expect(req.method, 'POST');
+      expect(req.url.path, '/api/v1/channels/5/messages');
+      expect((result.data as AccordMessage).content, 'hi');
+    });
+
+    test('bulkDelete posts messages array', () async {
+      rest = mockRest(log: log, responder: (_) => jsonData(null));
+      await MessagesApi(rest).bulkDelete('5', ['1', '2']);
+      expect(req.url.path, '/api/v1/channels/5/messages/bulk-delete');
+      expect(req.jsonBody!['messages'], ['1', '2']);
+    });
+
+    test('listPosts injects top_level query', () async {
+      rest = mockRest(log: log, responder: (_) => jsonData([]));
+      await MessagesApi(rest).listPosts('5');
+      expect(req.url.queryParameters['top_level'], 'true');
+    });
+
+    test('listThread injects thread_id', () async {
+      rest = mockRest(log: log, responder: (_) => jsonData([]));
+      await MessagesApi(rest).listThread('5', '99');
+      expect(req.url.queryParameters['thread_id'], '99');
+    });
+
+    test('createWithAttachments uses multipart upload path', () async {
+      rest = mockRest(
+          log: log, responder: (_) => jsonData({'id': '1', 'channel_id': '5'}));
+      await MessagesApi(rest).createWithAttachments(
+        '5',
+        {'content': 'hi'},
+        [
+          {
+            'filename': 'a.bin',
+            'content': Uint8List.fromList([1, 2]),
+            'content_type': 'application/octet-stream',
+          }
+        ],
+      );
+      expect(req.url.path, '/api/v1/channels/5/messages/upload');
+      final body = utf8.decode(req.bodyBytes);
+      expect(body, contains('filename="a.bin"'));
+      expect(body, contains('name="payload_json"'));
+    });
+
+    test('createWithAttachments on 200 yields an upload with no pending ids',
+        () async {
+      rest = mockRest(
+          log: log,
+          responder: (_) => jsonData({
+                'id': '1',
+                'channel_id': '5',
+                'attachments': [
+                  {'id': 'a1', 'filename': 'a.bin', 'url': '/cdn/a.bin'}
+                ],
+              }));
+      final result = await MessagesApi(rest).createWithAttachments(
+        '5',
+        {'content': 'hi'},
+        [
+          {
+            'filename': 'a.bin',
+            'content': Uint8List.fromList([1])
+          }
+        ],
+      );
+      final upload = result.data as AccordMessageUpload;
+      expect(upload.statusCode, 200);
+      expect(upload.message.id, '1');
+      expect(upload.message.attachments.single.id, 'a1');
+      expect(upload.pendingAttachmentIds, isEmpty);
+      expect(upload.hasPendingAttachments, isFalse);
+    });
+
+    test('createWithAttachments on 202 keeps the pending upload ids', () async {
+      rest = mockRest(
+          log: log,
+          responder: (_) => http.Response(
+                jsonEncode({
+                  'data': {'id': '1', 'channel_id': '5', 'attachments': []},
+                  'pending_attachments': ['u1'],
+                }),
+                202,
+              ));
+      final result = await MessagesApi(rest).createWithAttachments(
+        '5',
+        {'content': 'hi'},
+        [
+          {
+            'filename': 'a.bin',
+            'content': Uint8List.fromList([1])
+          }
+        ],
+      );
+      expect(result.ok, isTrue);
+      final upload = result.data as AccordMessageUpload;
+      expect(upload.statusCode, 202);
+      expect(upload.message.id, '1');
+      expect(upload.message.attachments, isEmpty);
+      expect(upload.pendingAttachmentIds, ['u1']);
+      expect(upload.hasPendingAttachments, isTrue);
+    });
+
+    test('createWithAttachments surfaces a deterministic 400 rejection',
+        () async {
+      rest = mockRest(
+          log: log,
+          responder: (_) => jsonError(
+              'BAD_REQUEST', 'blocked by rule blocked-file',
+              status: 400));
+      final result = await MessagesApi(rest).createWithAttachments(
+        '5',
+        {'content': 'hi'},
+        [
+          {
+            'filename': 'a.bin',
+            'content': Uint8List.fromList([1])
+          }
+        ],
+      );
+      expect(result.ok, isFalse);
+      expect(result.statusCode, 400);
+      expect(result.error!.message, 'blocked by rule blocked-file');
+      expect(result.data, isNull);
+    });
+  });
+
+  group('AutomodApi', () {
+    test('getUpload fetches the authorized status and deserializes it',
+        () async {
+      rest = mockRest(
+          log: log,
+          responder: (_) => jsonData({
+                'id': 'u1',
+                'message_id': 'm1',
+                'status': 'rejected',
+                'reason': 'explicit content',
+                'rule_id': 'explicit-image',
+                'expires_at': 1700000000,
+              }));
+      final result = await AutomodApi(rest).getUpload('u1');
+      expect(req.method, 'GET');
+      expect(req.url.path, '/api/v1/automod/uploads/u1');
+      final upload = result.data as AccordAutomodUpload;
+      expect(upload.id, 'u1');
+      expect(upload.messageId, 'm1');
+      expect(upload.status, AutomodUploadStatus.rejected);
+      expect(upload.reason, 'explicit content');
+      expect(upload.ruleId, 'explicit-image');
+      expect(upload.expiresAt, 1700000000);
+    });
+
+    test('getUpload encodes the id', () async {
+      rest = mockRest(log: log, responder: (_) => jsonData({'id': 'a/b'}));
+      await AutomodApi(rest).getUpload('a/b');
+      expect(req.url.path, '/api/v1/automod/uploads/a%2Fb');
+    });
+  });
+
+  group('ReactionsApi', () {
+    test('add encodes emoji into path', () async {
+      rest = mockRest(log: log, responder: (_) => jsonData(null));
+      await ReactionsApi(rest).add('5', '10', '👍');
+      expect(req.method, 'PUT');
+      expect(req.url.path,
+          '/api/v1/channels/5/messages/10/reactions/${Uri.encodeComponent('👍')}/@me');
+    });
+  });
+
+  group('MembersApi', () {
+    test('list with withUser sets with_user query', () async {
+      rest = mockRest(log: log, responder: (_) => jsonData([]));
+      await MembersApi(rest).list('7', query: {'limit': 100}, withUser: true);
+      expect(req.url.path, '/api/v1/spaces/7/members');
+      expect(req.url.queryParameters['limit'], '100');
+      expect(req.url.queryParameters['with_user'], 'true');
+    });
+
+    test('list omits with_user by default', () async {
+      rest = mockRest(log: log, responder: (_) => jsonData([]));
+      await MembersApi(rest).list('7');
+      expect(req.url.queryParameters.containsKey('with_user'), isFalse);
+    });
+
+    test('leaveMe with deleteData sets query', () async {
+      rest = mockRest(log: log, responder: (_) => jsonData(null));
+      await MembersApi(rest).leaveMe('7', deleteData: true);
+      expect(req.method, 'DELETE');
+      expect(req.url.path, '/api/v1/spaces/7/members/@me');
+      expect(req.url.queryParameters['delete_data'], 'true');
+    });
+
+    test('addRole path', () async {
+      rest = mockRest(log: log, responder: (_) => jsonData(null));
+      await MembersApi(rest).addRole('7', '2', '3');
+      expect(req.url.path, '/api/v1/spaces/7/members/2/roles/3');
+      expect(req.method, 'PUT');
+    });
+  });
+
+  group('BansApi', () {
+    test('create with no data sends an empty body', () async {
+      rest = mockRest(log: log, responder: (_) => jsonData(null));
+      await BansApi(rest).create('7', '2');
+      expect(req.method, 'PUT');
+      expect(req.url.path, '/api/v1/spaces/7/bans/2');
+      expect(req.jsonBody, {});
+    });
+
+    test('create forwards delete_message_seconds and parses the count back',
+        () async {
+      rest = mockRest(
+          log: log, responder: (_) => jsonData({'deleted_message_count': 4}));
+      final result = await BansApi(rest)
+          .create('7', '2', data: {'delete_message_seconds': 86400});
+      expect(req.jsonBody, {'delete_message_seconds': 86400});
+      expect((result.data as Map)['deleted_message_count'], 4);
+    });
+
+    test('remove path', () async {
+      rest = mockRest(log: log, responder: (_) => jsonData(null));
+      await BansApi(rest).remove('7', '2');
+      expect(req.method, 'DELETE');
+      expect(req.url.path, '/api/v1/spaces/7/bans/2');
+    });
+  });
+
+  group('AuthApi', () {
+    test('register parses auth response into user + token', () async {
+      rest = mockRest(
+          log: log,
+          responder: (_) => jsonData({
+                'user': {'id': '1', 'username': 'a'},
+                'token': 'abc',
+              }));
+      final result = await AuthApi(rest).register({'username': 'a'});
+      final data = result.data as Map<String, dynamic>;
+      expect((data['user'] as AccordUser).username, 'a');
+      expect(data['token'], 'abc');
+    });
+
+    test('login keeps mfa_required envelope unparsed', () async {
+      rest = mockRest(
+          log: log,
+          responder: (_) => jsonData({'mfa_required': true, 'ticket': 'tkt'}));
+      final result = await AuthApi(rest).login({'username': 'a'});
+      final data = result.data as Map<String, dynamic>;
+      expect(data['mfa_required'], isTrue);
+      expect(data['ticket'], 'tkt');
+    });
+  });
+
+  group('VoiceApi', () {
+    test('join deserializes server update', () async {
+      rest = mockRest(
+          log: log,
+          responder: (_) => jsonData({
+                'space_id': '7',
+                'channel_id': '5',
+                'backend': 'livekit',
+                'url': 'wss://lk',
+                'token': 't',
+              }));
+      final result = await VoiceApi(rest).join('5', selfMute: true);
+      expect(req.url.path, '/api/v1/channels/5/voice/join');
+      expect(req.jsonBody, {'self_mute': true, 'self_deaf': false});
+      expect((result.data as AccordVoiceServerUpdate).livekitUrl, 'wss://lk');
+    });
+
+    test('getStatus deserializes voice state list', () async {
+      rest = mockRest(
+          log: log,
+          responder: (_) => jsonData([
+                {'user_id': '1', 'channel_id': '5'},
+              ]));
+      final result = await VoiceApi(rest).getStatus('5');
+      expect((result.data as List).single, isA<AccordVoiceState>());
+    });
+
+    test('ring posts to the call/ring path with optional metadata', () async {
+      rest = mockRest(log: log, responder: (_) => jsonData({'ok': true}));
+      await VoiceApi(rest).ring('5', metadata: {'video': true});
+      expect(req.method, 'POST');
+      expect(req.url.path, '/api/v1/channels/5/call/ring');
+      expect(req.jsonBody, {
+        'metadata': {'video': true}
+      });
+    });
+
+    test('declineCall posts to the call/decline path', () async {
+      rest = mockRest(log: log, responder: (_) => jsonData({'ok': true}));
+      await VoiceApi(rest).declineCall('5');
+      expect(req.method, 'POST');
+      expect(req.url.path, '/api/v1/channels/5/call/decline');
+    });
+
+    test('cancelCall posts to the call/cancel path', () async {
+      rest = mockRest(log: log, responder: (_) => jsonData({'ok': true}));
+      await VoiceApi(rest).cancelCall('5');
+      expect(req.method, 'POST');
+      expect(req.url.path, '/api/v1/channels/5/call/cancel');
+    });
+  });
+
+  group('PluginsApi', () {
+    test('listPlugins filters by type', () async {
+      rest = mockRest(log: log, responder: (_) => jsonData([]));
+      await PluginsApi(rest).listPlugins('7', type: 'activity');
+      expect(req.url.queryParameters['type'], 'activity');
+    });
+
+    test('getSource uses raw request', () async {
+      rest = mockRest(
+          log: log,
+          responder: (_) => http.Response.bytes(utf8.encode('-- lua'), 200));
+      final result = await PluginsApi(rest).getSource('1');
+      expect(req.url.path, '/api/v1/plugins/1/source');
+      expect(utf8.decode(result.data as Uint8List), '-- lua');
+    });
+
+    test('leaderboardSubmit posts score', () async {
+      rest = mockRest(log: log, responder: (_) => jsonData(null));
+      await PluginsApi(rest)
+          .leaderboardSubmit('1', 'board', 42.0, metadata: {'k': 'v'});
+      expect(req.url.path, '/api/v1/plugins/1/leaderboards/board/submit');
+      expect(req.jsonBody!['score'], 42.0);
+      expect(req.jsonBody!['metadata'], {'k': 'v'});
+    });
+  });
+
+  group('DirectoryApi', () {
+    test('browse builds master-server path with params', () async {
+      // DirectoryApi targets the master server, so its rest base URL is the
+      // master root — carrying the same /api/v1 prefix every other endpoint
+      // group's base URL does, because the paths themselves are bare.
+      rest = mockRest(
+          log: log,
+          baseUrl: 'https://master.test/api/v1',
+          responder: (_) => jsonData({'spaces': []}));
+      await DirectoryApi(rest).browse(query: 'fun', tag: 'games', page: 2);
+      expect(req.url.path, '/api/v1/directory');
+      expect(req.url.queryParameters['q'], 'fun');
+      expect(req.url.queryParameters['tag'], 'games');
+      expect(req.url.queryParameters['page'], '2');
+    });
+
+    test('getSpace uses a bare path', () async {
+      rest = mockRest(
+          log: log,
+          baseUrl: 'https://master.test/api/v1',
+          responder: (_) => jsonData({'id': '7'}));
+      await DirectoryApi(rest).getSpace('7');
+      expect(req.url.path, '/api/v1/directory/7');
+    });
+
+    test('client.directory does not double-prefix the API base path', () async {
+      // Regression: DirectoryApi used to prepend AccordConfig.apiBasePath on
+      // top of AccordClient's already-versioned rest base URL, so every
+      // client.directory call hit /api/v1/api/v1/directory (#306).
+      final requests = <Uri>[];
+      final client = AccordClient(
+        baseUrl: 'https://instance.test',
+        gatewayUrl: 'wss://instance.test/ws',
+        httpClient: MockClient((request) async {
+          requests.add(request.url);
+          return jsonData({'spaces': []});
+        }),
+      );
+      addTearDown(client.dispose);
+      await client.directory.browse();
+      expect(requests.single.path, '/api/v1/directory');
+    });
+  });
+
+  group('AdminApi', () {
+    test('listUsers deserializes array', () async {
+      rest = mockRest(
+          log: log,
+          responder: (_) => jsonData([
+                {'id': '1', 'username': 'a'},
+              ]));
+      final result = await AdminApi(rest).listUsers();
+      expect(req.url.path, '/api/v1/admin/users');
+      expect((result.data as List).single, isA<AccordUser>());
+    });
+  });
+
+  group('RolesApi', () {
+    test('reorder sends array body', () async {
+      rest = mockRest(log: log, responder: (_) => jsonData([]));
+      await RolesApi(rest).reorder('7', [
+        {'id': '1', 'position': 0},
+      ]);
+      expect(req.method, 'PATCH');
+      expect(req.url.path, '/api/v1/spaces/7/roles');
+      expect(req.jsonArrayBody!.single['id'], '1');
+    });
+  });
+
+  group('ReportsApi', () {
+    test('list deserializes reports and forwards filters', () async {
+      rest = mockRest(
+        log: log,
+        responder: (_) => jsonData([
+          {
+            'id': '10',
+            'space_id': '7',
+            'target_type': 'user',
+            'target_id': '2',
+          },
+        ]),
+      );
+
+      final result = await ReportsApi(rest).list(
+        '7',
+        query: {'status': 'pending', 'limit': 25},
+      );
+
+      expect(req.url.path, '/api/v1/spaces/7/reports');
+      expect(req.url.queryParameters['status'], 'pending');
+      expect((result.data as List).single, isA<AccordReport>());
+    });
+
+    test('normalizes a legacy reports map to typed results', () async {
+      rest = mockRest(
+        log: log,
+        responder: (_) => jsonData({
+          'reports': [
+            {'id': '10', 'target_type': 'message', 'target_id': '20'},
+          ],
+        }),
+      );
+
+      final result = await ReportsApi(rest).list('7');
+
+      expect((result.data as List).single, isA<AccordReport>());
+    });
+
+    test('create, fetch, and resolve deserialize a single report', () async {
+      rest = mockRest(
+        log: log,
+        responder: (_) => jsonData({
+          'id': '10',
+          'space_id': '7',
+          'status': 'actioned',
+        }),
+      );
+      final api = ReportsApi(rest);
+
+      final created = await api.create('7', {
+        'target_type': 'user',
+        'target_id': '2',
+        'category': 'spam',
+      });
+      final fetched = await api.fetch('7', '10');
+      final resolved = await api.resolve('7', '10', {
+        'status': 'actioned',
+        'action_taken': 'none',
+      });
+
+      expect(created.data, isA<AccordReport>());
+      expect(fetched.data, isA<AccordReport>());
+      expect(resolved.data, isA<AccordReport>());
+      expect(log.last.method, 'PATCH');
+      expect(log.last.jsonBody!['action_taken'], 'none');
+    });
+
+    test('createDirect posts to the account-level route', () async {
+      rest = mockRest(
+        log: log,
+        responder: (_) => jsonData({
+          'id': '11',
+          'target_type': 'message',
+          'target_id': '20',
+        }),
+      );
+
+      final result = await ReportsApi(rest).createDirect({
+        'target_type': 'message',
+        'target_id': '20',
+        'category': 'spam',
+      });
+
+      expect(req.method, 'POST');
+      expect(req.url.path, '/api/v1/reports');
+      expect(req.jsonBody, {
+        'target_type': 'message',
+        'target_id': '20',
+        'category': 'spam',
+      });
+      expect(result.data, isA<AccordReport>());
+    });
+
+    test('reportRouteMissing recognises 404/405/501 failures only', () async {
+      rest = mockRest(
+        log: log,
+        responder: (_) => jsonError('NOT_FOUND', 'no such route', status: 404),
+      );
+      final notFound = await ReportsApi(rest).createDirect({});
+      expect(ReportsApi.reportRouteMissing(notFound), isTrue);
+
+      rest = mockRest(
+        log: log,
+        responder: (_) => jsonError('METHOD_NOT_ALLOWED', 'nope', status: 405),
+      );
+      final methodNotAllowed = await ReportsApi(rest).createDirect({});
+      expect(ReportsApi.reportRouteMissing(methodNotAllowed), isTrue);
+
+      rest = mockRest(
+        log: log,
+        responder: (_) => jsonError('NOT_IMPLEMENTED', 'nope', status: 501),
+      );
+      final notImplemented = await ReportsApi(rest).createDirect({});
+      expect(ReportsApi.reportRouteMissing(notImplemented), isTrue);
+
+      rest = mockRest(
+        log: log,
+        responder: (_) => jsonError('BAD_REQUEST', 'invalid', status: 400),
+      );
+      final badRequest = await ReportsApi(rest).createDirect({});
+      expect(ReportsApi.reportRouteMissing(badRequest), isFalse);
+
+      rest = mockRest(
+        log: log,
+        responder: (_) => jsonData({'id': '12'}),
+      );
+      final ok = await ReportsApi(rest).createDirect({});
+      expect(ReportsApi.reportRouteMissing(ok), isFalse);
+    });
+  });
+
+  group('FederationApi', () {
+    test('joinSpace posts domain + space_id', () async {
+      rest = mockRest(
+          log: log, responder: (_) => jsonData({'space_id': '42@b.example'}));
+      final result = await FederationApi(rest).joinSpace('b.example', '42');
+      expect(req.method, 'POST');
+      expect(req.url.path, '/api/v1/federation/spaces/join');
+      expect(req.jsonBody, {'domain': 'b.example', 'space_id': '42'});
+      // The server wraps the mirrored, qualified id in a `data` envelope.
+      expect((result.data as Map)['space_id'], '42@b.example');
+    });
+  });
+}

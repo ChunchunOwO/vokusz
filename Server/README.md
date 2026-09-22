@@ -1,0 +1,463 @@
+# Accord Server
+!!!The current source code of this project has been specially licensed. See the license file for details. The license also covers future online updates for the project.!!!
+
+A self-hosted chat and voice backend, built in Rust with [Axum](https://github.com/tokio-rs/axum). It powers the [Vokusz client](../Client) — messaging with **free screen sharing** and LiveKit-backed voice that is meant to stay smooth and stable. Any client that implements the Accord protocol can connect.
+
+See the [changelog](CHANGELOG.md) for release highlights and upgrade notes.
+
+## Features
+
+- **User Registration & Login** — Register with username/password, login to get bearer tokens, logout to revoke tokens. Passwords hashed with Argon2id.
+- **REST API** — Full CRUD for users, spaces (guilds), channels, messages, members, roles, bans, invites, reactions, emojis, and bot applications
+- **Public Spaces** — Spaces can be marked public, allowing anyone to join without an invite
+- **WebSocket Gateway** — Real-time event streaming with intent-based filtering, heartbeats, and session management
+- **Voice** — Join/leave voice channels powered by [LiveKit](https://livekit.io/) for managed WebRTC
+- **SQLite** — Lightweight persistence with automatic migrations (WAL mode)
+- **Snowflake IDs** — unique ID generation for all entities
+- **Authorization** — Role-based permission system with per-handler enforcement. Space owners get implicit administrator. New spaces grant sensible default permissions (view, send, react, connect, etc.) to all members via the `@everyone` role.
+- **Rate Limiting** — Token-bucket rate limiter (60 req/min + 10 burst per user) with `X-RateLimit-*` and `Retry-After` headers
+- **Secure Token Storage** — Tokens hashed with SHA-256 before database storage
+- **Bot Support** — Application/bot token authentication alongside user bearer tokens
+
+## Quick Start
+
+```bash
+# Build
+cargo build
+
+# Run (starts on port 39099)
+cargo run
+
+# Run tests
+cargo test
+```
+
+The server creates a SQLite database by default and runs migrations automatically on startup. Set `DATABASE_URL` to a `postgres://` connection string to use PostgreSQL instead (see [Database](#database)).
+
+## Attachment moderation
+
+Optional local CPU moderation scans images and five sampled video frames before publication, with per-space policies and moderator review. See [setup, rules, and API documentation](docs/automod.md).
+
+## Configuration
+
+Configuration comes from environment variables, with optional CLI flags as overrides (handy when launching from a wrapper like the [desktop tray app](desktop/README.md)).
+
+### Environment variables
+
+| Variable | Default | Description |
+|---|---|---|
+| `PORT` | `39099` | Server listen port |
+| `ACCORD_BIND` | `0.0.0.0` | Address to bind |
+| `DATABASE_URL` | `sqlite:data/accord.db?mode=rwc` | Database connection string (SQLite or PostgreSQL) |
+| `ACCORD_STORAGE_PATH` | `./data/cdn` | Where uploaded emoji, avatars, and attachments live |
+| `RUST_LOG` | `accordserver=debug,tower_http=debug` | Tracing log filter |
+| `TRUST_PROXY_HEADERS` | `false` | Enable forwarded client IPs only from peers listed in `TRUSTED_PROXY_IPS`. The proxy must replace incoming forwarding headers. |
+| `TRUSTED_PROXY_IPS` | empty | Comma-separated literal IP addresses of trusted reverse proxies. An empty list never trusts forwarded headers. |
+| `ACCORD_PLUGIN_TRUSTED_KEYS` | `{}` | JSON map of signer IDs to base64 Ed25519 public keys for native plugins. See [security operations](docs/security-operations.md). |
+| `LIVEKIT_INTERNAL_URL` | | LiveKit server URL for server communication (e.g. `http://livekit:7880`) |
+| `LIVEKIT_EXTERNAL_URL` | | LiveKit server URL for client connections (e.g. `wss://livekit.example.com`) |
+| `LIVEKIT_API_KEY` | | LiveKit API key |
+| `LIVEKIT_API_SECRET` | | LiveKit API secret |
+
+### CLI flags
+
+```
+accordserver [--data-dir <path>] [--port <n>] [--bind <addr>]
+             [--bootstrap-admin <username>]
+             [--livekit-url <url>] [--livekit-key <k>] [--livekit-secret <s>]
+```
+
+`--data-dir` is the most useful flag for embedded launches: it sets the defaults for both `DATABASE_URL` (`sqlite:{data-dir}/accord.db`) and `ACCORD_STORAGE_PATH` (`{data-dir}/cdn`) so you can drop the server anywhere on disk without crafting URLs. Explicit env vars still win if both are set.
+
+## Desktop install (early access)
+
+If you'd rather run Accord like any other desktop app — no terminal, no Docker — the [`desktop/`](desktop/) crate builds a tray-icon installer for macOS, Linux, and Windows. It bundles `accordserver` and a `livekit-server` sidecar, so chat and voice both work out of the box.
+
+| Platform | Installer | Tray location |
+|---|---|---|
+| macOS | `.dmg` | Menu bar (top right) |
+| Linux | `.deb`, `.AppImage` | System tray |
+| Windows | `.msi`, `.exe` (NSIS) | Notification area |
+
+After install, click the tray icon → **Open in browser** to see the server at `http://localhost:39099`. Data lives in the platform user data directory (see [`desktop/README.md`](desktop/README.md)).
+
+Builds are currently **unsigned**, so on first launch you'll need to click through Gatekeeper (macOS: right-click → Open) or SmartScreen (Windows: More info → Run anyway). To let friends connect from outside your LAN you'll need to port-forward TCP `39099`, TCP `7880`/`7881`, and UDP `50000-60000`.
+
+## Database
+
+Accord supports both **SQLite** and **PostgreSQL** as database backends. The backend is chosen automatically based on the `DATABASE_URL` format.
+
+### SQLite (default)
+
+No setup required. The server creates the database file automatically on startup.
+
+```bash
+# Default — creates data/accord.db in the working directory
+DATABASE_URL=sqlite:data/accord.db?mode=rwc
+
+# Docker — persisted via volume mount
+DATABASE_URL=sqlite:/app/data/accord.db?mode=rwc
+```
+
+### PostgreSQL
+
+Set `DATABASE_URL` to a PostgreSQL connection string:
+
+```bash
+DATABASE_URL=postgres://accord:yourpassword@localhost/accord
+```
+
+On first startup the server will automatically:
+1. Connect to the `postgres` maintenance database
+2. Create the application database if it doesn't exist
+3. Grant schema privileges if needed (handles PG 15+ restrictions)
+4. Run all migrations
+
+**Requirements:**
+- The PostgreSQL **role** (user) must already exist — the server cannot create roles
+- The role must have the `CREATEDB` privilege, **or** the database must already exist
+- If the database was created externally, the role should be the database owner for migrations to work
+
+**Password special characters:** If your password contains special characters, URL-encode them in `DATABASE_URL`:
+
+| Character | Encoded |
+|---|---|
+| `!` | `%21` |
+| `@` | `%40` |
+| `#` | `%23` |
+| `$` | `%24` |
+| `%` | `%25` |
+| `&` | `%26` |
+| `/` | `%2F` |
+
+Example: password `hunter2!` becomes `postgres://accord:hunter2%21@localhost/accord`
+
+## Docker
+
+The server image is published to GHCR:
+
+```
+ghcr.io/chunchunowo/vokusz-server
+```
+
+### Docker Compose
+
+Use [docker-compose.yml](docker-compose.yml) for SQLite or [docker-compose.postgres.yml](docker-compose.postgres.yml) for PostgreSQL. Both use [livekit.yaml](livekit.yaml); replace example hostnames and configure the external `app-network` before starting.
+
+Set `LIVEKIT_API_KEY` and `LIVEKIT_API_SECRET` in an untracked `.env` file, generating each with `openssl rand -hex 32`. PostgreSQL also requires `POSTGRES_PASSWORD` and a matching, URL-encoded `DATABASE_URL`. Compose refuses to start when required values are missing; known development LiveKit credentials are rejected by the server.
+
+```bash
+docker compose up -d
+# Or:
+docker compose -f docker-compose.postgres.yml up -d
+```
+
+Provision the administrator locally using the instructions in [security operations](docs/security-operations.md). Public registration always creates ordinary users. Existing operators should also read the credential rotation and native plugin upgrade instructions there.
+
+**Important notes:**
+- `POSTGRES_USER`, `POSTGRES_PASSWORD`, and `POSTGRES_DB` only take effect when PostgreSQL initializes a **fresh data directory**. If the volume already has data, changing these values does nothing. To reset: stop the stack, delete the postgres volume, and start again.
+- Always **quote** `POSTGRES_PASSWORD` in YAML if it contains special characters (especially `!`, which is a YAML tag indicator).
+- The password in `POSTGRES_PASSWORD` and `DATABASE_URL` must match. Remember to URL-encode special characters in `DATABASE_URL`.
+- The `healthcheck` and `depends_on: condition: service_healthy` ensure the server waits for PostgreSQL to be ready before connecting.
+
+### Troubleshooting PostgreSQL
+
+| Error | Cause | Fix |
+|---|---|---|
+| `role "X" does not exist` | The PostgreSQL role was never created | The volume has stale data from a previous init. Delete the postgres volume and restart, or create the role manually: `docker compose exec postgres psql -U postgres -c "CREATE ROLE accord WITH LOGIN PASSWORD 'pass';"` |
+| `database "X" does not exist` | The database wasn't created | The server creates it automatically on startup. If it fails, check that the role has `CREATEDB` privilege, or create it manually: `docker compose exec postgres psql -U accord -c "CREATE DATABASE accord;"` |
+| `permission denied for schema public` | PG 15+ restricts schema access | The server handles this automatically. If it still fails, grant manually: `docker compose exec postgres psql -U postgres -d accord -c "GRANT ALL ON SCHEMA public TO accord;"` |
+| `password authentication failed` | Password mismatch between `DATABASE_URL` and Postgres | Ensure passwords match. Check for unquoted `!` in YAML and missing URL-encoding in `DATABASE_URL`. |
+| Changes to `POSTGRES_USER`/`POSTGRES_DB` have no effect | Volume has existing data | PostgreSQL only reads these on first init. Delete the volume: `docker compose down -v` then `docker compose up -d` |
+
+## Architecture
+
+Single-binary Axum application with a REST API, WebSocket gateway, database, and LiveKit voice integration.
+
+### Project Structure
+
+```
+src/
+  main.rs           Entry point
+  lib.rs            Library root
+  config.rs         Config loaded from environment variables
+  state.rs          Shared AppState (db, voice, dispatcher, etc.)
+  error.rs          AppError enum → JSON error responses
+  snowflake.rs      Snowflake ID generator
+  db/               Database queries (one module per resource)
+  models/           Serializable data types
+  routes/           REST API handlers under /api/v1 (incl. auth)
+
+  gateway/          WebSocket gateway (events, sessions, dispatcher)
+  voice/            Voice state, signaling, LiveKit
+  middleware/       Auth, permissions, and rate limiting
+migrations/         SQLite migration files
+tests/              Integration and E2E tests
+```
+
+## API Overview
+
+All REST endpoints live under `/api/v1`. The gateway WebSocket is at `/ws`.
+
+### Response Format
+
+```json
+{ "data": { "id": "123", "name": "..." } }
+
+{ "data": [...], "cursor": { "after": "last_id", "has_more": true } }
+
+{ "error": { "code": "not_found", "message": "..." } }
+```
+
+### Key Endpoints
+
+| Group | Endpoints |
+|---|---|
+| Auth | `POST /auth/register`, `POST /auth/login`, `POST /auth/logout` |
+| Users | `GET/PATCH /users/@me`, `GET /users/{id}`, `GET /users/@me/spaces` |
+| Spaces | CRUD `/spaces`, channels, public join (`POST /spaces/{id}/join`) |
+| Channels | CRUD `/channels/{id}` |
+| Messages | CRUD, bulk delete, pins, typing indicators |
+| Members | List, search, get, update, kick, role assignment |
+| Roles | CRUD, reordering |
+| Bans | List, get, create, remove |
+| Invites | CRUD, accept; space-level and channel-level |
+| Reactions | Add/remove per-user, list, bulk remove |
+| Emojis | CRUD with role restrictions |
+| Voice | Join/leave, regions, status, backend info |
+| Applications | Bot app CRUD, token reset |
+| Gateway | `GET /gateway`, `GET /gateway/bot` |
+
+Space objects returned by `GET /users/@me/spaces` and `GET /spaces/{id}`
+include `member_count` and `presence_count`. These aggregate fields let clients
+render complete roster totals without downloading every member record.
+
+### Authentication
+
+Register and login to obtain a bearer token:
+
+```bash
+# Register a new account
+curl -X POST /api/v1/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{"username": "alice", "password": "securepassword123"}'
+# → { "data": { "user": {...}, "token": "..." } }
+
+# Login
+curl -X POST /api/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username": "alice", "password": "securepassword123"}'
+# → { "data": { "user": {...}, "token": "..." } }
+```
+
+Use the token in subsequent requests:
+
+```
+Authorization: Bearer <user_token>
+Authorization: Bot <bot_token>
+```
+
+Passwords are hashed with Argon2id. Tokens are hashed with SHA-256 before storage. All API endpoints require authentication except `POST /auth/register`, `POST /auth/login`, `GET /gateway`, and `GET /health`.
+
+### Authorization
+
+Every route handler enforces permission checks. Permissions are resolved from the `@everyone` role plus any roles assigned to the member. Space owners have implicit `administrator` access.
+
+| Permission | Required For |
+|---|---|
+| `view_channel` | Reading spaces, channels, messages, members |
+| `send_messages` | Sending messages, typing indicators |
+| `manage_channels` | Creating, updating, deleting channels |
+| `manage_messages` | Deleting others' messages, pinning, bulk delete |
+| `manage_roles` | Role CRUD, assigning/removing roles |
+| `manage_nicknames` | Updating other members' nicknames |
+| `kick_members` | Kicking members from a space |
+| `ban_members` | Banning/unbanning members |
+| `create_invites` | Creating invites |
+| `manage_emojis` | Emoji CRUD |
+| `add_reactions` | Adding reactions to messages |
+| `connect` | Joining voice channels |
+| `change_nickname` | Updating own nickname |
+
+## Gateway Protocol
+
+Clients connect via WebSocket at `/ws`. The server sends a `HELLO` with `heartbeat_interval`, the client responds with `IDENTIFY` (token + intents), and the server sends `READY` to begin the event stream.
+
+| Opcode | Name | Direction |
+|---|---|---|
+| 0 | EVENT | server → client |
+| 1 | HEARTBEAT | bidirectional |
+| 2 | IDENTIFY | client → server |
+| 3 | RESUME | client → server |
+| 4 | HEARTBEAT_ACK | server → client |
+| 5 | HELLO | server → client |
+| 6 | RECONNECT | server → client |
+| 7 | INVALID_SESSION | server → client |
+| 8 | PRESENCE_UPDATE | client → server |
+| 9 | VOICE_STATE_UPDATE | client → server |
+| 10 | REQUEST_MEMBERS | client → server |
+
+Events are filtered by space membership and client intents: `spaces`, `members`, `messages`, `message_content`, `presences`, `voice_states`, and more.
+
+## Voice
+
+The client sends `VOICE_STATE_UPDATE` (opcode 9) through the gateway. The server returns a `voice.server_update` event containing a LiveKit URL and JWT token. The client connects to LiveKit directly; WebRTC and signaling are handled by LiveKit internally.
+
+## Plugins
+
+Accord supports installable plugins that run inside spaces. Plugins are uploaded as `.vokusz-plugin` bundles (ZIP files) and can power activities, bots, themes, or custom commands.
+
+### Plugin Types
+
+| Type | Description |
+|---|---|
+| `activity` | Interactive activities (games, whiteboards, etc.) with session and participant management |
+| `bot` | Automated bots that respond to events |
+| `theme` | Visual themes for the client |
+| `command` | Custom slash commands |
+
+### Bundle Format
+
+A `.vokusz-plugin` bundle is a ZIP file containing:
+
+```
+plugin.json          # Required — plugin manifest
+bin/plugin.elf       # Required for scripted plugins — the ELF binary
+plugin.sig           # Required for native plugins — signature file
+assets/icon.png      # Optional — plugin icon
+```
+
+The `plugin.json` manifest defines the plugin metadata:
+
+```json
+{
+  "name": "My Plugin",
+  "type": "activity",
+  "runtime": "scripted",
+  "description": "A cool plugin",
+  "version": "1.0.0",
+  "entry_point": "main",
+  "max_participants": 4,
+  "max_spectators": 10,
+  "lobby": true,
+  "canvas_size": [800, 600],
+  "permissions": [],
+  "data_topics": []
+}
+```
+
+| Field | Required | Description |
+|---|---|---|
+| `name` | Yes | Plugin name (max 100 characters) |
+| `type` | Yes | One of: `activity`, `bot`, `theme`, `command` |
+| `runtime` | Yes | `scripted` (ELF binary) or `native` (full bundle, requires signature) |
+| `description` | No | Short description |
+| `version` | No | Semver version string |
+| `entry_point` | No | Entry point function name |
+| `max_participants` | No | Max player slots (0 = unlimited) |
+| `max_spectators` | No | Max spectator slots |
+| `lobby` | No | Whether sessions start in a lobby state before running |
+| `canvas_size` | No | `[width, height]` for activity rendering (max 1280x720) |
+| `permissions` | No | Permissions the plugin requests |
+| `data_topics` | No | Data topics the plugin subscribes to |
+
+### Installing a Plugin
+
+Plugins are installed per-space. The installing user must have the `manage_space` permission.
+
+```bash
+# Upload a .vokusz-plugin bundle
+curl -X POST /api/v1/spaces/{space_id}/plugins \
+  -H "Authorization: Bearer <token>" \
+  -F "bundle=@my-plugin.vokusz-plugin"
+```
+
+The server validates the bundle, extracts the manifest, and stores the plugin. A `plugin.installed` gateway event is broadcast to space members.
+
+### Managing Plugins
+
+```bash
+# List plugins in a space (optionally filter by type)
+curl /api/v1/spaces/{space_id}/plugins?type=activity \
+  -H "Authorization: Bearer <token>"
+
+# Uninstall a plugin (requires manage_space)
+curl -X DELETE /api/v1/spaces/{space_id}/plugins/{plugin_id} \
+  -H "Authorization: Bearer <token>"
+
+# Download plugin ELF binary (scripted plugins only)
+curl /api/v1/plugins/{plugin_id}/elf \
+  -H "Authorization: Bearer <token>" -o plugin.elf
+
+# Download full plugin bundle
+curl /api/v1/plugins/{plugin_id}/bundle \
+  -H "Authorization: Bearer <token>" -o plugin.zip
+
+# Get plugin icon
+curl /api/v1/plugins/{plugin_id}/icon \
+  -H "Authorization: Bearer <token>" -o icon.png
+```
+
+### Activity Sessions
+
+Activity plugins support multiplayer sessions with lobby, running, and ended states.
+
+```bash
+# Create a session (starts in "lobby" if plugin has lobby enabled)
+curl -X POST /api/v1/plugins/{plugin_id}/sessions \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{"channel_id": "123"}'
+
+# Join as a player or spectator
+curl -X POST /api/v1/plugins/{plugin_id}/sessions/{session_id}/roles \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{"user_id": "456", "role": "player"}'
+
+# Start the session (host only, transitions lobby → running)
+curl -X PATCH /api/v1/plugins/{plugin_id}/sessions/{session_id} \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{"state": "running"}'
+
+# Send an action to other participants (running sessions only)
+curl -X POST /api/v1/plugins/{plugin_id}/sessions/{session_id}/actions \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{"type": "move", "x": 10, "y": 20}'
+
+# End a session (host or manage_space permission)
+curl -X DELETE /api/v1/plugins/{plugin_id}/sessions/{session_id} \
+  -H "Authorization: Bearer <token>"
+```
+
+Session state transitions: `lobby` → `running` → `ended` (or `lobby` → `ended` to cancel).
+
+### Gateway Events
+
+Plugin events are broadcast over the WebSocket gateway under the `plugins` intent:
+
+| Event | Description |
+|---|---|
+| `plugin.installed` | A plugin was installed in a space |
+| `plugin.uninstalled` | A plugin was removed from a space |
+| `plugin.session_state` | A session was created, changed state, or ended |
+| `plugin.role_changed` | A participant's role changed in a session |
+| `plugin.event` | An action was relayed to session participants |
+
+## Development
+
+```bash
+cargo check          # Fast compile check
+cargo test           # Run all tests
+cargo test test_name # Run a single test
+cargo clippy         # Lint
+cargo fmt            # Format
+```
+
+Tests use in-memory SQLite databases with per-test isolation — no external services required. The test suite includes authorization enforcement tests (`tests/security.rs`) and rate limiting tests. See [`tests/README.md`](tests/README.md) for details on the test infrastructure.
+
+## License
+
+See [LICENSE](LICENSE) for details.

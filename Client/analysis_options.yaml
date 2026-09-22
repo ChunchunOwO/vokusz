@@ -1,0 +1,7 @@
+include: package:flutter_lints/flutter.yaml
+
+linter:
+  rules:
+    # Enforce package: imports over relative ones so files can be moved between
+    # feature modules without churning import paths.
+    always_use_package_imports: true

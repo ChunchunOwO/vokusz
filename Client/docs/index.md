@@ -6,7 +6,7 @@ order: 0
 
 # Vokusz Documentation
 
-Welcome to the Vokusz documentation. Vokusz is a community chat client: connect to servers, join spaces, and talk through text, voice, video, and **free screen sharing**.
+Welcome to the Vokusz documentation. Vokusz is a community chat client for **Windows**: connect to servers, join spaces, and talk through text, voice, video, and **free screen sharing**. Other platforms are parked in `MutiVersion/` and are not part of the main line.
 
 ## Getting Started
 

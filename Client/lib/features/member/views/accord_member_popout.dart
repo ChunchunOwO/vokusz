@@ -756,9 +756,20 @@ class _ProfileHeader extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
-              _OutlinedName(
-                text: name,
-                style: theme.textTheme.titleMedium!.copyWith(color: nameColor),
+              Text(
+                name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.titleMedium!.copyWith(
+                  color: nameColor,
+                  shadows: const [
+                    Shadow(
+                      color: Color(0xCC000000),
+                      blurRadius: 4,
+                      offset: Offset(0, 1),
+                    ),
+                  ],
+                ),
               ),
               Text(
                 idLine,
@@ -799,38 +810,6 @@ class _ProfileHeader extends StatelessWidget {
       default:
         return UiCopy.offline();
     }
-  }
-}
-
-/// Display name with a thin black stroke so a role color still reads.
-class _OutlinedName extends StatelessWidget {
-  const _OutlinedName({required this.text, required this.style});
-
-  final String text;
-  final TextStyle style;
-
-  @override
-  Widget build(BuildContext context) {
-    final stroke = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2
-      ..color = const Color(0xFF000000);
-    return Stack(
-      children: [
-        Text(
-          text,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: style.copyWith(foreground: stroke),
-        ),
-        Text(
-          text,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: style,
-        ),
-      ],
-    );
   }
 }
 

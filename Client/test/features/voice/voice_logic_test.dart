@@ -16,7 +16,7 @@ void main() {
       );
     });
 
-    test('push to talk requires the key and still respects mute', () {
+    test('push to talk follows only the key', () {
       expect(
         microphoneLive(selfMute: false, pushToTalk: true, pushToTalkHeld: false),
         isFalse,
@@ -27,7 +27,7 @@ void main() {
       );
       expect(
         microphoneLive(selfMute: true, pushToTalk: true, pushToTalkHeld: true),
-        isFalse,
+        isTrue,
       );
     });
   });

@@ -19,16 +19,15 @@ double voiceGain(num volumePercent) =>
 
 /// Whether the local microphone track should be capturing right now.
 ///
-/// Push-to-talk keeps the user's mute toggle ([selfMute]) and only opens the
-/// mic while the bound key is held. A hard mute wins over the key.
+/// Push-to-talk and the mute button are separate. In push-to-talk the key is
+/// the only switch, and [selfMute] is ignored until that mode is turned off.
 bool microphoneLive({
   required bool selfMute,
   required bool pushToTalk,
   required bool pushToTalkHeld,
 }) {
-  if (selfMute) return false;
   if (pushToTalk) return pushToTalkHeld;
-  return true;
+  return !selfMute;
 }
 
 /// Normalises a selected audio/video device id: a null or empty id means

@@ -312,7 +312,7 @@ class VoiceController extends _$VoiceController {
         : _session!.captureMic(settings.audioInputDeviceId);
     final result = await client.voice.join(
       channelId,
-      selfMute: state.selfMute,
+      selfMute: _publishedMute(settings.voicePushToTalk),
       selfDeaf: state.selfDeaf,
     );
     final mic = await micFuture;
@@ -402,6 +402,7 @@ class VoiceController extends _$VoiceController {
   void toggleMute() => setMute(!state.selfMute);
 
   void setMute(bool muted) {
+    if (ref.read(settingsControllerProvider).voicePushToTalk) return;
     _afkMonitor?.markActivity();
     if (!state.isConnected) return;
     state = state.copyWith(selfMute: muted);
@@ -708,7 +709,9 @@ class VoiceController extends _$VoiceController {
 
     final result = await client.voice.join(
       channelId,
-      selfMute: state.selfMute,
+      selfMute: _publishedMute(
+        ref.read(settingsControllerProvider).voicePushToTalk,
+      ),
       selfDeaf: state.selfDeaf,
     );
     final info = result.data;
@@ -888,6 +891,16 @@ class VoiceController extends _$VoiceController {
     }
   }
 
+  /// Mute shown to other people. Push-to-talk does not use the mute button.
+  bool _publishedMute(bool pushToTalk) => pushToTalk ? false : state.selfMute;
+
+  /// Republish after switching between open mic and push-to-talk.
+  void refreshTalkMode() {
+    if (!state.isConnected) return;
+    _sendVoiceStateUpdate();
+    _pushMic(_micShouldBeLive());
+  }
+
   void _sendVoiceStateUpdate() {
     final channelId = state.channelId;
     if (channelId == null) return;
@@ -895,10 +908,11 @@ class VoiceController extends _$VoiceController {
     // gateway op was space-scoped, so peers saw the mute/deafen state we opened
     // the call with and nothing after it (#135). The server now resolves the
     // scope from the channel and routes DM updates to the call's participants.
+    final pushToTalk = ref.read(settingsControllerProvider).voicePushToTalk;
     _client?.updateVoiceState(
       state.spaceId,
       channelId,
-      selfMute: state.selfMute,
+      selfMute: _publishedMute(pushToTalk),
       selfDeaf: state.selfDeaf,
       selfVideo: state.selfVideo,
       selfStream: state.selfStream,

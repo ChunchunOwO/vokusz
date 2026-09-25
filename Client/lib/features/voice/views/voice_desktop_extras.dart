@@ -36,6 +36,7 @@ class _VoiceDesktopExtrasState extends ConsumerState<VoiceDesktopExtras> {
   Timer? _keys;
   bool _overlayWasDown = false;
   bool _muteWasDown = false;
+  bool _pushToTalk = false;
   String _overlaySignature = '';
   final Map<String, String?> _avatarUrls = {};
   final Map<String, Uint8List?> _avatars = {};
@@ -83,17 +84,18 @@ class _VoiceDesktopExtrasState extends ConsumerState<VoiceDesktopExtras> {
           .setVoiceOverlayEnabled(!settings.voiceOverlayEnabled);
     }
     _overlayWasDown = overlayDown;
-    final muteKey = settings.voiceMuteHotkey;
-    final muteIsTalkKey =
-        settings.voicePushToTalk && muteKey == settings.voicePushToTalkKey;
-    if (!muteIsTalkKey) {
-      final muteDown = DesktopKeys.isDown(muteKey);
+    if (!settings.voicePushToTalk) {
+      final muteDown = DesktopKeys.isDown(settings.voiceMuteHotkey);
       if (muteDown && !_muteWasDown) {
         ref.read(voiceControllerProvider.notifier).toggleMute();
       }
       _muteWasDown = muteDown;
     } else {
       _muteWasDown = false;
+    }
+    if (settings.voicePushToTalk != _pushToTalk) {
+      _pushToTalk = settings.voicePushToTalk;
+      ref.read(voiceControllerProvider.notifier).refreshTalkMode();
     }
     final held = DesktopKeys.isDown(settings.voicePushToTalkKey);
     ref.read(voiceControllerProvider.notifier).syncTransmit(

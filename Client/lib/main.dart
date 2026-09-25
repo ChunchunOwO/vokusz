@@ -28,6 +28,7 @@ import 'package:bonfire/shared/app_info.dart';
 import 'package:bonfire/shared/components/app_lifecycle_ticker_mode.dart';
 import 'package:bonfire/shared/components/app_shell.dart';
 import 'package:bonfire/shared/utils/rest_result_ext.dart';
+import 'package:bonfire/shared/utils/desktop_tray.dart';
 import 'package:bonfire/shared/utils/desktop_window.dart';
 import 'package:bonfire/theme/app_theme.dart';
 
@@ -437,6 +438,7 @@ class _MainWindowState extends ConsumerState<MainWindow> {
     // state live, including while the window is minimised (no-op on web/mobile).
     ref.watch(taskbarBadgeControllerProvider);
     AppStrings.languageCode = settings.languageCode;
+    unawaited(setupDesktopTray());
     updatePageLanguage(settings.languageCode);
     soundManager.enabled = settings.soundsEnabled;
     soundManager.volume = settings.sfxVolume;

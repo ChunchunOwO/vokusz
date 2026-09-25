@@ -496,15 +496,13 @@ class _MemberPopoutState extends ConsumerState<_MemberPopout> {
                   ),
                 ),
               Padding(
-                padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-              if (bio != null && bio.isNotEmpty) ...[
-                const SizedBox(height: 12),
+              if (bio != null && bio.isNotEmpty)
                 Text(bio, style: theme.textTheme.bodyMedium),
-              ],
               if (rich != null) ...[
                 const SizedBox(height: 12),
                 RichPresenceCard(presence: rich),
@@ -620,8 +618,7 @@ class _MemberPopoutState extends ConsumerState<_MemberPopout> {
 }
 
 /// Banner across the top of the card. The avatar sits on the banner's lower
-/// edge: its upper half covers the banner, its lower half hangs below, and
-/// the name stays to the right of the avatar.
+/// edge. The name and id line up with that avatar; presence sits under it.
 class _BannerIdentity extends StatelessWidget {
   const _BannerIdentity({
     required this.bannerUrl,
@@ -650,7 +647,6 @@ class _BannerIdentity extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colors = BonfireThemeExtension.of(context);
     final avatarBox = (_radius + _ring) * 2;
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -660,60 +656,32 @@ class _BannerIdentity extends StatelessWidget {
         final bannerHeight = width * 9 / 16;
         return Stack(
           children: [
-            Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                SizedBox(
-                  width: width,
-                  height: bannerHeight,
-                  child: UserBannerImage(
-                    url: bannerUrl,
-                    borderRadius: BorderRadius.zero,
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      SizedBox(width: avatarBox, height: _radius + _ring),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: _ProfileHeader(
-                          name: name,
-                          username: username,
-                          avatarUrl: null,
-                          avatarBackgroundColor: avatarBackgroundColor,
-                          status: status,
-                          nameColor: nameColor,
-                          customStatus: customStatus,
-                          remoteDomain: remoteDomain,
-                          nameOnly: true,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
             Positioned(
-              left: 16,
-              top: bannerHeight - _radius - _ring,
-              child: Container(
-                padding: const EdgeInsets.all(_ring),
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: colors.foreground,
-                ),
-                child: AccordMemberAvatar(
-                  avatarUrl: avatarUrl,
-                  initial: accordInitial(name),
-                  status: status,
-                  radius: _radius,
-                  backgroundColor: avatarBackgroundColor,
-                  ringColor: colors.foreground,
-                ),
+              top: 0,
+              left: 0,
+              right: 0,
+              height: bannerHeight,
+              child: UserBannerImage(
+                url: bannerUrl,
+                borderRadius: BorderRadius.zero,
+              ),
+            ),
+            Padding(
+              padding: EdgeInsets.only(
+                top: bannerHeight - avatarBox / 2,
+                left: 20,
+                right: 20,
+              ),
+              child: _ProfileHeader(
+                name: name,
+                username: username,
+                avatarUrl: avatarUrl,
+                avatarBackgroundColor: avatarBackgroundColor,
+                status: status,
+                nameColor: nameColor,
+                customStatus: customStatus,
+                remoteDomain: remoteDomain,
+                bannerRing: true,
               ),
             ),
           ],
@@ -723,9 +691,8 @@ class _BannerIdentity extends StatelessWidget {
   }
 }
 
-/// The top row of the popout: avatar with presence dot, display name (in the
-/// member's color role), @username, presence label, custom status, and the
-/// remote-origin badge for federated users.
+/// Avatar on the left with presence under it. Name and id sit to the right,
+/// lined up with the top of the avatar.
 class _ProfileHeader extends StatelessWidget {
   const _ProfileHeader({
     required this.name,
@@ -736,7 +703,7 @@ class _ProfileHeader extends StatelessWidget {
     required this.nameColor,
     required this.customStatus,
     required this.remoteDomain,
-    this.nameOnly = false,
+    this.bannerRing = false,
   });
 
   final String name;
@@ -748,57 +715,80 @@ class _ProfileHeader extends StatelessWidget {
   final String? customStatus;
   final String? remoteDomain;
 
-  /// Name column only. Used beside an avatar that already overlaps the banner.
-  final bool nameOnly;
+  /// Draws the foreground ring used when the avatar overlaps a banner.
+  final bool bannerRing;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colors = BonfireThemeExtension.of(context);
-    final names = Column(
+    final avatar = AccordMemberAvatar(
+      avatarUrl: avatarUrl,
+      initial: accordInitial(name),
+      status: status,
+      radius: 28,
+      backgroundColor: avatarBackgroundColor,
+      ringColor: bannerRing ? colors.foreground : null,
+    );
+    return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          name,
-          style: theme.textTheme.titleMedium!.copyWith(color: nameColor),
-          overflow: TextOverflow.ellipsis,
-        ),
-        if (username != null)
-          Text(
-            '@$username',
-            style: theme.textTheme.bodySmall!.copyWith(color: colors.gray),
-          ),
-        Text(
-          _statusLabel(status),
-          style: theme.textTheme.bodySmall!.copyWith(color: colors.gray),
-        ),
-        if (customStatus != null) ...[
-          const SizedBox(height: 2),
-          Text(
-            customStatus!,
-            style: theme.textTheme.bodyMedium!.copyWith(
-              color: colors.dirtyWhite,
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            if (bannerRing)
+              Container(
+                padding: const EdgeInsets.all(3),
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: colors.foreground,
+                ),
+                child: avatar,
+              )
+            else
+              avatar,
+            const SizedBox(height: 6),
+            Text(
+              _statusLabel(status),
+              textAlign: TextAlign.center,
+              style: theme.textTheme.bodySmall!.copyWith(color: colors.gray),
             ),
-          ),
-        ],
-        if (remoteDomain != null) ...[
-          const SizedBox(height: 4),
-          RemoteOriginBadge(domain: remoteDomain!),
-        ],
-      ],
-    );
-    if (nameOnly) return names;
-    return Row(
-      children: [
-        AccordMemberAvatar(
-          avatarUrl: avatarUrl,
-          initial: accordInitial(name),
-          status: status,
-          radius: 28,
-          backgroundColor: avatarBackgroundColor,
+            if (customStatus != null) ...[
+              const SizedBox(height: 2),
+              Text(
+                customStatus!,
+                textAlign: TextAlign.center,
+                style: theme.textTheme.bodySmall!.copyWith(
+                  color: colors.dirtyWhite,
+                ),
+              ),
+            ],
+            if (remoteDomain != null) ...[
+              const SizedBox(height: 4),
+              RemoteOriginBadge(domain: remoteDomain!),
+            ],
+          ],
         ),
-        const SizedBox(width: 14),
-        Expanded(child: names),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                name,
+                style: theme.textTheme.titleMedium!.copyWith(color: nameColor),
+                overflow: TextOverflow.ellipsis,
+              ),
+              if (username != null)
+                Text(
+                  '@$username',
+                  style: theme.textTheme.bodySmall!.copyWith(
+                    color: colors.gray,
+                  ),
+                ),
+            ],
+          ),
+        ),
       ],
     );
   }

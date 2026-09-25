@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:bonfire/shared/utils/desktop_tray.dart';
 import 'package:flutter/widgets.dart';
 import 'package:hive_ce/hive.dart';
 import 'package:universal_platform/universal_platform.dart';
@@ -81,9 +82,13 @@ Future<void> setupDesktopWindow() async {
     if (maximized) await windowManager.maximize();
     await windowManager.show();
     await windowManager.focus();
+    // The title-bar close hides the window. Only the tray menu exits.
+    await windowManager.setPreventClose(true);
+    await setupDesktopTray();
   });
 
   windowManager.addListener(_WindowStatePersister());
+  windowManager.addListener(_CloseToTray());
 }
 
 Future<void> _writeWindowGeometry({required bool force}) async {
@@ -133,4 +138,11 @@ class _WindowStatePersister extends WindowListener {
 
   @override
   void onWindowUnmaximize() => _scheduleSave();
+}
+
+class _CloseToTray extends WindowListener {
+  @override
+  void onWindowClose() {
+    unawaited(hideDesktopWindowToTray());
+  }
 }

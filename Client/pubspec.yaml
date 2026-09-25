@@ -111,6 +111,7 @@ dependencies:
   crop_your_image: ^2.0.0
   desktop_drop: ^0.7.1
   image: ^4.3.0
+  tray_manager: ^0.5.3
 
 dependency_overrides:
   http: ^1.2.1
@@ -203,3 +204,4 @@ flutter:
     - assets/
     - assets/images/
     - assets/sfx/
+    - windows/runner/resources/app_icon.ico

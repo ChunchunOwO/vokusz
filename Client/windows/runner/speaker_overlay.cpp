@@ -325,8 +325,15 @@ void DrawRow(Gdiplus::Graphics& graphics, const Gdiplus::FontFamily* face,
                      static_cast<Gdiplus::REAL>(top),
                      static_cast<Gdiplus::REAL>(m.nameW),
                      static_cast<Gdiplus::REAL>(m.rowH));
-  graphics.DrawString(text.c_str(), -1, speaking ? &speaking_font : &name_font,
-                      box, &format, &name_brush);
+  const Gdiplus::Font& font = speaking ? speaking_font : name_font;
+  Gdiplus::GraphicsPath path;
+  path.AddString(text.c_str(), -1, face, font.GetStyle(), font.GetSize(), box,
+                 &format);
+  Gdiplus::Pen outline(Gdiplus::Color(255, 0, 0, 0),
+                       static_cast<Gdiplus::REAL>(S(3)));
+  outline.SetLineJoin(Gdiplus::LineJoinRound);
+  graphics.DrawPath(&outline, &path);
+  graphics.FillPath(&name_brush, &path);
 }
 
 void Draw(Gdiplus::Graphics& graphics, const Layout& layout) {

@@ -35,6 +35,7 @@ class VoiceDesktopExtras extends ConsumerStatefulWidget {
 class _VoiceDesktopExtrasState extends ConsumerState<VoiceDesktopExtras> {
   Timer? _keys;
   bool _overlayWasDown = false;
+  bool _muteWasDown = false;
   String _overlaySignature = '';
   final Map<String, String?> _avatarUrls = {};
   final Map<String, Uint8List?> _avatars = {};
@@ -82,6 +83,18 @@ class _VoiceDesktopExtrasState extends ConsumerState<VoiceDesktopExtras> {
           .setVoiceOverlayEnabled(!settings.voiceOverlayEnabled);
     }
     _overlayWasDown = overlayDown;
+    final muteKey = settings.voiceMuteHotkey;
+    final muteIsTalkKey =
+        settings.voicePushToTalk && muteKey == settings.voicePushToTalkKey;
+    if (!muteIsTalkKey) {
+      final muteDown = DesktopKeys.isDown(muteKey);
+      if (muteDown && !_muteWasDown) {
+        ref.read(voiceControllerProvider.notifier).toggleMute();
+      }
+      _muteWasDown = muteDown;
+    } else {
+      _muteWasDown = false;
+    }
     final held = DesktopKeys.isDown(settings.voicePushToTalkKey);
     ref.read(voiceControllerProvider.notifier).syncTransmit(
       pushToTalk: settings.voicePushToTalk,

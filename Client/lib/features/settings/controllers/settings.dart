@@ -175,6 +175,15 @@ class SettingsController extends _$SettingsController {
   void setVoicePushToTalk(bool enabled) =>
       _update(state.copyWith(voicePushToTalk: enabled));
 
+  void setVoiceMuteHotkey(int virtualKey) => _update(
+    state.copyWith(
+      voiceMuteHotkey: AccordSettings.clampVirtualKey(
+        virtualKey,
+        state.voiceMuteHotkey,
+      ),
+    ),
+  );
+
   void setVoicePushToTalkKey(int virtualKey) => _update(
     state.copyWith(
       voicePushToTalkKey: AccordSettings.clampVirtualKey(

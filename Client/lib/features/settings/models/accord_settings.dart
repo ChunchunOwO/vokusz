@@ -61,6 +61,9 @@ class AccordSettings {
   /// F8. Toggles the speaker overlay without colliding with the mic key.
   static const int defaultOverlayVirtualKey = 0x77;
 
+  /// F9. Toggles the microphone on and off.
+  static const int defaultMuteVirtualKey = 0x78;
+
   static int clampVirtualKey(int value, int fallback) =>
       value >= 1 && value <= 254 ? value : fallback;
 
@@ -131,6 +134,7 @@ class AccordSettings {
     this.voiceRelayOnly = false,
     this.voicePushToTalk = false,
     this.voicePushToTalkKey = defaultPushToTalkVirtualKey,
+    this.voiceMuteHotkey = defaultMuteVirtualKey,
     this.voiceOverlayEnabled = false,
     this.voiceOverlayHotkey = defaultOverlayVirtualKey,
     this.voiceOverlayEdit = false,
@@ -278,6 +282,9 @@ class AccordSettings {
 
   /// Windows virtual-key code for push-to-talk. See [defaultPushToTalkVirtualKey].
   final int voicePushToTalkKey;
+
+  /// Windows virtual-key code that toggles the microphone mute.
+  final int voiceMuteHotkey;
 
   /// Speaker overlay on the top of the screen. It stays hidden until a voice
   /// channel is joined.
@@ -466,6 +473,7 @@ class AccordSettings {
     bool? voiceRelayOnly,
     bool? voicePushToTalk,
     int? voicePushToTalkKey,
+    int? voiceMuteHotkey,
     bool? voiceOverlayEnabled,
     int? voiceOverlayHotkey,
     bool? voiceOverlayEdit,
@@ -538,6 +546,7 @@ class AccordSettings {
       voiceRelayOnly: voiceRelayOnly ?? this.voiceRelayOnly,
       voicePushToTalk: voicePushToTalk ?? this.voicePushToTalk,
       voicePushToTalkKey: voicePushToTalkKey ?? this.voicePushToTalkKey,
+      voiceMuteHotkey: voiceMuteHotkey ?? this.voiceMuteHotkey,
       voiceOverlayEnabled: voiceOverlayEnabled ?? this.voiceOverlayEnabled,
       voiceOverlayHotkey: voiceOverlayHotkey ?? this.voiceOverlayHotkey,
       voiceOverlayEdit: voiceOverlayEdit ?? this.voiceOverlayEdit,
@@ -755,6 +764,7 @@ class AccordSettings {
     'voiceRelayOnly': voiceRelayOnly,
     'voicePushToTalk': voicePushToTalk,
     'voicePushToTalkKey': voicePushToTalkKey,
+    'voiceMuteHotkey': voiceMuteHotkey,
     'voiceOverlayEnabled': voiceOverlayEnabled,
     'voiceOverlayHotkey': voiceOverlayHotkey,
     'voiceOverlayEdit': voiceOverlayEdit,
@@ -849,6 +859,10 @@ class AccordSettings {
         (json['voicePushToTalkKey'] as num?)?.toInt() ??
             defaultPushToTalkVirtualKey,
         defaultPushToTalkVirtualKey,
+      ),
+      voiceMuteHotkey: clampVirtualKey(
+        (json['voiceMuteHotkey'] as num?)?.toInt() ?? defaultMuteVirtualKey,
+        defaultMuteVirtualKey,
       ),
       voiceOverlayEnabled: json['voiceOverlayEnabled'] as bool? ?? false,
       voiceOverlayHotkey: clampVirtualKey(

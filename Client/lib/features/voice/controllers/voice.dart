@@ -407,15 +407,7 @@ class VoiceController extends _$VoiceController {
     state = state.copyWith(selfMute: muted);
     soundManager.play(muted ? 'mute' : 'unmute');
     _sendVoiceStateUpdate();
-    final settings = ref.read(settingsControllerProvider);
-    final live = microphoneLive(
-      selfMute: muted,
-      pushToTalk: settings.voicePushToTalk,
-      pushToTalkHeld: DesktopKeys.isDown(settings.voicePushToTalkKey),
-    );
-    _micLive = live;
-    final session = _session;
-    if (session != null) unawaited(_applyMic(session, enabled: live));
+    _pushMic(_micShouldBeLive());
   }
 
   /// Opens or closes the mic for push-to-talk without touching [selfMute] or
@@ -429,9 +421,16 @@ class VoiceController extends _$VoiceController {
       pushToTalkHeld: held,
     );
     if (live == _micLive) return;
+    _pushMic(live);
+  }
+
+  /// Silences the capture track immediately, then asks LiveKit to match.
+  void _pushMic(bool live) {
     _micLive = live;
     final session = _session;
-    if (session != null) unawaited(_applyMic(session, enabled: live));
+    if (session == null) return;
+    session.gateMicrophone(live);
+    unawaited(_applyMic(session, enabled: live));
   }
 
   /// Applies a mute toggle to the media session. An *unmute* that fails (the
@@ -475,11 +474,7 @@ class VoiceController extends _$VoiceController {
     state = state.copyWith(selfDeaf: deafened);
     soundManager.play(deafened ? 'deafen' : 'undeafen');
     _sendVoiceStateUpdate();
-    final session = _session;
-    if (session == null) return;
-    final live = _micShouldBeLive();
-    _micLive = live;
-    unawaited(_applyMic(session, enabled: live));
+    _pushMic(_micShouldBeLive());
   }
 
   Future<void> toggleVideo() async {

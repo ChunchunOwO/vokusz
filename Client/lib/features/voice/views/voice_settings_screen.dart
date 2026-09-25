@@ -431,6 +431,11 @@ class _TalkModeSection extends ConsumerWidget {
           virtualKey: settings.voicePushToTalkKey,
           onChanged: controller.setVoicePushToTalkKey,
         ),
+        KeyBindTile(
+          title: AppStrings.choose('Mute shortcut', '麦克风开关快捷键', context: context),
+          virtualKey: settings.voiceMuteHotkey,
+          onChanged: controller.setVoiceMuteHotkey,
+        ),
       ],
     );
   }

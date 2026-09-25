@@ -66,6 +66,8 @@ class VoiceSession {
   /// this is computed locally and updates every poll, so the meter reacts
   /// immediately to quiet input.
   double _localInputLevel = 0;
+  bool _wantMic = true;
+  int _levelEpoch = 0;
   Timer? _levelTimer;
   bool _pollingLevel = false;
 
@@ -537,9 +539,37 @@ class VoiceSession {
   /// reason an *unmute* failed (permission denied, no capture device) so the
   /// controller can revert to muted and say why. Muting never fails: stopping a
   /// track the OS already tore down is harmless.
+  /// Cuts or opens the capture track before LiveKit finishes the mute signal.
+  /// Push-to-talk release uses this so the meter and the outgoing audio stop
+  /// on the same tick the key comes up.
+  void gateMicrophone(bool live) {
+    _wantMic = live;
+    _setTrackEnabled(live);
+    if (live) return;
+    _levelEpoch++;
+    _localInputLevel = 0;
+    final id = _room?.localParticipant?.identity ?? '';
+    if (id.isNotEmpty) {
+      final next = Map<String, double>.from(_audioLevels);
+      next[id] = 0;
+      _audioLevels = next;
+    }
+    onChanged?.call();
+  }
+
+  void _setTrackEnabled(bool enabled) {
+    final native = _localMicTrack?.mediaStreamTrack;
+    if (native == null) return;
+    try {
+      native.enabled = enabled;
+    } catch (_) {}
+  }
+
   Future<String?> setMicEnabled(bool enabled, {String? deviceId}) async {
     final participant = _room?.localParticipant;
     if (participant == null) return null;
+    _wantMic = enabled;
+    _setTrackEnabled(enabled);
     try {
       await participant.setMicrophoneEnabled(
         enabled,
@@ -548,10 +578,15 @@ class VoiceSession {
           stopAudioCaptureOnMute: false,
         ),
       );
+      if (_wantMic != enabled) {
+        _setTrackEnabled(_wantMic);
+        return null;
+      }
       if (enabled) {
         _micError = null;
         // Unmuting restarts the capture track, which drops the applied gain.
         await _applyInputGain();
+        _setTrackEnabled(true);
       }
       return null;
     } catch (e) {
@@ -876,13 +911,18 @@ class VoiceSession {
       final localId = room?.localParticipant?.identity ?? '';
       try {
         final track = _localMicTrack;
-        if (track is LocalAudioTrack) {
-          final stats = await track.getSenderStats();
-          _localInputLevel = (stats?.audioSourceStats?.audioLevel ?? 0)
-              .toDouble()
-              .clamp(0.0, 1.0);
+        final epoch = _levelEpoch;
+        if (!_wantMic || track is! LocalAudioTrack) {
+          _localInputLevel = 0;
         } else {
-          _localInputLevel = 0; // muted/unpublished — nothing to measure
+          final stats = await track.getSenderStats();
+          if (!_wantMic || epoch != _levelEpoch) {
+            _localInputLevel = 0;
+          } else {
+            _localInputLevel = (stats?.audioSourceStats?.audioLevel ?? 0)
+                .toDouble()
+                .clamp(0.0, 1.0);
+          }
         }
       } catch (_) {
         // Transient stats failures shouldn't disturb the meter.

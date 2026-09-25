@@ -501,8 +501,10 @@ class _MemberPopoutState extends ConsumerState<_MemberPopout> {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-              if (bio != null && bio.isNotEmpty)
+              if (bio != null && bio.isNotEmpty) ...[
+                const SizedBox(height: 8),
                 Text(bio, style: theme.textTheme.bodyMedium),
+              ],
               if (rich != null) ...[
                 const SizedBox(height: 12),
                 RichPresenceCard(presence: rich),
@@ -618,7 +620,7 @@ class _MemberPopoutState extends ConsumerState<_MemberPopout> {
 }
 
 /// Banner across the top of the card. The avatar sits on the banner's lower
-/// edge. The name and id line up with that avatar; presence sits under it.
+/// edge. Name, id, and presence are centered beside the avatar.
 class _BannerIdentity extends StatelessWidget {
   const _BannerIdentity({
     required this.bannerUrl,
@@ -691,8 +693,8 @@ class _BannerIdentity extends StatelessWidget {
   }
 }
 
-/// Avatar on the left with presence under it. Name and id sit to the right,
-/// lined up with the top of the avatar.
+/// Avatar on the left. Name, id, and presence sit to the right, centered on
+/// the avatar. Presence follows the id on the same line, after a middle dot.
 class _ProfileHeader extends StatelessWidget {
   const _ProfileHeader({
     required this.name,
@@ -730,62 +732,56 @@ class _ProfileHeader extends StatelessWidget {
       backgroundColor: avatarBackgroundColor,
       ringColor: bannerRing ? colors.foreground : null,
     );
+    final muted = theme.textTheme.bodySmall!.copyWith(color: colors.gray);
+    final idLine = username == null
+        ? _statusLabel(status)
+        : '@$username · ${_statusLabel(status)}';
     return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            if (bannerRing)
-              Container(
-                padding: const EdgeInsets.all(3),
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: colors.foreground,
-                ),
-                child: avatar,
-              )
-            else
-              avatar,
-            const SizedBox(height: 6),
-            Text(
-              _statusLabel(status),
-              textAlign: TextAlign.center,
-              style: theme.textTheme.bodySmall!.copyWith(color: colors.gray),
+        if (bannerRing)
+          Container(
+            padding: const EdgeInsets.all(3),
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: colors.foreground,
             ),
-            if (customStatus != null) ...[
-              const SizedBox(height: 2),
-              Text(
-                customStatus!,
-                textAlign: TextAlign.center,
-                style: theme.textTheme.bodySmall!.copyWith(
-                  color: colors.dirtyWhite,
-                ),
-              ),
-            ],
-            if (remoteDomain != null) ...[
-              const SizedBox(height: 4),
-              RemoteOriginBadge(domain: remoteDomain!),
-            ],
-          ],
-        ),
+            child: avatar,
+          )
+        else
+          avatar,
         const SizedBox(width: 12),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
             children: [
               Text(
                 name,
                 style: theme.textTheme.titleMedium!.copyWith(color: nameColor),
                 overflow: TextOverflow.ellipsis,
               ),
-              if (username != null)
+              Text(
+                idLine,
+                style: muted,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              if (customStatus != null) ...[
+                const SizedBox(height: 2),
                 Text(
-                  '@$username',
+                  customStatus!,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: theme.textTheme.bodySmall!.copyWith(
-                    color: colors.gray,
+                    color: colors.dirtyWhite,
                   ),
                 ),
+              ],
+              if (remoteDomain != null) ...[
+                const SizedBox(height: 4),
+                RemoteOriginBadge(domain: remoteDomain!),
+              ],
             ],
           ),
         ),

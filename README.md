@@ -8,7 +8,6 @@ This repository is a monorepo:
 |------|------------|
 | [`Client/`](Client/) | Flutter client. **Windows is the main line.** |
 | [`Server/`](Server/) | Rust chat/voice backend plus a desktop host that bundles LiveKit |
-| [`MutiVersion/`](MutiVersion/) | Parked Android / Linux / macOS / iOS trees. Leave them alone. |
 
 No paywall on the call. No first-party ads or analytics. You connect to a server you run or trust.
 

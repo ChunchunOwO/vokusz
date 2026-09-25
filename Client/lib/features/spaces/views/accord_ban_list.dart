@@ -1,3 +1,4 @@
+import 'package:bonfire/l10n/ui_copy.dart';
 import 'package:accordkit/accordkit.dart';
 import 'package:bonfire/features/member/utils/member_display.dart';
 import 'package:bonfire/shared/components/async_state_views.dart';
@@ -60,7 +61,7 @@ class _BanListState extends ConsumerState<_BanList>
   @override
   Future<(List<_Ban>? items, String? error)> fetchItems() async {
     final result = await _client!.bans.list(widget.spaceId);
-    if (!result.ok) return (null, result.errorOr('Failed to load bans'));
+    if (!result.ok) return (null, result.errorOr(UiCopy.failedToLoadBans()));
     final raw = result.data;
     final parsed = <_Ban>[];
     if (raw is List) {
@@ -76,9 +77,9 @@ class _BanListState extends ConsumerState<_BanList>
     if (client == null) return;
     final ok = await showConfirmDialog(
       context,
-      title: 'Unban member?',
-      message: 'Allow ${ban.name} back into the space?',
-      confirmLabel: 'Unban',
+      title: UiCopy.unbanMember(),
+      message: UiCopy.allowBackIntoTheSpace(arg0: ban.name),
+      confirmLabel: UiCopy.unban(),
     );
     if (ok != true || !mounted) return;
     setState(() => loading = true);
@@ -87,7 +88,7 @@ class _BanListState extends ConsumerState<_BanList>
     if (!result.ok) {
       setState(() {
         loading = false;
-        error = result.errorOr('Failed to unban');
+        error = result.errorOr(UiCopy.failedToUnban());
       });
       return;
     }
@@ -104,9 +105,9 @@ class _BanListState extends ConsumerState<_BanList>
     final ids = _selected.toList();
     final ok = await showConfirmDialog(
       context,
-      title: 'Unban members?',
-      message: 'Allow ${ids.length} member(s) back into the space?',
-      confirmLabel: 'Unban',
+      title: UiCopy.unbanMembers(),
+      message: UiCopy.allowMemberSBackIntoTheSpace(arg0: ids.length),
+      confirmLabel: UiCopy.unban(),
     );
     if (ok != true || !mounted) return;
     setState(() => loading = true);
@@ -125,7 +126,9 @@ class _BanListState extends ConsumerState<_BanList>
       _selected
         ..clear()
         ..addAll(failed);
-      error = failed.isEmpty ? null : 'Failed to unban ${failed.length}';
+      error = failed.isEmpty
+          ? null
+          : UiCopy.failedToUnban2(arg0: failed.length);
     });
   }
 
@@ -136,8 +139,16 @@ class _BanListState extends ConsumerState<_BanList>
     final bans = items;
     // Ensure any bans the API returned with only a userId resolve their name
     // on the next rebuild via the on-demand user cache.
-    final users = ref.watch(accordUsersControllerProvider(ref.readActiveServerKey() ?? ''));
-    final ensureUser = ref.read(accordUsersControllerProvider(ref.readActiveServerKey() ?? '').notifier).ensure;
+    final users = ref.watch(
+      accordUsersControllerProvider(ref.readActiveServerKey() ?? ''),
+    );
+    final ensureUser = ref
+        .read(
+          accordUsersControllerProvider(
+            ref.readActiveServerKey() ?? '',
+          ).notifier,
+        )
+        .ensure;
     if (bans != null) {
       for (final b in bans) {
         if (b.username == null) {
@@ -165,15 +176,18 @@ class _BanListState extends ConsumerState<_BanList>
                 children: [
                   Icon(Icons.gavel, size: 18, color: colors.dirtyWhite),
                   const SizedBox(width: 8),
-                  Text('Banned members', style: theme.textTheme.titleMedium),
+                  Text(
+                    UiCopy.bannedMembers(context: context),
+                    style: theme.textTheme.titleMedium,
+                  ),
                   const Spacer(),
                   IconButton(
-                    tooltip: 'Refresh',
+                    tooltip: UiCopy.refresh(context: context),
                     onPressed: loading ? null : load,
                     icon: const Icon(Icons.refresh, size: 18),
                   ),
                   IconButton(
-                    tooltip: 'Close',
+                    tooltip: UiCopy.close(context: context),
                     onPressed: () => Navigator.of(context).maybePop(),
                     icon: const Icon(Icons.close, size: 18),
                   ),
@@ -182,10 +196,10 @@ class _BanListState extends ConsumerState<_BanList>
               const SizedBox(height: 8),
               if (bans != null && bans.isNotEmpty)
                 TextField(
-                  decoration: const InputDecoration(
+                  decoration: InputDecoration(
                     isDense: true,
                     prefixIcon: Icon(Icons.search, size: 18),
-                    hintText: 'Search banned members',
+                    hintText: UiCopy.searchBannedMembers(context: context),
                     border: OutlineInputBorder(),
                   ),
                   onChanged: (v) => setState(() => _query = v),
@@ -203,12 +217,12 @@ class _BanListState extends ConsumerState<_BanList>
                       onPressed: loading
                           ? null
                           : () => setState(_selected.clear),
-                      child: const Text('Clear'),
+                      child: Text(UiCopy.clear(context: context)),
                     ),
                     FilledButton.icon(
                       onPressed: loading ? null : _bulkUnban,
                       icon: const Icon(Icons.lock_open, size: 16),
-                      label: const Text('Unban selected'),
+                      label: Text(UiCopy.unbanSelected(context: context)),
                     ),
                   ],
                 ),
@@ -228,8 +242,8 @@ class _BanListState extends ConsumerState<_BanList>
                         child: Center(
                           child: Text(
                             bans == null
-                                ? 'Loading…'
-                                : 'No bans in this space.',
+                                ? UiCopy.loading(context: context)
+                                : UiCopy.noBansInThisSpace(context: context),
                             style: theme.textTheme.bodyMedium,
                           ),
                         ),
@@ -242,7 +256,7 @@ class _BanListState extends ConsumerState<_BanList>
                               padding: const EdgeInsets.all(24),
                               child: Center(
                                 child: Text(
-                                  'No matching bans.',
+                                  UiCopy.noMatchingBans(context: context),
                                   style: theme.textTheme.bodyMedium,
                                 ),
                               ),
@@ -284,17 +298,15 @@ class _BanListState extends ConsumerState<_BanList>
                                 ),
                                 subtitle: Text(
                                   ban.reason.isEmpty
-                                      ? 'No reason given'
+                                      ? UiCopy.noReasonGiven(context: context)
                                       : ban.reason,
                                   maxLines: 2,
                                   overflow: TextOverflow.ellipsis,
                                 ),
                                 trailing: TextButton.icon(
-                                  onPressed: loading
-                                      ? null
-                                      : () => _unban(ban),
+                                  onPressed: loading ? null : () => _unban(ban),
                                   icon: const Icon(Icons.lock_open, size: 16),
-                                  label: const Text('Unban'),
+                                  label: Text(UiCopy.unban(context: context)),
                                 ),
                               );
                             },

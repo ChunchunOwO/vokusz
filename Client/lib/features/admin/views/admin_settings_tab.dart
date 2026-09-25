@@ -1,3 +1,4 @@
+import 'package:bonfire/l10n/ui_copy.dart';
 import 'package:accordkit/accordkit.dart';
 import 'package:bonfire/features/admin/utils/upload_budgets.dart';
 import 'package:bonfire/shared/components/async_state_views.dart';
@@ -79,7 +80,7 @@ class _AdminSettingsTabState extends ConsumerState<AdminSettingsTab> {
     if (!result.ok) {
       setState(() {
         _loading = false;
-        _error = result.errorOr('Failed to load settings');
+        _error = result.errorOr(UiCopy.failedToLoadSettings());
       });
       return;
     }
@@ -98,12 +99,14 @@ class _AdminSettingsTabState extends ConsumerState<AdminSettingsTab> {
       _tosText.text = d['tos_text']?.toString() ?? '';
       _tosUrl.text = d['tos_url']?.toString() ?? '';
       _tosVersion = asInt(d['tos_version'], 1);
-      _hasUploadBudgets = d.containsKey('upload_requests_per_minute') ||
+      _hasUploadBudgets =
+          d.containsKey('upload_requests_per_minute') ||
           d.containsKey('upload_bytes_per_minute');
       _uploadRequests.text = d['upload_requests_per_minute']?.toString() ?? '';
       final uploadBytes = asInt(d['upload_bytes_per_minute']);
-      _uploadMb.text =
-          uploadBytes > 0 ? formatUploadMbPerMinute(uploadBytes) : '';
+      _uploadMb.text = uploadBytes > 0
+          ? formatUploadMbPerMinute(uploadBytes)
+          : '';
     });
   }
 
@@ -124,15 +127,20 @@ class _AdminSettingsTabState extends ConsumerState<AdminSettingsTab> {
       uploadRequests = parseUploadRequestsPerMinute(_uploadRequests.text);
       uploadBytes = parseUploadMbPerMinute(_uploadMb.text);
       if (uploadRequests == null) {
-        setState(() => _error = 'Uploads per minute must be a whole number '
-            'from $kMinUploadRequestsPerMinute to '
-            '$kMaxUploadRequestsPerMinute.');
+        setState(
+          () => _error = UiCopy.uploadsPerMinuteMustBeAWhole(
+            arg0: kMinUploadRequestsPerMinute,
+            arg1: kMaxUploadRequestsPerMinute,
+          ),
+        );
         return;
       }
       if (uploadBytes == null) {
-        setState(() => _error = 'Upload MB per minute must be more than 0 '
-            'and at most ${formatUploadMbPerMinute(kMaxUploadBytesPerMinute)} '
-            'MB (1 TiB).');
+        setState(
+          () => _error = UiCopy.uploadMbPerMinuteMustBeMore(
+            arg0: formatUploadMbPerMinute(kMaxUploadBytesPerMinute),
+          ),
+        );
         return;
       }
     }
@@ -160,11 +168,10 @@ class _AdminSettingsTabState extends ConsumerState<AdminSettingsTab> {
     if (!mounted) return;
     setState(() => _saving = false);
     if (!result.ok) {
-      setState(() =>
-          _error = result.errorOr('Failed to save settings'));
+      setState(() => _error = result.errorOr(UiCopy.failedToSaveSettings()));
       return;
     }
-    showInfoSnack(context, 'Server settings saved');
+    showInfoSnack(context, UiCopy.serverSettingsSaved());
   }
 
   @override
@@ -185,28 +192,36 @@ class _AdminSettingsTabState extends ConsumerState<AdminSettingsTab> {
                   padding: const EdgeInsets.only(bottom: 12),
                   child: InlineError(_error!, centered: false),
                 ),
-              _Label('Server name'),
+              _Label(UiCopy.serverName(context: context)),
               TextField(
                 controller: _serverName,
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   isDense: true,
-                  hintText: 'Accord Server',
+                  hintText: UiCopy.accordServer(context: context),
                   border: OutlineInputBorder(),
                 ),
               ),
               const SizedBox(height: 16),
-              _Label('Registration policy'),
+              _Label(UiCopy.registrationPolicy(context: context)),
               DropdownButtonFormField<String>(
                 initialValue: _policy,
                 decoration: const InputDecoration(
                   isDense: true,
                   border: OutlineInputBorder(),
                 ),
-                items: const [
-                  DropdownMenuItem(value: 'open', child: Text('Open')),
+                items: [
                   DropdownMenuItem(
-                      value: 'invite_only', child: Text('Invite only')),
-                  DropdownMenuItem(value: 'closed', child: Text('Closed')),
+                    value: 'open',
+                    child: Text(UiCopy.open(context: context)),
+                  ),
+                  DropdownMenuItem(
+                    value: 'invite_only',
+                    child: Text(UiCopy.inviteOnly(context: context)),
+                  ),
+                  DropdownMenuItem(
+                    value: 'closed',
+                    child: Text(UiCopy.closed(context: context)),
+                  ),
                 ],
                 onChanged: (v) => setState(() => _policy = v ?? _policy),
               ),
@@ -217,7 +232,7 @@ class _AdminSettingsTabState extends ConsumerState<AdminSettingsTab> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        _Label('Max spaces (0 = ∞)'),
+                        _Label(UiCopy.maxSpaces0(context: context)),
                         TextField(
                           controller: _maxSpaces,
                           keyboardType: TextInputType.number,
@@ -234,7 +249,7 @@ class _AdminSettingsTabState extends ConsumerState<AdminSettingsTab> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        _Label('Max members/space (0 = ∞)'),
+                        _Label(UiCopy.maxMembersSpace0(context: context)),
                         TextField(
                           controller: _maxMembers,
                           keyboardType: TextInputType.number,
@@ -257,9 +272,11 @@ class _AdminSettingsTabState extends ConsumerState<AdminSettingsTab> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           _Label(
-                            'Uploads per user per minute '
-                            '($kMinUploadRequestsPerMinute–'
-                            '$kMaxUploadRequestsPerMinute)',
+                            UiCopy.uploadsPerUserPerMinute(
+                              context: context,
+                              arg0: kMinUploadRequestsPerMinute,
+                              arg1: kMaxUploadRequestsPerMinute,
+                            ),
                           ),
                           TextField(
                             controller: _uploadRequests,
@@ -277,7 +294,9 @@ class _AdminSettingsTabState extends ConsumerState<AdminSettingsTab> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          _Label('Upload MB per user per minute'),
+                          _Label(
+                            UiCopy.uploadMbPerUserPerMinute(context: context),
+                          ),
                           TextField(
                             controller: _uploadMb,
                             keyboardType: const TextInputType.numberWithOptions(
@@ -296,60 +315,66 @@ class _AdminSettingsTabState extends ConsumerState<AdminSettingsTab> {
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  'Per-user budgets for message sends with attachments, across '
-                  'all channels and DMs — moderators and admins included. Text '
-                  "messages don't count. Keep the MB budget at least as large "
-                  'as the biggest single upload you allow.',
+                  UiCopy.perUserBudgetsForMessageSendsWith(context: context),
                   style: theme.textTheme.bodySmall!.copyWith(
                     color: colors.gray,
                   ),
                 ),
                 const SizedBox(height: 16),
               ],
-              _Label('Message of the day'),
+              _Label(UiCopy.messageOfTheDay(context: context)),
               TextField(
                 controller: _motd,
                 minLines: 2,
                 maxLines: 4,
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   isDense: true,
-                  hintText: 'Shown to users on login',
+                  hintText: UiCopy.shownToUsersOnLogin(context: context),
                   border: OutlineInputBorder(),
                 ),
               ),
               const SizedBox(height: 4),
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
-                title: const Text('List on public server directory'),
+                title: Text(
+                  UiCopy.listOnPublicServerDirectory(context: context),
+                ),
                 value: _publicListing,
                 onChanged: (v) => setState(() => _publicListing = v),
               ),
               const Divider(height: 24),
-              Text('Terms of Service',
-                  style: theme.textTheme.titleSmall),
+              Text(
+                UiCopy.termsOfService(context: context),
+                style: theme.textTheme.titleSmall,
+              ),
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
-                title: const Text('Require ToS acceptance during registration'),
+                title: Text(
+                  UiCopy.requireTosAcceptanceDuringRegistration(
+                    context: context,
+                  ),
+                ),
                 value: _tosEnabled,
                 onChanged: (v) => setState(() => _tosEnabled = v),
               ),
-              Text('Current version: $_tosVersion',
-                  style: theme.textTheme.bodySmall!
-                      .copyWith(color: colors.gray)),
+              Text(
+                UiCopy.currentVersion(context: context, arg0: _tosVersion),
+                style: theme.textTheme.bodySmall!.copyWith(color: colors.gray),
+              ),
               const SizedBox(height: 12),
-              _Label('ToS text (markdown)'),
+              _Label(UiCopy.tosTextMarkdown(context: context)),
               TextField(
                 controller: _tosText,
                 minLines: 4,
                 maxLines: 10,
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   isDense: true,
-                  hintText: 'Enter Terms of Service text…',
+                  hintText: UiCopy.enterTermsOfServiceText(context: context),
                   border: OutlineInputBorder(),
                 ),
               ),
               const SizedBox(height: 16),
-              _Label('ToS external URL (optional)'),
+              _Label(UiCopy.tosExternalUrlOptional(context: context)),
               TextField(
                 controller: _tosUrl,
                 keyboardType: TextInputType.url,
@@ -371,12 +396,16 @@ class _AdminSettingsTabState extends ConsumerState<AdminSettingsTab> {
               children: [
                 TextButton(
                   onPressed: _saving ? null : _load,
-                  child: const Text('Reset'),
+                  child: Text(UiCopy.reset(context: context)),
                 ),
                 const SizedBox(width: 8),
                 FilledButton(
                   onPressed: _saving ? null : _save,
-                  child: Text(_saving ? 'Saving…' : 'Save settings'),
+                  child: Text(
+                    _saving
+                        ? UiCopy.saving(context: context)
+                        : UiCopy.saveSettings(context: context),
+                  ),
                 ),
               ],
             ),
@@ -399,10 +428,10 @@ class _Label extends StatelessWidget {
       padding: const EdgeInsets.only(bottom: 4),
       child: Text(
         text.toUpperCase(),
-        style: Theme.of(context)
-            .textTheme
-            .labelSmall!
-            .copyWith(color: colors.gray, letterSpacing: 0.6),
+        style: Theme.of(context).textTheme.labelSmall!.copyWith(
+          color: colors.gray,
+          letterSpacing: 0.6,
+        ),
       ),
     );
   }

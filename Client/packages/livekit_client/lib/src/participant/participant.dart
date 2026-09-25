@@ -287,8 +287,11 @@ abstract class Participant<T extends TrackPublication> extends DisposableChangeN
   /// returns null when not found.
   T? getTrackPublicationBySource(TrackSource source) {
     if (source == TrackSource.unknown) return null;
-    // try to find by source
-    final result = trackPublications.values.firstWhereOrNull((e) => e.source == source);
+    // Accompaniment is a second microphone track. Mic mute, device changes,
+    // and the level meter must keep using the real microphone.
+    final result = trackPublications.values.firstWhereOrNull(
+      (e) => e.source == source && e.name != 'accompaniment',
+    );
     if (result != null) return result;
     // try to find by compatibility
     return trackPublications.values.where((e) => e.source == TrackSource.unknown).firstWhereOrNull((e) =>

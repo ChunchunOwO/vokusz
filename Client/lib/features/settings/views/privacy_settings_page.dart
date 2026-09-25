@@ -1,3 +1,4 @@
+import 'package:bonfire/l10n/ui_copy.dart';
 import 'dart:convert';
 import 'package:bonfire/shared/components/settings_scaffold.dart';
 import 'package:bonfire/shared/utils/rest_result_ext.dart';
@@ -59,7 +60,7 @@ class _PrivacySettingsScreenState extends ConsumerState<PrivacySettingsScreen> {
       setState(() {
         _exporting = false;
         _exportFailed = true;
-        _exportStatus = 'Export failed. Please try again.';
+        _exportStatus = UiCopy.exportFailedPleaseTryAgain();
       });
       return;
     }
@@ -72,7 +73,7 @@ class _PrivacySettingsScreenState extends ConsumerState<PrivacySettingsScreen> {
     String? path;
     try {
       path = await FilePicker.platform.saveFile(
-        dialogTitle: 'Save data export',
+        dialogTitle: UiCopy.saveDataExport(),
         fileName: 'vokusz-data-export.json',
         type: FileType.custom,
         allowedExtensions: const ['json'],
@@ -83,7 +84,7 @@ class _PrivacySettingsScreenState extends ConsumerState<PrivacySettingsScreen> {
       setState(() {
         _exporting = false;
         _exportFailed = true;
-        _exportStatus = 'Could not save the export file.';
+        _exportStatus = UiCopy.couldNotSaveTheExportFile();
       });
       return;
     }
@@ -92,8 +93,8 @@ class _PrivacySettingsScreenState extends ConsumerState<PrivacySettingsScreen> {
       _exporting = false;
       _exportFailed = path == null;
       _exportStatus = path == null
-          ? 'Export cancelled.'
-          : 'Data exported successfully.';
+          ? UiCopy.exportCancelled()
+          : UiCopy.dataExportedSuccessfully();
     });
   }
 
@@ -102,12 +103,9 @@ class _PrivacySettingsScreenState extends ConsumerState<PrivacySettingsScreen> {
     if (client == null || _leaving.contains(space.id)) return;
     final confirmed = await showConfirmDialog(
       context,
-      title: 'Leave & Delete Data',
-      message:
-          "This will permanently leave '${space.name}' and delete all your "
-          'messages, reactions, and data from this server. Your account stays '
-          'active. This cannot be undone.',
-      confirmLabel: 'Leave & Delete',
+      title: UiCopy.leaveDeleteData(),
+      message: UiCopy.thisWillPermanentlyLeaveAndDeleteAll(arg0: space.name),
+      confirmLabel: UiCopy.leaveDelete(),
       danger: true,
     );
     if (confirmed != true || !mounted) return;
@@ -116,13 +114,13 @@ class _PrivacySettingsScreenState extends ConsumerState<PrivacySettingsScreen> {
     if (!mounted) return;
     setState(() => _leaving.remove(space.id));
     if (!result.ok) {
-      showErrorSnack(context, result, prefix: 'Failed');
+      showErrorSnack(context, result, prefix: UiCopy.failed());
       return;
     }
     // Drop the space from the cache immediately; the gateway member.leave echo
     // would do this too, but the local update keeps the page in sync.
     ref.read(spacesControllerProvider.notifier).removeSpace(space.id);
-    showInfoSnack(context, "Left '${space.name}' and deleted your data");
+    showInfoSnack(context, UiCopy.leftAndDeletedYourData(arg0: space.name));
   }
 
   @override
@@ -131,11 +129,14 @@ class _PrivacySettingsScreenState extends ConsumerState<PrivacySettingsScreen> {
       return Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [SectionHeader('Privacy & Data'), ..._content()],
+        children: [
+          SectionHeader(UiCopy.privacyData(context: context)),
+          ..._content(),
+        ],
       );
     }
     return SettingsScaffold(
-      title: 'Privacy & Data',
+      title: UiCopy.privacyData(context: context),
       body: ListView(
         padding: const EdgeInsets.symmetric(vertical: 8),
         children: _content(),
@@ -151,12 +152,8 @@ class _PrivacySettingsScreenState extends ConsumerState<PrivacySettingsScreen> {
     final userId = ref.watchUserId();
 
     return [
-      SectionHeader('Data export'),
-      _Body(
-        'Download a copy of your personal data stored on this server, '
-        'including your profile, messages, and relationships. The export '
-        'is provided as a JSON file.',
-      ),
+      SectionHeader(UiCopy.dataExport()),
+      _Body(UiCopy.downloadACopyOfYourPersonalData()),
       Padding(
         padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
         child: Row(
@@ -173,7 +170,9 @@ class _PrivacySettingsScreenState extends ConsumerState<PrivacySettingsScreen> {
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
                     : const Icon(Icons.download),
-                label: Text(_exporting ? 'Exporting…' : 'Request Data Export'),
+                label: Text(
+                  _exporting ? UiCopy.exporting() : UiCopy.requestDataExport(),
+                ),
               ),
             ),
           ],
@@ -190,17 +189,13 @@ class _PrivacySettingsScreenState extends ConsumerState<PrivacySettingsScreen> {
           ),
         ),
       const Divider(height: 24),
-      SectionHeader('Leave & delete data'),
-      _Body(
-        'Leave a server and permanently delete all your data from it, '
-        'including messages, reactions, and read states. Your account on '
-        'that instance remains active. This action cannot be undone.',
-      ),
+      SectionHeader(UiCopy.leaveDeleteData2()),
+      _Body(UiCopy.leaveAServerAndPermanentlyDeleteAll()),
       if (spaces.isEmpty)
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
           child: Text(
-            'You are not in any spaces.',
+            UiCopy.youAreNotInAnySpaces(),
             style: Theme.of(
               context,
             ).textTheme.bodySmall!.copyWith(color: colors.gray),
@@ -215,20 +210,11 @@ class _PrivacySettingsScreenState extends ConsumerState<PrivacySettingsScreen> {
             onLeave: () => _leaveAndDelete(space),
           ),
       const Divider(height: 24),
-      SectionHeader('Data deletion'),
-      _Body(
-        'When you delete your account, all personal data is permanently '
-        'removed from the server. This includes your profile, messages, '
-        'reactions, memberships, tokens, and applications. This action '
-        'cannot be undone. Account deletion lives under Account settings.',
-      ),
+      SectionHeader(UiCopy.dataDeletion()),
+      _Body(UiCopy.whenYouDeleteYourAccountAllPersonal()),
       const Divider(height: 24),
-      SectionHeader('Data retention'),
-      _Body(
-        'Data is retained for as long as your account exists. There is no '
-        'automatic expiration of messages or attachments. Server '
-        'administrators may configure their own retention policies.',
-      ),
+      SectionHeader(UiCopy.dataRetention()),
+      _Body(UiCopy.dataIsRetainedForAsLongAs()),
       const SizedBox(height: 12),
     ];
   }
@@ -254,7 +240,7 @@ class _SpaceLeaveTile extends StatelessWidget {
       title: Text(name, overflow: TextOverflow.ellipsis),
       subtitle: isOwner
           ? Text(
-              'You are the owner — transfer ownership before leaving.',
+              UiCopy.youAreTheOwnerTransferOwnershipBefore(context: context),
               style: Theme.of(
                 context,
               ).textTheme.bodySmall!.copyWith(color: colors.gray),
@@ -274,7 +260,7 @@ class _SpaceLeaveTile extends StatelessWidget {
                 side: BorderSide(color: colors.red),
               ),
               onPressed: onLeave,
-              child: const Text('Leave & Delete'),
+              child: Text(UiCopy.leaveDelete(context: context)),
             ),
     );
   }

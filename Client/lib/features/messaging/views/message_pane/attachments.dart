@@ -54,23 +54,35 @@ class _PendingAttachmentTile extends StatelessWidget {
     final (icon, title, detail) = switch (upload.status) {
       AutomodUploadStatus.quarantined => (
         Icons.visibility_off_outlined,
-        'Attachment under review',
-        upload.reason ?? 'Held for a moderator to check before it is shown.',
+        UiCopy.attachmentUnderReview(context: context),
+        upload.reason ??
+            AppStrings.label(
+              'Held for a moderator to check before it is shown.',
+              context: context,
+            ),
       ),
       AutomodUploadStatus.rejected => (
         Icons.block_outlined,
-        'Attachment removed by AutoMod',
-        upload.reason ?? "This file didn't pass the server's upload rules.",
+        UiCopy.attachmentRemovedByAutomod(context: context),
+        upload.reason ??
+            AppStrings.label(
+              "This file didn't pass the server's upload rules.",
+              context: context,
+            ),
       ),
       AutomodUploadStatus.removed => (
         Icons.block_outlined,
-        'Attachment removed by AutoMod',
-        upload.reason ?? 'A moderator or server policy withdrew this file.',
+        UiCopy.attachmentRemovedByAutomod(context: context),
+        upload.reason ??
+            AppStrings.label(
+              'A moderator or server policy withdrew this file.',
+              context: context,
+            ),
       ),
       _ => (
         Icons.hourglass_top_outlined,
-        'Attachment processing',
-        'Being checked by AutoMod before it is shown to others.',
+        UiCopy.attachmentProcessing(context: context),
+        UiCopy.beingCheckedByAutomodBeforeItIs(context: context),
       ),
     };
     final refused = upload.isRefused;
@@ -81,7 +93,7 @@ class _PendingAttachmentTile extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         decoration: BoxDecoration(
           color: colors.darkGray,
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(4),
           border: Border.all(
             color: refused
                 ? colors.red.withValues(alpha: 0.5)
@@ -134,15 +146,17 @@ class _AttachmentChip extends StatelessWidget {
     final colors = BonfireThemeExtension.of(context);
     final unknown = attachment.isUnrecognised;
     return Tooltip(
-      message:
-          '${attachment.name}\n'
-          '${unknown ? 'Unrecognised type' : attachment.contentType} · '
-          '${formatFileSize(attachment.size)}',
+      message: UiCopy.n(
+        context: context,
+        arg0: attachment.name,
+        arg1: unknown ? 'Unrecognised type' : attachment.contentType,
+        arg2: formatFileSize(attachment.size),
+      ),
       child: Container(
         padding: const EdgeInsets.fromLTRB(10, 6, 6, 6),
         decoration: BoxDecoration(
           color: colors.foreground.withValues(alpha: 0.08),
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(4),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -166,7 +180,7 @@ class _AttachmentChip extends StatelessWidget {
             const SizedBox(width: 4),
             InkWell(
               onTap: onRemove,
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(4),
               child: Icon(Icons.close, size: 16, color: colors.gray),
             ),
           ],
@@ -199,7 +213,7 @@ class _ImageAttachment extends StatelessWidget {
       if (renderHeight != null) renderHeight *= scale;
     }
     return ClipRRect(
-      borderRadius: BorderRadius.circular(8),
+      borderRadius: BorderRadius.circular(4),
       child: ConstrainedBox(
         constraints: const BoxConstraints(
           maxWidth: _maxWidth,
@@ -274,7 +288,7 @@ class _OlderHistoryHeader extends ConsumerWidget {
         padding: const EdgeInsets.symmetric(vertical: 16),
         child: Center(
           child: Text(
-            "Beginning of channel",
+            UiCopy.beginningOfChannel(context: context),
             style: Theme.of(context).textTheme.labelSmall,
           ),
         ),

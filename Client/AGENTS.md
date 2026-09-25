@@ -1,6 +1,6 @@
-# CLAUDE.md
+# AGENTS.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to Grok when working with code in this repository.
 
 ## What this project is
 
@@ -216,3 +216,35 @@ Developer Mode. Existing releases predating this gate must not be submitted with
 marker-based recipes. Do not advertise catalogue install commands before acceptance.
 Collapsed rail folders reuse the size-aware space icon renderer for their first
 four resolved members; keep normal and drag previews consistent.
+
+## Interface localization
+
+Web and Windows share `lib/l10n/app_strings.dart`, `ui_copy.dart` and `static_copy.dart`. Keep both Simplified Chinese and English. Use context-aware copy during widget builds; callbacks without a usable context use the active application locale. Translate fixed display catalogs, never protocol identifiers or user content. Run `flutter test test/l10n` after localization changes; see `docs/localization-review.md`.
+
+Image crop export uses `instantiateImageCodecWithSize`: encoded `ImageDescriptor.width/height` are unsupported on web. Attachment defaults are 1 GiB, with a 60-minute upload timeout. Run the crop tests on Chrome as well as native when changing image preparation.
+
+Screen sharing: choose resolution (480p–1440p) and frame rate (5–60 FPS) in the desktop source picker or Voice & Video settings. New profiles default to 720p/30 FPS; existing saved choices are retained. Changes apply to the next share. Use 480p/10–15 FPS for lower resource usage, or 60 FPS for motion. Windows x64 uses bundled OBS core with Windows Graphics Capture for GPU scaling and color conversion before WebRTC encoding. No separate OBS installation is required. Web and other platforms retain their existing backends.
+
+Space settings use PopScope to save changed overview drafts before route exit; errors keep the route open. Keep the top save action accessible. Regression: `flutter test test/features/spaces/space_settings_save_test.dart`.
+
+
+Domain permissions: 社区 is the server-wide community; 域 maps to Space; a domain
+contains category groups and text/voice channels. The domain creator is 域主.
+Default groups are 高级管理员 (structure and moderation), 管理员 (moderation),
+嘉宾 (no administrative grants), and 普通成员 (the implicit position-zero role).
+Only the domain owner or community administrator creates permission groups;
+role edits and assignments respect hierarchy. Community administrators manage
+all domains and their names use a distinct color. Channel overrides refine
+existing domain roles; channels do not have a separate owner/role system.
+
+Do not expose the removed `/switcher` route or account-switcher UI. Keep saved-session restoration and multi-server connection handling intact.
+
+Sidebar groups use server-scoped collapse preferences. Members with manage_channels
+can drag channels directly onto a group header or the Ungrouped drop area; group
+headers can also be reordered. Members with move_members can drag voice participants
+onto another voice channel in the same domain. The server validates both channel
+permissions, hierarchy, current source, and the moved member's destination access.
+
+OBS capture build, lifecycle and native verification: [docs/voice-and-video/obs-capture.md](docs/voice-and-video/obs-capture.md).
+
+Domain entry: the rail + uses DomainEntryDialog and the existing joinOnConnection repository path. Public domains support numeric ID joins within the active community; private domains retain invite authorization. The header's square ID badge copies the full ID. Ungrouped channel drops retain an unlabeled target. Regression: flutter test test/features/spaces/domain_entry_dialog_test.dart.

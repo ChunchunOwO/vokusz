@@ -1,3 +1,5 @@
+import 'package:bonfire/l10n/app_strings.dart';
+import 'package:bonfire/l10n/ui_copy.dart';
 import 'package:accordkit/accordkit.dart';
 import 'package:bonfire/features/member/utils/member_display.dart';
 import 'package:bonfire/shared/utils/client_access.dart';
@@ -85,7 +87,13 @@ class _EmojiPickerSheetState extends ConsumerState<_EmojiPickerSheet> {
   List<AccordEmoji> get _customEmoji {
     final spaceId = widget.spaceId;
     if (spaceId == null) return const [];
-    return ref.watch(accordEmojisControllerProvider(ref.readActiveServerKey() ?? '', spaceId)) ?? const [];
+    return ref.watch(
+          accordEmojisControllerProvider(
+            ref.readActiveServerKey() ?? '',
+            spaceId,
+          ),
+        ) ??
+        const [];
   }
 
   void _pick(EmojiPick pick) {
@@ -167,7 +175,7 @@ class _EmojiPickerSheetState extends ConsumerState<_EmojiPickerSheet> {
                   filled: true,
                   fillColor: colors.darkGray,
                   prefixIcon: Icon(Icons.search, size: 18, color: colors.gray),
-                  hintText: 'Search emoji',
+                  hintText: UiCopy.searchEmoji(context: context),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(8),
                     borderSide: BorderSide.none,
@@ -206,7 +214,10 @@ class _EmojiPickerSheetState extends ConsumerState<_EmojiPickerSheet> {
         if (e.name.toLowerCase().contains(_query)) e,
     ];
     if (unicodeHits.isEmpty && customHits.isEmpty) {
-      return _empty(colors, 'No emoji match "$_query"');
+      return _empty(
+        colors,
+        UiCopy.noEmojiMatch(context: context, arg0: _query),
+      );
     }
     return _grid([
       for (final e in customHits) _customCell(e),
@@ -225,12 +236,16 @@ class _EmojiPickerSheetState extends ConsumerState<_EmojiPickerSheet> {
         for (final token in recents)
           if (_pickFromRecent(token, custom) case final p?) p,
       ];
-      if (picks.isEmpty) return _empty(colors, 'No recent emoji yet');
+      if (picks.isEmpty)
+        return _empty(colors, UiCopy.noRecentEmojiYet(context: context));
       return _grid([for (final p in picks) _pickCell(p)]);
     }
     if (selected == _Tab.custom) {
       if (custom.isEmpty) {
-        return _empty(colors, 'This space has no custom emoji');
+        return _empty(
+          colors,
+          UiCopy.thisSpaceHasNoCustomEmoji(context: context),
+        );
       }
       return _grid([for (final e in custom) _customCell(e)]);
     }
@@ -284,8 +299,10 @@ class _EmojiPickerSheetState extends ConsumerState<_EmojiPickerSheet> {
               source: url,
               trustedBaseUrl: _cdnUrl,
               allowExternalConsent: false,
-              blockedPlaceholder:
-                  Text(':${emoji.name}:', style: const TextStyle(fontSize: 9)),
+              blockedPlaceholder: Text(
+                ':${emoji.name}:',
+                style: const TextStyle(fontSize: 9),
+              ),
               builder: (_, safeUrl) => CachedNetworkImage(
                 imageUrl: safeUrl,
                 width: 26,
@@ -367,16 +384,27 @@ class _TabBar extends StatelessWidget {
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(horizontal: 8),
             children: [
-              if (hasRecent) _tab(colors, _Tab.recent, Icons.history, 'Recent'),
+              if (hasRecent)
+                _tab(
+                  colors,
+                  _Tab.recent,
+                  Icons.history,
+                  UiCopy.recent(context: context),
+                ),
               if (hasCustom)
                 _tab(
                   colors,
                   _Tab.custom,
                   Icons.workspace_premium_outlined,
-                  'Custom',
+                  UiCopy.custom(context: context),
                 ),
               for (final c in EmojiCategory.values)
-                _tab(colors, c, c.icon, c.label),
+                _tab(
+                  colors,
+                  c,
+                  c.icon,
+                  AppStrings.label(c.label, context: context),
+                ),
             ],
           ),
         ),

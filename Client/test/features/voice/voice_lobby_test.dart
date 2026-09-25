@@ -25,6 +25,10 @@ class _RecordingVoiceController extends VoiceController {
   @override
   VoiceConnection build() => _initial;
 
+  void setSpeaking(Set<String> users) {
+    state = state.copyWith(speakingUserIds: users);
+  }
+
   @override
   Future<void> join(String channelId, String? spaceId) async {
     joins.add((channelId, spaceId));
@@ -88,6 +92,48 @@ Widget _host({
 final _controlBar = find.byIcon(Icons.call_end);
 
 void main() {
+  testWidgets('speaker changes update borders without rebuilding the grid', (
+    tester,
+  ) async {
+    final voice = _RecordingVoiceController(
+      const VoiceConnection(channelId: 'c1'),
+    );
+    await tester.pumpWidget(
+      _host(
+        voice: voice,
+        channelId: 'c1',
+        spaceId: null,
+        voiceStates: {
+          'c1': {
+            'u1': AccordVoiceState(userId: 'u1', channelId: 'c1'),
+            'u2': AccordVoiceState(userId: 'u2', channelId: 'c1'),
+          },
+        },
+      ),
+    );
+    await tester.pump();
+    final grid = tester.widget<GridView>(find.byType(GridView));
+    Finder speakerBorders() => find.descendant(
+      of: find.byType(GridView),
+      matching: find.byWidgetPredicate((widget) {
+        if (widget is! Container) return false;
+        final decoration = widget.decoration;
+        if (decoration is! BoxDecoration) return false;
+        final border = decoration.border;
+        if (border is! Border) return false;
+        return border.top.color.a > 0;
+      }),
+    );
+    expect(speakerBorders(), findsNothing);
+    voice.setSpeaking({'u1'});
+    await tester.pump();
+    expect(identical(tester.widget(find.byType(GridView)), grid), isTrue);
+    expect(speakerBorders(), findsOneWidget);
+    voice.setSpeaking({});
+    await tester.pump();
+    expect(speakerBorders(), findsNothing);
+  });
+
   testWidgets('opening a voice channel shows the lobby without connecting', (
     tester,
   ) async {
@@ -270,8 +316,8 @@ void main() {
     );
     await tester.pump();
 
-    final button = tester.widget<FilledButton>(
-      find.widgetWithText(FilledButton, 'Join Voice'),
+    final button = tester.widget<OutlinedButton>(
+      find.widgetWithText(OutlinedButton, 'Join Voice'),
     );
     expect(button.onPressed, isNull);
   });

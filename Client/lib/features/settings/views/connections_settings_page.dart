@@ -1,3 +1,5 @@
+import 'package:bonfire/l10n/app_strings.dart';
+import 'package:bonfire/l10n/ui_copy.dart';
 import 'package:accordkit/accordkit.dart';
 import 'package:bonfire/shared/components/async_state_views.dart';
 import 'package:bonfire/shared/components/section_header.dart';
@@ -63,7 +65,7 @@ class _ConnectionsScreenState extends ConsumerState<ConnectionsScreen> {
     if (client == null) {
       setState(() {
         _loading = false;
-        _error = 'Not connected.';
+        _error = UiCopy.notConnected();
       });
       return;
     }
@@ -85,7 +87,7 @@ class _ConnectionsScreenState extends ConsumerState<ConnectionsScreen> {
       }
       setState(() {
         _loading = false;
-        _error = 'Failed to load connections.';
+        _error = UiCopy.failedToLoadConnections();
       });
       return;
     }
@@ -117,10 +119,12 @@ class _ConnectionsScreenState extends ConsumerState<ConnectionsScreen> {
     }
     final confirmed = await showConfirmDialog(
       context,
-      title: 'Disconnect',
-      message:
-          'Disconnect ${conn.type}${conn.name.isNotEmpty ? ' (${conn.name})' : ''}?',
-      confirmLabel: 'Disconnect',
+      title: UiCopy.disconnect(),
+      message: UiCopy.disconnect2(
+        arg0: conn.type,
+        arg1: conn.name.isNotEmpty ? ' (${conn.name})' : '',
+      ),
+      confirmLabel: UiCopy.disconnect(),
       danger: true,
     );
     if (confirmed != true || !mounted) return;
@@ -132,7 +136,7 @@ class _ConnectionsScreenState extends ConsumerState<ConnectionsScreen> {
     if (!mounted) return;
     setState(() => _disconnecting.remove(conn.id));
     if (!result.ok) {
-      showErrorSnack(context, result, prefix: 'Failed');
+      showErrorSnack(context, result, prefix: UiCopy.failed());
       return;
     }
     setState(() {
@@ -155,9 +159,9 @@ class _ConnectionsScreenState extends ConsumerState<ConnectionsScreen> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           SectionHeader(
-            'Connections',
+            UiCopy.connections(context: context),
             trailing: IconButton(
-              tooltip: 'Refresh',
+              tooltip: UiCopy.refresh(context: context),
               iconSize: 18,
               visualDensity: VisualDensity.compact,
               onPressed: _loading ? null : _load,
@@ -169,10 +173,10 @@ class _ConnectionsScreenState extends ConsumerState<ConnectionsScreen> {
       );
     }
     return SettingsScaffold(
-      title: 'Connections',
+      title: UiCopy.connections(context: context),
       actions: [
         IconButton(
-          tooltip: 'Refresh',
+          tooltip: UiCopy.refresh(context: context),
           onPressed: _loading ? null : _load,
           icon: const Icon(Icons.refresh),
         ),
@@ -224,7 +228,10 @@ class _ConnectionsScreenState extends ConsumerState<ConnectionsScreen> {
       return [
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-          child: Text(_emptyMessage, style: _hint(colors)),
+          child: Text(
+            AppStrings.label(_emptyMessage, context: context),
+            style: _hint(colors),
+          ),
         ),
       ];
     }
@@ -267,7 +274,7 @@ class _ConnectionsScreenState extends ConsumerState<ConnectionsScreen> {
                   side: BorderSide(color: colors.red),
                 ),
                 onPressed: () => _disconnect(conn),
-                child: const Text('Disconnect'),
+                child: Text(UiCopy.disconnect()),
               ),
       ),
   ];

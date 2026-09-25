@@ -1,3 +1,4 @@
+import 'package:bonfire/l10n/ui_copy.dart';
 import 'package:accordkit/accordkit.dart';
 import 'package:bonfire/features/admin/views/admin_list_scaffold.dart';
 import 'package:bonfire/shared/utils/rest_result_ext.dart';
@@ -58,7 +59,7 @@ class _AdminSpacesTabState extends ConsumerState<AdminSpacesTab> {
     if (!result.ok) {
       setState(() {
         _busy = false;
-        _error = result.errorOr('Failed to load spaces');
+        _error = result.errorOr(UiCopy.failedToLoadSpaces());
       });
       return;
     }
@@ -86,9 +87,9 @@ class _AdminSpacesTabState extends ConsumerState<AdminSpacesTab> {
   Future<void> _create() async {
     final name = await showTextPromptDialog(
       context,
-      title: 'Create space',
-      label: 'Space name',
-      confirmLabel: 'Create',
+      title: UiCopy.createSpace(),
+      label: UiCopy.spaceName(),
+      confirmLabel: UiCopy.create(),
     );
     if (name == null || name.trim().isEmpty) return;
     final client = _client;
@@ -98,8 +99,7 @@ class _AdminSpacesTabState extends ConsumerState<AdminSpacesTab> {
     if (!mounted) return;
     setState(() => _busy = false);
     if (!result.ok) {
-      setState(() =>
-          _error = result.errorOr('Failed to create space'));
+      setState(() => _error = result.errorOr(UiCopy.failedToCreateSpace()));
       return;
     }
     final created = result.data;
@@ -110,7 +110,7 @@ class _AdminSpacesTabState extends ConsumerState<AdminSpacesTab> {
         setState(() {
           _busy = false;
           _error = normalized.errorOr(
-            'Space created, but its default mention permission could not be secured',
+            UiCopy.spaceCreatedButItsDefaultMentionPermission(),
           );
         });
         return;
@@ -121,9 +121,9 @@ class _AdminSpacesTabState extends ConsumerState<AdminSpacesTab> {
 
   Future<void> _delete(AccordSpace space) async {
     final ok = await _confirm(
-      'Delete space',
-      "Delete '${space.name}'? This cannot be undone.",
-      'Delete',
+      UiCopy.deleteSpace(),
+      UiCopy.deleteThisCannotBeUndone(arg0: space.name),
+      UiCopy.delete(),
     );
     if (ok != true) return;
     final client = _client;
@@ -134,7 +134,7 @@ class _AdminSpacesTabState extends ConsumerState<AdminSpacesTab> {
     if (!result.ok) {
       setState(() {
         _busy = false;
-        _error = result.errorOr('Failed to delete space');
+        _error = result.errorOr(UiCopy.failedToDeleteSpace());
       });
       return;
     }
@@ -147,22 +147,23 @@ class _AdminSpacesTabState extends ConsumerState<AdminSpacesTab> {
   Future<void> _transfer(AccordSpace space) async {
     final newOwnerId = await showTextPromptDialog(
       context,
-      title: "Transfer '${space.name}'",
-      label: 'New owner user ID',
-      helperText: 'Copy a user ID from the Users tab',
-      confirmLabel: 'Transfer',
+      title: UiCopy.transfer(arg0: space.name),
+      label: UiCopy.newOwnerUserId(),
+      helperText: UiCopy.copyAUserIdFromTheUsers(),
+      confirmLabel: UiCopy.transfer2(),
     );
     if (newOwnerId == null || newOwnerId.trim().isEmpty) return;
     final client = _client;
     if (client == null) return;
     setState(() => _busy = true);
-    final result = await client.adminApi
-        .updateSpace(space.id, {'owner_id': newOwnerId.trim()});
+    final result = await client.adminApi.updateSpace(space.id, {
+      'owner_id': newOwnerId.trim(),
+    });
     if (!mounted) return;
     if (!result.ok) {
       setState(() {
         _busy = false;
-        _error = result.errorOr('Failed to transfer ownership');
+        _error = result.errorOr(UiCopy.failedToTransferOwnership());
       });
       return;
     }
@@ -193,17 +194,17 @@ class _AdminSpacesTabState extends ConsumerState<AdminSpacesTab> {
       error: _error,
       loading: _busy && spaces == null,
       isEmpty: list.isEmpty,
-      emptyMessage: 'No spaces found.',
+      emptyMessage: UiCopy.noSpacesFound(context: context),
       header: Padding(
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
         child: Row(
           children: [
             Expanded(
               child: TextField(
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   isDense: true,
                   prefixIcon: Icon(Icons.search, size: 18),
-                  hintText: 'Filter by name',
+                  hintText: UiCopy.filterByName(context: context),
                   border: OutlineInputBorder(),
                 ),
                 onChanged: (v) => setState(() => _query = v),
@@ -213,10 +214,10 @@ class _AdminSpacesTabState extends ConsumerState<AdminSpacesTab> {
             FilledButton.icon(
               onPressed: _busy ? null : _create,
               icon: const Icon(Icons.add, size: 18),
-              label: const Text('Create'),
+              label: Text(UiCopy.create(context: context)),
             ),
             IconButton(
-              tooltip: 'Refresh',
+              tooltip: UiCopy.refresh(context: context),
               onPressed: _busy ? null : _load,
               icon: const Icon(Icons.refresh, size: 18),
             ),
@@ -267,22 +268,22 @@ class _SpaceRow extends StatelessWidget {
         child: Text(initial, style: const TextStyle(color: Colors.white)),
       ),
       title: Text(space.name, style: theme.textTheme.titleSmall),
-      subtitle: Text('$_memberCount members'),
+      subtitle: Text(UiCopy.members(context: context, arg0: _memberCount)),
       trailing: Wrap(
         spacing: 4,
         children: [
           TextButton(
             onPressed: busy ? null : onOpen,
-            child: const Text('Open'),
+            child: Text(UiCopy.open(context: context)),
           ),
           TextButton(
             onPressed: busy ? null : onTransfer,
-            child: const Text('Transfer'),
+            child: Text(UiCopy.transfer2(context: context)),
           ),
           TextButton(
             onPressed: busy ? null : onDelete,
             style: TextButton.styleFrom(foregroundColor: colors.red),
-            child: const Text('Delete'),
+            child: Text(UiCopy.delete(context: context)),
           ),
         ],
       ),

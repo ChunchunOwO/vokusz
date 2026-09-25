@@ -156,6 +156,52 @@ TextTheme _textTheme(BonfireThemeExtension palette) {
   );
 }
 
+/// Corner radius for primary chrome. Larger radii read as pills; the shell
+/// stays at a hairline 4.
+const BorderRadius kFlatRadius = BorderRadius.all(Radius.circular(4));
+
+RoundedRectangleBorder _flatRect({BorderSide side = BorderSide.none}) =>
+    RoundedRectangleBorder(borderRadius: kFlatRadius, side: side);
+
+OutlineInputBorder _flatInput(Color color, {double width = 1}) =>
+    OutlineInputBorder(
+      borderRadius: kFlatRadius,
+      borderSide: BorderSide(color: color, width: width),
+    );
+
+/// Outline control: the surface colour, a 1px edge, no filled accent block.
+ButtonStyle _flatButton(BonfireThemeExtension palette) {
+  return ButtonStyle(
+    elevation: const WidgetStatePropertyAll(0),
+    shadowColor: const WidgetStatePropertyAll(Colors.transparent),
+    surfaceTintColor: const WidgetStatePropertyAll(Colors.transparent),
+    backgroundColor: WidgetStatePropertyAll(palette.background),
+    foregroundColor: WidgetStateProperty.resolveWith(
+      (states) => states.contains(WidgetState.disabled)
+          ? palette.gray
+          : palette.dirtyWhite,
+    ),
+    iconColor: WidgetStateProperty.resolveWith(
+      (states) => states.contains(WidgetState.disabled)
+          ? palette.gray
+          : palette.dirtyWhite,
+    ),
+    side: WidgetStateProperty.resolveWith(
+      (states) => BorderSide(
+        color: states.contains(WidgetState.disabled)
+            ? palette.darkGray
+            : palette.primary,
+      ),
+    ),
+    shape: const WidgetStatePropertyAll(
+      RoundedRectangleBorder(borderRadius: kFlatRadius),
+    ),
+    padding: const WidgetStatePropertyAll(
+      EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+    ),
+  );
+}
+
 /// Builds the [ThemeData] for [preset], applying an optional custom [accent].
 ThemeData buildAppTheme(AppThemePreset preset, {Color? accent}) {
   final palette = paletteFor(preset, accent: accent);
@@ -163,8 +209,13 @@ ThemeData buildAppTheme(AppThemePreset preset, {Color? accent}) {
   final base = brightness == Brightness.light
       ? ThemeData.light()
       : ThemeData.dark();
+  final button = _flatButton(palette);
   return base.copyWith(
     scaffoldBackgroundColor: palette.background,
+    canvasColor: palette.background,
+    cardColor: palette.foreground,
+    splashFactory: InkRipple.splashFactory,
+    highlightColor: palette.primary.withValues(alpha: 0.06),
     colorScheme:
         ColorScheme.fromSeed(
           seedColor: palette.primary,
@@ -178,8 +229,142 @@ ThemeData buildAppTheme(AppThemePreset preset, {Color? accent}) {
           error: palette.red,
           onError: _onColor(palette.red),
           surface: palette.background,
+          surfaceContainerHighest: palette.foreground,
         ),
     textTheme: _textTheme(palette),
+    appBarTheme: AppBarTheme(
+      elevation: 0,
+      scrolledUnderElevation: 0,
+      backgroundColor: palette.background,
+      foregroundColor: palette.dirtyWhite,
+      surfaceTintColor: Colors.transparent,
+    ),
+    cardTheme: CardThemeData(
+      color: palette.foreground,
+      elevation: 0,
+      margin: EdgeInsets.zero,
+      shape: _flatRect(side: BorderSide(color: palette.darkGray)),
+    ),
+    dialogTheme: DialogThemeData(
+      backgroundColor: palette.foreground,
+      elevation: 0,
+      shape: _flatRect(side: BorderSide(color: palette.darkGray)),
+    ),
+    bottomSheetTheme: BottomSheetThemeData(
+      backgroundColor: palette.foreground,
+      elevation: 0,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(4)),
+      ),
+    ),
+    popupMenuTheme: PopupMenuThemeData(
+      color: palette.foreground,
+      elevation: 0,
+      shape: _flatRect(side: BorderSide(color: palette.darkGray)),
+    ),
+    snackBarTheme: SnackBarThemeData(
+      backgroundColor: palette.foreground,
+      elevation: 0,
+      behavior: SnackBarBehavior.floating,
+      shape: _flatRect(side: BorderSide(color: palette.darkGray)),
+      contentTextStyle: TextStyle(color: palette.dirtyWhite),
+    ),
+    dividerTheme: DividerThemeData(
+      color: palette.darkGray,
+      thickness: 1,
+      space: 1,
+    ),
+    elevatedButtonTheme: ElevatedButtonThemeData(style: button),
+    filledButtonTheme: FilledButtonThemeData(style: button),
+    outlinedButtonTheme: OutlinedButtonThemeData(style: button),
+    textButtonTheme: TextButtonThemeData(
+      style: TextButton.styleFrom(
+        foregroundColor: palette.dirtyWhite,
+        shape: const RoundedRectangleBorder(borderRadius: kFlatRadius),
+      ),
+    ),
+    iconButtonTheme: IconButtonThemeData(
+      style: IconButton.styleFrom(
+        foregroundColor: palette.dirtyWhite,
+        shape: const RoundedRectangleBorder(borderRadius: kFlatRadius),
+      ),
+    ),
+    floatingActionButtonTheme: FloatingActionButtonThemeData(
+      elevation: 0,
+      backgroundColor: palette.background,
+      foregroundColor: palette.dirtyWhite,
+      shape: _flatRect(side: BorderSide(color: palette.primary)),
+    ),
+    chipTheme: ChipThemeData(
+      elevation: 0,
+      pressElevation: 0,
+      showCheckmark: false,
+      backgroundColor: palette.background,
+      selectedColor: palette.foreground,
+      disabledColor: palette.darkGray,
+      side: BorderSide(color: palette.darkGray),
+      shape: const RoundedRectangleBorder(borderRadius: kFlatRadius),
+      labelStyle: TextStyle(color: palette.dirtyWhite, fontSize: 13),
+      secondaryLabelStyle: TextStyle(color: palette.dirtyWhite, fontSize: 13),
+      brightness: brightness,
+    ),
+    inputDecorationTheme: InputDecorationTheme(
+      filled: true,
+      fillColor: palette.darkGray,
+      isDense: true,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+      labelStyle: TextStyle(color: palette.gray),
+      hintStyle: TextStyle(color: palette.gray),
+      border: _flatInput(palette.darkGray),
+      enabledBorder: _flatInput(palette.gray.withValues(alpha: 0.45)),
+      focusedBorder: _flatInput(palette.primary),
+      errorBorder: _flatInput(palette.red),
+      focusedErrorBorder: _flatInput(palette.red),
+    ),
+    listTileTheme: const ListTileThemeData(
+      selectedTileColor: Colors.transparent,
+      shape: RoundedRectangleBorder(borderRadius: kFlatRadius),
+    ),
+    navigationRailTheme: NavigationRailThemeData(
+      backgroundColor: palette.background,
+      indicatorColor: Colors.transparent,
+      selectedIconTheme: IconThemeData(color: palette.primary),
+      unselectedIconTheme: IconThemeData(color: palette.dirtyWhite),
+    ),
+    tabBarTheme: TabBarThemeData(
+      indicatorSize: TabBarIndicatorSize.label,
+      dividerColor: palette.darkGray,
+      labelColor: palette.dirtyWhite,
+      unselectedLabelColor: palette.gray,
+      indicator: UnderlineTabIndicator(
+        borderSide: BorderSide(color: palette.primary, width: 1),
+      ),
+    ),
+    progressIndicatorTheme: ProgressIndicatorThemeData(
+      color: palette.primary,
+      linearTrackColor: palette.darkGray,
+      circularTrackColor: palette.darkGray,
+    ),
+    sliderTheme: SliderThemeData(
+      trackHeight: 2,
+      activeTrackColor: palette.primary,
+      inactiveTrackColor: palette.darkGray,
+      thumbColor: palette.dirtyWhite,
+      overlayColor: palette.primary.withValues(alpha: 0.08),
+    ),
+    switchTheme: SwitchThemeData(
+      thumbColor: WidgetStateProperty.resolveWith(
+        (states) => states.contains(WidgetState.selected)
+            ? palette.dirtyWhite
+            : palette.gray,
+      ),
+      trackColor: WidgetStateProperty.resolveWith(
+        (states) => states.contains(WidgetState.selected)
+            ? palette.darkGray
+            : palette.background,
+      ),
+      trackOutlineColor: WidgetStatePropertyAll(palette.gray),
+    ),
     extensions: [palette],
   );
 }

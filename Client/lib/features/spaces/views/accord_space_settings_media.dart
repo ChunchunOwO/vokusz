@@ -51,7 +51,7 @@ class SpaceSettingsBannerPreview extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = BonfireThemeExtension.of(context);
     return ClipRRect(
-      borderRadius: BorderRadius.circular(10),
+      borderRadius: BorderRadius.circular(4),
       child: AspectRatio(
         aspectRatio: 16 / 9,
         child: ColoredBox(

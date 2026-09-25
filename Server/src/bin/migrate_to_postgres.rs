@@ -115,6 +115,14 @@ const TABLES: &[TableDef] = &[
         columns: &["user_id", "space_id", "role_id"],
     },
     TableDef {
+        name: "channel_roles",
+        columns: &["id", "channel_id", "name", "position", "permissions"],
+    },
+    TableDef {
+        name: "channel_member_roles",
+        columns: &["channel_id", "space_id", "user_id", "role_id"],
+    },
+    TableDef {
         name: "messages",
         columns: &[
             "id",

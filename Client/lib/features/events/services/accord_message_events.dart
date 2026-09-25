@@ -1,7 +1,9 @@
 import 'dart:async';
 
 import 'package:accordkit/accordkit.dart';
+import 'package:bonfire/features/channels/controllers/accord_channels.dart';
 import 'package:bonfire/features/channels/controllers/dm_channels.dart';
+import 'package:bonfire/features/channels/controllers/muted_channels.dart';
 import 'package:bonfire/features/channels/controllers/read_state.dart';
 import 'package:bonfire/features/member/utils/member_display.dart';
 import 'package:bonfire/features/messaging/controllers/accord_messages.dart';
@@ -178,7 +180,23 @@ void bindMessageEvents(
       // [currentUserId] is per-connection, so author matching is correct on
       // every server; only the *visible-channel* skip is active-connection
       // -scoped, since that pointer belongs to the on-screen session.
-      final notify = MessageNotificationGate.shouldNotify(
+      final mutedIds = ref
+          .read(mutedChannelsControllerProvider(serverKey))
+          .asData
+          ?.value;
+      var channelMuted = mutedIds?.contains(message.channelId) ?? false;
+      if (!channelMuted && mutedIds != null && message.spaceId != null) {
+        final parent = ref
+            .read(
+              accordChannelsControllerProvider(serverKey, message.spaceId!),
+            )
+            ?.where((channel) => channel.id == message.channelId)
+            .firstOrNull
+            ?.parentId;
+        channelMuted = parent != null && mutedIds.contains(parent);
+      }
+      final notify = !channelMuted &&
+          MessageNotificationGate.shouldNotify(
         notificationsEnabled: settings.notificationsEnabled,
         suppressEveryone: settings.suppressEveryone,
         isOwnMessage: isOwn,
@@ -221,6 +239,7 @@ void bindMessageEvents(
       // heard even while the window is focused on something else (#326).
       if (settings.soundsEnabled &&
           !spaceMuted &&
+          !channelMuted &&
           !isOwn &&
           settings.channelNotificationLevel(serverKey, message.channelId) !=
               'nothing') {

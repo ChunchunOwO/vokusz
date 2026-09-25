@@ -269,6 +269,74 @@ void main() {
       expect(stateOf(c).outputVolume, 0);
     });
 
+    test('accompaniment volume clamps to 0–200 and survives a rebuild', () {
+      final c = makeContainer();
+      controllerOf(c).setAccompanimentVolume(400);
+      expect(stateOf(c).accompanimentVolume, 200);
+      expect(stateOf(makeContainer()).accompanimentVolume, 200);
+    });
+
+    test('push-to-talk and overlay settings round-trip', () {
+      final c = makeContainer();
+      controllerOf(c)
+        ..setVoicePushToTalk(true)
+        ..setVoicePushToTalkKey(0x56)
+        ..setVoiceOverlayEnabled(true)
+        ..setVoiceOverlayEdit(true)
+        ..setVoiceOverlaySpeakersOnly(false)
+        ..setVoiceOverlayFrame(x: 12, y: 24, width: 200, height: 80);
+      final restored = stateOf(makeContainer());
+      expect(restored.voicePushToTalk, isTrue);
+      expect(restored.voicePushToTalkKey, 0x56);
+      expect(restored.voiceOverlayEnabled, isTrue);
+      expect(restored.voiceOverlayEdit, isTrue);
+      expect(restored.voiceOverlaySpeakersOnly, isFalse);
+      expect(const AccordSettings().voiceOverlaySpeakersOnly, isFalse);
+      expect(
+        AccordSettings.fromJson(const {}).voiceOverlaySpeakersOnly,
+        isFalse,
+      );
+      expect(restored.voiceOverlayPlaced, isTrue);
+      expect(restored.voiceOverlayMoved, isTrue);
+      expect(restored.voiceOverlayWidth, 200);
+      expect(
+        AccordSettings.fromJson(const {
+          'voiceOverlayPlaced': true,
+        }).voiceOverlayMoved,
+        isFalse,
+      );
+    });
+
+    test('rich presence mode round-trips and rejects unknown values', () {
+      final c = makeContainer();
+      controllerOf(c)
+        ..setRichPresenceEnabled(false)
+        ..setRichPresenceMode('custom')
+        ..setRichPresenceCustomName('写代码')
+        ..setRichPresenceCustomKind('using')
+        ..setRichPresenceFixedWindow(r'C:\Games\aces.exe', '战争雷霆')
+        ..setRichPresenceMode('custom');
+      final restored = stateOf(makeContainer());
+      expect(restored.richPresenceEnabled, isFalse);
+      expect(restored.richPresenceMode, AccordSettings.richPresenceCustom);
+      expect(restored.richPresenceCustomName, '写代码');
+      expect(restored.richPresenceCustomKind, 'using');
+      expect(restored.richPresenceFixedName, '战争雷霆');
+      expect(restored.richPresenceFixedPath, r'C:\Games\aces.exe');
+      expect(const AccordSettings().richPresenceEnabled, isTrue);
+      expect(
+        const AccordSettings().richPresenceMode,
+        AccordSettings.richPresenceAuto,
+      );
+      expect(
+        AccordSettings.fromJson(const {
+          'richPresenceMode': 'nope',
+          'richPresenceCustomKind': 'nope',
+        }).richPresenceMode,
+        AccordSettings.richPresenceAuto,
+      );
+    });
+
     test('input sensitivity clamps to 0–100', () {
       final c = makeContainer();
       controllerOf(c).setInputSensitivity(250);
@@ -345,7 +413,7 @@ void main() {
 
     test('an unsupported frame rate is ignored', () {
       final c = makeContainer();
-      controllerOf(c).setScreenShareFps(24);
+      controllerOf(c).setScreenShareFps(7);
       expect(stateOf(c).screenShareFps, AccordSettings.defaultScreenShareFps);
       controllerOf(c).setScreenShareFps(15);
       expect(stateOf(c).screenShareFps, 15);
@@ -398,22 +466,24 @@ void main() {
       expect(stateOf(c).spaceOrder, encoded(['c', 'a']));
     });
 
-    test('keeps colliding space IDs from two servers as separate rail entries',
-        () {
-      final c = makeContainer();
-      final onA = ServerEntityKey('server-a', 'same-space');
-      final onB = ServerEntityKey('server-b', 'same-space');
+    test(
+      'keeps colliding space IDs from two servers as separate rail entries',
+      () {
+        final c = makeContainer();
+        final onA = ServerEntityKey('server-a', 'same-space');
+        final onB = ServerEntityKey('server-b', 'same-space');
 
-      controllerOf(c).setSpaceOrder([onA, onB]);
-      controllerOf(c).createFolder(spaces: [onA, onB]);
+        controllerOf(c).setSpaceOrder([onA, onB]);
+        controllerOf(c).createFolder(spaces: [onA, onB]);
 
-      expect(stateOf(c).spaceOrder, [onA.encoded, onB.encoded]);
-      expect(stateOf(c).spaceFolders.single.spaceIds, [
-        onA.encoded,
-        onB.encoded,
-      ]);
-      expect(onA.encoded, isNot(onB.encoded));
-    });
+        expect(stateOf(c).spaceOrder, [onA.encoded, onB.encoded]);
+        expect(stateOf(c).spaceFolders.single.spaceIds, [
+          onA.encoded,
+          onB.encoded,
+        ]);
+        expect(onA.encoded, isNot(onB.encoded));
+      },
+    );
   });
 
   group('createFolder', () {

@@ -1,3 +1,4 @@
+import 'package:bonfire/l10n/ui_copy.dart';
 import 'package:bonfire/features/automod/views/automod_panel.dart';
 import 'package:bonfire/features/admin/views/admin_reports_tab.dart';
 import 'package:bonfire/features/admin/views/admin_settings_tab.dart';
@@ -32,7 +33,7 @@ class AccordAdminPanel extends ConsumerWidget {
         backgroundColor: colors.background,
         appBar: AppBar(
           backgroundColor: colors.foreground,
-          title: const Text('Server administration'),
+          title: Text(UiCopy.serverAdministration(context: context)),
           leading: IconButton(
             icon: const Icon(Icons.arrow_back),
             onPressed: () =>
@@ -48,7 +49,7 @@ class AccordAdminPanel extends ConsumerWidget {
                 Icon(Icons.lock_outline, size: 48, color: colors.gray),
                 const SizedBox(height: 12),
                 Text(
-                  'You do not have access to this area.',
+                  UiCopy.youDoNotHaveAccessToThis(context: context),
                   style: Theme.of(context).textTheme.titleMedium,
                   textAlign: TextAlign.center,
                 ),
@@ -65,20 +66,20 @@ class AccordAdminPanel extends ConsumerWidget {
         backgroundColor: colors.background,
         appBar: AppBar(
           backgroundColor: colors.foreground,
-          title: const Text('Server administration'),
+          title: Text(UiCopy.serverAdministration(context: context)),
           leading: IconButton(
             icon: const Icon(Icons.arrow_back),
             onPressed: () =>
                 context.canPop() ? context.pop() : context.go('/spaces'),
           ),
-          bottom: const TabBar(
+          bottom: TabBar(
             isScrollable: true,
             tabs: [
-              Tab(text: 'Spaces'),
-              Tab(text: 'Users'),
-              Tab(text: 'Reports'),
-              Tab(text: 'Settings'),
-              Tab(text: 'AutoMod'),
+              Tab(text: UiCopy.spaces(context: context)),
+              Tab(text: UiCopy.users(context: context)),
+              Tab(text: UiCopy.reports(context: context)),
+              Tab(text: UiCopy.settings(context: context)),
+              Tab(text: UiCopy.automod(context: context)),
             ],
           ),
         ),

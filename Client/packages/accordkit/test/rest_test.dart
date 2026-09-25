@@ -634,7 +634,10 @@ void main() {
         'c',
         {'content': 'pic'},
         [
-          {'filename': 'a.png', 'content': Uint8List.fromList([1])},
+          {
+            'filename': 'a.png',
+            'content': Uint8List.fromList([1])
+          },
         ],
       );
       expect(log, hasLength(1));
@@ -756,6 +759,23 @@ void main() {
   });
 
   group('MultipartForm', () {
+    test('streams file buffers without copying and can create a fresh retry',
+        () async {
+      final bytes = Uint8List.fromList([0, 255, 13, 10]);
+      final form = MultipartForm(boundary: 'X')
+        ..addJson('payload_json', {'content': 'hello'})
+        ..addFile('files[0]', 'image.png', bytes);
+      for (var attempt = 0; attempt < 2; attempt++) {
+        final request =
+            form.request('POST', Uri.parse('https://example.com/upload'));
+        final chunks = await request.finalize().toList();
+        expect(chunks.any((chunk) => identical(chunk, bytes)), isTrue);
+        expect(chunks.expand((chunk) => chunk).toList(), form.build());
+        expect(request.contentLength, form.build().length);
+        expect(request.headers['Content-Type'], form.contentType());
+      }
+    });
+
     test('builds well-formed parts', () {
       final form = MultipartForm(boundary: 'X')..addField('a', 'b');
       final out = utf8.decode(form.build());

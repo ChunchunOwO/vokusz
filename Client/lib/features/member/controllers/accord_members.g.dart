@@ -73,7 +73,7 @@ final class AccordMembersControllerProvider
 }
 
 String _$accordMembersControllerHash() =>
-    r'e24a3dd16dabdafaec8bfc9c5e3561a202d5855e';
+    r'01f192eb30e43c8431295f0aed235ce38eb06226';
 
 /// A space's members, keyed by space ID and indexed by user ID for O(1) author
 /// resolution. Self-loads via `members.list` the first time it's watched (once

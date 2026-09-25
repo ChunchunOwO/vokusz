@@ -1,3 +1,4 @@
+import 'package:bonfire/l10n/ui_copy.dart';
 import 'package:bonfire/shared/utils/client_access.dart';
 import 'package:bonfire/features/channels/controllers/dm_channels.dart';
 import 'package:bonfire/features/user/controllers/accord_users.dart';
@@ -64,9 +65,18 @@ class _VoicePipOverlayState extends ConsumerState<VoicePipOverlay> {
 
   @override
   Widget build(BuildContext context) {
-    final voice = ref.watch(voiceControllerProvider);
-    // Rebuild as tracks come and go.
-    ref.watch(voiceControllerProvider.select((v) => v.tick));
+    final voice = ref.watch(
+      voiceControllerProvider.select(
+        (v) => (
+          channelId: v.channelId,
+          spaceId: v.spaceId,
+          isConnected: v.isConnected,
+          selfStream: v.selfStream,
+          selfVideo: v.selfVideo,
+          tick: v.tick,
+        ),
+      ),
+    );
 
     final channelId = voice.channelId;
     final spaceId = voice.spaceId;
@@ -81,8 +91,7 @@ class _VoicePipOverlayState extends ConsumerState<VoicePipOverlay> {
 
     final size = MediaQuery.of(context).size;
     final pos = _clamp(
-      _pos ??
-          Offset(size.width - _w - _margin, size.height - _h - _margin * 2),
+      _pos ?? Offset(size.width - _w - _margin, size.height - _h - _margin * 2),
       size,
     );
 
@@ -95,7 +104,7 @@ class _VoicePipOverlayState extends ConsumerState<VoicePipOverlay> {
         onPanUpdate: (d) => setState(() => _pos = _clamp(pos + d.delta, size)),
         child: Material(
           elevation: 8,
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(4),
           clipBehavior: Clip.antiAlias,
           child: SizedBox(
             width: _w,
@@ -111,11 +120,13 @@ class _VoicePipOverlayState extends ConsumerState<VoicePipOverlay> {
                     color: Colors.black54,
                     shape: const CircleBorder(),
                     child: IconButton(
-                      tooltip: 'Disconnect',
+                      tooltip: UiCopy.disconnect(context: context),
                       iconSize: 16,
                       visualDensity: VisualDensity.compact,
-                      constraints:
-                          const BoxConstraints(minWidth: 28, minHeight: 28),
+                      constraints: const BoxConstraints(
+                        minWidth: 28,
+                        minHeight: 28,
+                      ),
                       onPressed: () => _hangUp(channelId, spaceId),
                       icon: Icon(Icons.call_end, color: colors.red),
                     ),
@@ -124,8 +135,11 @@ class _VoicePipOverlayState extends ConsumerState<VoicePipOverlay> {
                 const Positioned(
                   left: 4,
                   bottom: 4,
-                  child: Icon(Icons.open_in_full,
-                      size: 14, color: Colors.white70),
+                  child: Icon(
+                    Icons.open_in_full,
+                    size: 14,
+                    color: Colors.white70,
+                  ),
                 ),
               ],
             ),
@@ -172,11 +186,11 @@ class _VoicePipOverlayState extends ConsumerState<VoicePipOverlay> {
     final channel = ref
         .read(dmChannelsControllerProvider(serverKey))
         ?.firstWhereOrNull((c) => c.id == channelId);
-    if (channel == null) return 'Call';
+    if (channel == null) return UiCopy.call();
     return dmChannelTitle(
       channel,
       ref.readUserId(),
-      fallback: 'Call',
+      fallback: UiCopy.call(),
       users: ref.read(accordUsersControllerProvider(serverKey)),
     );
   }
@@ -194,10 +208,7 @@ class _VoicePipOverlayState extends ConsumerState<VoicePipOverlay> {
   Offset _clamp(Offset p, Size screen) {
     final maxX = (screen.width - _w - _margin).clamp(_margin, double.infinity);
     final maxY = (screen.height - _h - _margin).clamp(_margin, double.infinity);
-    return Offset(
-      p.dx.clamp(_margin, maxX),
-      p.dy.clamp(_margin, maxY),
-    );
+    return Offset(p.dx.clamp(_margin, maxX), p.dy.clamp(_margin, maxY));
   }
 
   /// The first available video track to preview: our own screen-share or

@@ -1,6 +1,6 @@
-# CLAUDE.md
+# AGENTS.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to Grok when working with code in this repository.
 
 ## What This Is
 
@@ -126,3 +126,21 @@ Integration tests live in `tests/` with a shared helper in `tests/common/mod.rs`
 This repository includes a compiled documentation database/knowledgebase at `AGENTS.db`.
 For context for any task, you MUST use MCP `agents_search` to look up context including architectural, API, and historical changes.
 Treat `AGENTS.db` layers as immutable; avoid in-place mutation utilities unless required by the design.
+
+Attachment upload routes override the default Axum 2 MiB body limit. Preserve the per-file/count/budget checks and the separate 2 MiB metadata bound when changing uploads.
+
+
+Domain permissions: 社区 is the server-wide community; 域 maps to Space; a domain
+contains category groups and text/voice channels. The domain creator is 域主.
+Default groups are 高级管理员 (structure and moderation), 管理员 (moderation),
+嘉宾 (no administrative grants), and 普通成员 (the implicit position-zero role).
+Only the domain owner or community administrator creates permission groups;
+role edits and assignments respect hierarchy. Community administrators manage
+all domains and their names use a distinct color. Channel overrides refine
+existing domain roles; channels do not have a separate owner/role system.
+
+Sidebar groups use server-scoped collapse preferences. Members with manage_channels
+can drag channels directly onto a group header or the Ungrouped drop area; group
+headers can also be reordered. Members with move_members can drag voice participants
+onto another voice channel in the same domain. The server validates both channel
+permissions, hierarchy, current source, and the moved member's destination access.

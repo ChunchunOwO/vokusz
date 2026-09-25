@@ -1125,7 +1125,7 @@ async fn test_admin_role_can_kick_member() {
         .unwrap();
     let admin_role = roles
         .iter()
-        .find(|r| r.name == "Admin")
+        .find(|r| r.name == "高级管理员")
         .expect("Admin role should exist");
 
     // Assign Admin role to admin_user

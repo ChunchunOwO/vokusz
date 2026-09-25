@@ -1,3 +1,4 @@
+import 'package:bonfire/l10n/ui_copy.dart';
 import 'package:accordkit/accordkit.dart';
 import 'package:bonfire/shared/components/async_state_views.dart';
 import 'package:bonfire/shared/utils/rest_result_ext.dart';
@@ -64,7 +65,7 @@ class _TransferOwnershipDialogState
     } else {
       setState(() {
         _busy = false;
-        _error = result.errorOr('Failed to transfer ownership');
+        _error = result.errorOr(UiCopy.failedToTransferOwnership());
       });
     }
   }
@@ -74,16 +75,26 @@ class _TransferOwnershipDialogState
     final theme = Theme.of(context);
     final colors = BonfireThemeExtension.of(context);
     final currentUserId = ref.watchUserId();
-    final members = ref.watch(accordMembersControllerProvider(ref.readActiveServerKey() ?? '', widget.spaceId));
+    final members = ref.watch(
+      accordMembersControllerProvider(
+        ref.readActiveServerKey() ?? '',
+        widget.spaceId,
+      ),
+    );
     final candidates =
         (members?.values ?? const <AccordMember>[])
             .where((m) => m.userId != currentUserId)
             .toList()
           ..sort(
-            (a, b) => accordMemberName(a, fallback: 'Unknown')
-                .toLowerCase()
-                .compareTo(
-                  accordMemberName(b, fallback: 'Unknown').toLowerCase(),
+            (a, b) =>
+                accordMemberName(
+                  a,
+                  fallback: UiCopy.unknown(context: context),
+                ).toLowerCase().compareTo(
+                  accordMemberName(
+                    b,
+                    fallback: UiCopy.unknown(context: context),
+                  ).toLowerCase(),
                 ),
           );
     final canSubmit =
@@ -100,10 +111,13 @@ class _TransferOwnershipDialogState
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text('Transfer ownership', style: theme.textTheme.titleMedium),
+              Text(
+                UiCopy.transferOwnership(context: context),
+                style: theme.textTheme.titleMedium,
+              ),
               const SizedBox(height: 4),
               Text(
-                'The new owner gains full control. You cannot undo this.',
+                UiCopy.theNewOwnerGainsFullControlYou(context: context),
                 style: theme.textTheme.bodySmall!.copyWith(color: colors.red),
               ),
               const SizedBox(height: 16),
@@ -112,7 +126,7 @@ class _TransferOwnershipDialogState
                     ? Padding(
                         padding: const EdgeInsets.all(16),
                         child: Text(
-                          'No other members to transfer to.',
+                          UiCopy.noOtherMembersToTransferTo(context: context),
                           style: theme.textTheme.bodyMedium,
                         ),
                       )
@@ -133,7 +147,10 @@ class _TransferOwnershipDialogState
                                     : colors.gray,
                               ),
                               title: Text(
-                                accordMemberName(m, fallback: 'Unknown'),
+                                accordMemberName(
+                                  m,
+                                  fallback: UiCopy.unknown(context: context),
+                                ),
                                 overflow: TextOverflow.ellipsis,
                               ),
                               onTap: _busy
@@ -149,8 +166,8 @@ class _TransferOwnershipDialogState
                 controller: _confirm,
                 enabled: !_busy,
                 onChanged: (_) => setState(() {}),
-                decoration: const InputDecoration(
-                  labelText: 'Type TRANSFER to confirm',
+                decoration: InputDecoration(
+                  labelText: UiCopy.typeTransferToConfirm(context: context),
                   isDense: true,
                   border: OutlineInputBorder(),
                 ),
@@ -167,13 +184,13 @@ class _TransferOwnershipDialogState
                     onPressed: _busy
                         ? null
                         : () => Navigator.of(context).maybePop(),
-                    child: const Text('Cancel'),
+                    child: Text(UiCopy.cancel(context: context)),
                   ),
                   const SizedBox(width: 8),
                   FilledButton(
                     onPressed: canSubmit ? _submit : null,
                     style: FilledButton.styleFrom(backgroundColor: colors.red),
-                    child: const Text('Transfer'),
+                    child: Text(UiCopy.transfer2(context: context)),
                   ),
                 ],
               ),

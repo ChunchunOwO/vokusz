@@ -25,30 +25,16 @@ class AccordSettings {
   /// Selectable camera frame rates, matching `config_voice.gd` `FPS_OPTIONS`.
   static const List<int> videoFpsOptions = [15, 30, 60];
 
-  /// Screen-share capture resolution labels, indexed by [screenShareResolution].
-  /// A separate ladder from the camera's: 480p is useless for sharing a desktop
-  /// (UI text is unreadable), and sharing benefits from resolutions above what
-  /// a webcam ever produces.
+  /// Persisted indices stay stable; 480p is appended for low-resource sharing.
   static const List<String> screenShareResolutionLabels = [
     '720p',
     '1080p',
     '1440p',
+    '480p',
   ];
-
-  /// Selectable screen-share frame rates. Unlike the camera, this defaults to
-  /// the top of the range — the common case for sharing is gameplay/video,
-  /// where frame rate is what makes it look right.
-  static const List<int> screenShareFpsOptions = [15, 30, 60];
-
-  /// Default screen-share resolution index (720p). 720p60 costs roughly half
-  /// the pixels/second of 1080p60, so it is the setting most machines and
-  /// connections can actually sustain at 60 fps; users on better links can move
-  /// up in Voice & Video settings.
+  static const List<int> screenShareFpsOptions = [5, 10, 15, 24, 30, 60];
   static const int defaultScreenShareResolution = 0;
-
-  /// Default screen-share frame rate. Motion-friendly by default — see
-  /// [screenShareFps].
-  static const int defaultScreenShareFps = 60;
+  static const int defaultScreenShareFps = 30;
 
   /// Default port for the local Client MCP server. Mirrors the reference
   /// client's `config_developer.gd` `mcp_port` (39101).
@@ -69,7 +55,59 @@ class AccordSettings {
   /// Tool groups enabled by default when MCP is first turned on.
   static const List<String> defaultMcpAllowedGroups = ['read', 'navigate'];
 
+  /// Backtick. Uncommon in chat, easy to hold, and rebindable.
+  static const int defaultPushToTalkVirtualKey = 0xC0;
+
+  /// F8. Toggles the speaker overlay without colliding with the mic key.
+  static const int defaultOverlayVirtualKey = 0x77;
+
+  static int clampVirtualKey(int value, int fallback) =>
+      value >= 1 && value <= 254 ? value : fallback;
+
+  static double clampOverlayWidth(double value) => value.clamp(180, 800);
+
+  static double clampOverlayHeight(double value) => value.clamp(48, 480);
+
+  static double clampOverlayOrigin(double value) => value.clamp(-8000, 16000);
+
+  static const String richPresenceAuto = 'auto';
+  static const String richPresenceFixed = 'fixed';
+  static const String richPresenceCustom = 'custom';
+
+  static String normalizeRichPresenceMode(String value) {
+    switch (value) {
+      case richPresenceFixed:
+      case richPresenceCustom:
+        return value;
+      default:
+        return richPresenceAuto;
+    }
+  }
+
+  static String normalizeRichPresenceKind(String value) {
+    switch (value) {
+      case 'listening':
+      case 'using':
+        return value;
+      default:
+        return 'playing';
+    }
+  }
+
+  /// Keeps a typed activity name short enough for the member list.
+  static String clampRichPresenceName(String value) {
+    final text = value.replaceAll('\n', ' ').replaceAll('\r', '');
+    return text.length <= 64 ? text : text.substring(0, 64);
+  }
+
+  /// Window identity from the foreground detector. Longer than a display name.
+  static String clampRichPresencePath(String value) {
+    final text = value.replaceAll('\n', '').replaceAll('\r', '');
+    return text.length <= 1024 ? text : text.substring(0, 1024);
+  }
+
   const AccordSettings({
+    this.languageCode = 'zh',
     this.themePreset = AppThemePreset.dark,
     this.accentColor,
     this.notificationsEnabled = true,
@@ -91,6 +129,25 @@ class AccordSettings {
     this.voiceAfkTimeoutMinutes = defaultAfkTimeoutMinutes,
     this.voiceAfkAutoMove = true,
     this.voiceRelayOnly = false,
+    this.voicePushToTalk = false,
+    this.voicePushToTalkKey = defaultPushToTalkVirtualKey,
+    this.voiceOverlayEnabled = false,
+    this.voiceOverlayHotkey = defaultOverlayVirtualKey,
+    this.voiceOverlayEdit = false,
+    this.voiceOverlaySpeakersOnly = false,
+    this.voiceOverlayPlaced = false,
+    this.voiceOverlayMoved = false,
+    this.voiceOverlayX = 80,
+    this.voiceOverlayY = 32,
+    this.voiceOverlayWidth = 360,
+    this.voiceOverlayHeight = 96,
+    this.richPresenceEnabled = true,
+    this.richPresenceMode = richPresenceAuto,
+    this.richPresenceFixedPath = '',
+    this.richPresenceFixedName = '',
+    this.richPresenceCustomName = '',
+    this.richPresenceCustomKind = 'playing',
+    this.accompanimentVolume = 100,
     this.recentEmoji = const [],
     this.masterServerUrl = defaultMasterServerUrl,
     this.channelNotifications = const <String, String>{},
@@ -160,13 +217,12 @@ class AccordSettings {
   final int videoFps;
 
   /// Screen-share capture resolution index into [screenShareResolutionLabels]
-  /// (0 = 720p, 1 = 1080p, 2 = 1440p). Independent of [videoResolution]: a
+  /// (0 = 720p, 1 = 1080p, 2 = 1440p, 3 = 480p). Independent of [videoResolution]: a
   /// webcam and a shared game screen have nothing in common as encoder input.
   final int screenShareResolution;
 
   /// Screen-share capture frame rate (one of [screenShareFpsOptions]).
-  /// Defaults to 60 — screen share is overwhelmingly used for games and video,
-  /// and 30 fps is what made game streams look choppy (issue #151).
+  /// Defaults to 30 to reduce capture and encoding work; 60 remains available.
   final int screenShareFps;
 
   /// Whether the screen-share encoder should protect frame rate over
@@ -216,6 +272,62 @@ class AccordSettings {
 
   /// Require TURN relay candidates for all voice/video media connections.
   final bool voiceRelayOnly;
+
+  /// When true, the microphone is live only while [voicePushToTalkKey] is held.
+  final bool voicePushToTalk;
+
+  /// Windows virtual-key code for push-to-talk. See [defaultPushToTalkVirtualKey].
+  final int voicePushToTalkKey;
+
+  /// Speaker overlay on the top of the screen. It stays hidden until a voice
+  /// channel is joined.
+  final bool voiceOverlayEnabled;
+
+  /// Windows virtual-key code that toggles [voiceOverlayEnabled].
+  final int voiceOverlayHotkey;
+
+  /// Overlay accepts drag and reports the new position back.
+  final bool voiceOverlayEdit;
+
+  /// When true the overlay lists only people who are currently speaking.
+  /// Off by default, so everyone in the channel is listed.
+  final bool voiceOverlaySpeakersOnly;
+
+  /// False until the native overlay has reported a real screen position, so
+  /// the first show can sit at the top of the monitor instead of a hardcoded
+  /// corner.
+  final bool voiceOverlayPlaced;
+
+  /// True only after the user drags the overlay. Until then it stays at the
+  /// top center of the screen, and a frame saved by the old panel is ignored.
+  final bool voiceOverlayMoved;
+
+  /// Overlay frame in physical screen pixels.
+  final double voiceOverlayX;
+  final double voiceOverlayY;
+  final double voiceOverlayWidth;
+  final double voiceOverlayHeight;
+
+  /// When false, this client publishes no rich presence.
+  final bool richPresenceEnabled;
+
+  /// [richPresenceAuto], [richPresenceFixed], or [richPresenceCustom].
+  final String richPresenceMode;
+
+  /// Detector path of the window kept on screen while mode is fixed.
+  final String richPresenceFixedPath;
+
+  /// Display name of [richPresenceFixedPath]. Not shown with a mode prefix.
+  final String richPresenceFixedName;
+
+  /// Text shown while [richPresenceMode] is custom.
+  final String richPresenceCustomName;
+
+  /// `playing`, `listening`, or `using` for the custom line.
+  final String richPresenceCustomKind;
+
+  /// Accompaniment (application audio) send level, 0–200 percent.
+  final int accompanimentVolume;
 
   /// Most-recently-used emoji tokens (unicode chars or `name:id` custom refs),
   /// most-recent first.
@@ -323,9 +435,13 @@ class AccordSettings {
 
   /// Width of the channel-list column on desktop, in logical pixels. Clamped to
   /// [minChannelListWidth]–[maxChannelListWidth]; persisted across restarts.
+  /// `zh` or `en`. Missing values stay Chinese.
+  final String languageCode;
+
   final double channelListWidth;
 
   AccordSettings copyWith({
+    String? languageCode,
     AppThemePreset? themePreset,
     int? accentColor,
     bool clearAccentColor = false,
@@ -348,6 +464,25 @@ class AccordSettings {
     int? voiceAfkTimeoutMinutes,
     bool? voiceAfkAutoMove,
     bool? voiceRelayOnly,
+    bool? voicePushToTalk,
+    int? voicePushToTalkKey,
+    bool? voiceOverlayEnabled,
+    int? voiceOverlayHotkey,
+    bool? voiceOverlayEdit,
+    bool? voiceOverlaySpeakersOnly,
+    bool? voiceOverlayPlaced,
+    bool? voiceOverlayMoved,
+    double? voiceOverlayX,
+    double? voiceOverlayY,
+    double? voiceOverlayWidth,
+    double? voiceOverlayHeight,
+    bool? richPresenceEnabled,
+    String? richPresenceMode,
+    String? richPresenceFixedPath,
+    String? richPresenceFixedName,
+    String? richPresenceCustomName,
+    String? richPresenceCustomKind,
+    int? accompanimentVolume,
     List<String>? recentEmoji,
     String? masterServerUrl,
     Map<String, String>? channelNotifications,
@@ -401,6 +536,30 @@ class AccordSettings {
           voiceAfkTimeoutMinutes ?? this.voiceAfkTimeoutMinutes,
       voiceAfkAutoMove: voiceAfkAutoMove ?? this.voiceAfkAutoMove,
       voiceRelayOnly: voiceRelayOnly ?? this.voiceRelayOnly,
+      voicePushToTalk: voicePushToTalk ?? this.voicePushToTalk,
+      voicePushToTalkKey: voicePushToTalkKey ?? this.voicePushToTalkKey,
+      voiceOverlayEnabled: voiceOverlayEnabled ?? this.voiceOverlayEnabled,
+      voiceOverlayHotkey: voiceOverlayHotkey ?? this.voiceOverlayHotkey,
+      voiceOverlayEdit: voiceOverlayEdit ?? this.voiceOverlayEdit,
+      voiceOverlaySpeakersOnly:
+          voiceOverlaySpeakersOnly ?? this.voiceOverlaySpeakersOnly,
+      voiceOverlayPlaced: voiceOverlayPlaced ?? this.voiceOverlayPlaced,
+      voiceOverlayMoved: voiceOverlayMoved ?? this.voiceOverlayMoved,
+      voiceOverlayX: voiceOverlayX ?? this.voiceOverlayX,
+      voiceOverlayY: voiceOverlayY ?? this.voiceOverlayY,
+      voiceOverlayWidth: voiceOverlayWidth ?? this.voiceOverlayWidth,
+      voiceOverlayHeight: voiceOverlayHeight ?? this.voiceOverlayHeight,
+      richPresenceEnabled: richPresenceEnabled ?? this.richPresenceEnabled,
+      richPresenceMode: richPresenceMode ?? this.richPresenceMode,
+      richPresenceFixedPath:
+          richPresenceFixedPath ?? this.richPresenceFixedPath,
+      richPresenceFixedName:
+          richPresenceFixedName ?? this.richPresenceFixedName,
+      richPresenceCustomName:
+          richPresenceCustomName ?? this.richPresenceCustomName,
+      richPresenceCustomKind:
+          richPresenceCustomKind ?? this.richPresenceCustomKind,
+      accompanimentVolume: accompanimentVolume ?? this.accompanimentVolume,
       recentEmoji: recentEmoji ?? this.recentEmoji,
       masterServerUrl: masterServerUrl ?? this.masterServerUrl,
       channelNotifications: channelNotifications ?? this.channelNotifications,
@@ -429,6 +588,7 @@ class AccordSettings {
       mutedSpaces: mutedSpaces ?? this.mutedSpaces,
       hiddenSpaces: hiddenSpaces ?? this.hiddenSpaces,
       channelListWidth: channelListWidth ?? this.channelListWidth,
+      languageCode: languageCode ?? this.languageCode,
     );
   }
 
@@ -481,6 +641,8 @@ class AccordSettings {
   /// [screenShareResolution].
   (int, int) get screenShareDimensions {
     switch (screenShareResolution) {
+      case 3:
+        return (854, 480);
       case 1:
         return (1920, 1080);
       case 2:
@@ -535,6 +697,7 @@ class AccordSettings {
     final base = switch (screenShareResolution) {
       1 => 6000000, // 1080p60
       2 => 9000000, // 1440p60
+      3 => 1500000, // 480p60
       _ => 3000000, // 720p60
     };
     final scale = screenShareFps <= 15
@@ -590,6 +753,25 @@ class AccordSettings {
     'voiceAfkTimeoutMinutes': voiceAfkTimeoutMinutes,
     'voiceAfkAutoMove': voiceAfkAutoMove,
     'voiceRelayOnly': voiceRelayOnly,
+    'voicePushToTalk': voicePushToTalk,
+    'voicePushToTalkKey': voicePushToTalkKey,
+    'voiceOverlayEnabled': voiceOverlayEnabled,
+    'voiceOverlayHotkey': voiceOverlayHotkey,
+    'voiceOverlayEdit': voiceOverlayEdit,
+    'voiceOverlaySpeakersOnly': voiceOverlaySpeakersOnly,
+    'voiceOverlayPlaced': voiceOverlayPlaced,
+    'voiceOverlayMoved': voiceOverlayMoved,
+    'voiceOverlayX': voiceOverlayX,
+    'voiceOverlayY': voiceOverlayY,
+    'voiceOverlayWidth': voiceOverlayWidth,
+    'voiceOverlayHeight': voiceOverlayHeight,
+    'richPresenceEnabled': richPresenceEnabled,
+    'richPresenceMode': richPresenceMode,
+    'richPresenceFixedPath': richPresenceFixedPath,
+    'richPresenceFixedName': richPresenceFixedName,
+    'richPresenceCustomName': richPresenceCustomName,
+    'richPresenceCustomKind': richPresenceCustomKind,
+    'accompanimentVolume': accompanimentVolume,
     'recentEmoji': recentEmoji,
     'masterServerUrl': masterServerUrl,
     'channelNotifications': channelNotifications,
@@ -617,11 +799,13 @@ class AccordSettings {
     'mutedSpaces': mutedSpaces,
     'hiddenSpaces': hiddenSpaces,
     'channelListWidth': channelListWidth,
+    'languageCode': languageCode,
   };
 
   factory AccordSettings.fromJson(Map<dynamic, dynamic> json) {
     final master = (json['masterServerUrl'] as String?)?.trim();
     return AccordSettings(
+      languageCode: json['languageCode'] as String? ?? 'zh',
       themePreset: AppThemePreset.fromName(json['themePreset'] as String?),
       accentColor: (json['accentColor'] as num?)?.toInt(),
       notificationsEnabled: json['notificationsEnabled'] as bool? ?? true,
@@ -660,6 +844,53 @@ class AccordSettings {
           defaultAfkTimeoutMinutes,
       voiceAfkAutoMove: json['voiceAfkAutoMove'] as bool? ?? true,
       voiceRelayOnly: json['voiceRelayOnly'] as bool? ?? false,
+      voicePushToTalk: json['voicePushToTalk'] as bool? ?? false,
+      voicePushToTalkKey: clampVirtualKey(
+        (json['voicePushToTalkKey'] as num?)?.toInt() ??
+            defaultPushToTalkVirtualKey,
+        defaultPushToTalkVirtualKey,
+      ),
+      voiceOverlayEnabled: json['voiceOverlayEnabled'] as bool? ?? false,
+      voiceOverlayHotkey: clampVirtualKey(
+        (json['voiceOverlayHotkey'] as num?)?.toInt() ??
+            defaultOverlayVirtualKey,
+        defaultOverlayVirtualKey,
+      ),
+      voiceOverlayEdit: json['voiceOverlayEdit'] as bool? ?? false,
+      voiceOverlaySpeakersOnly:
+          json['voiceOverlaySpeakersOnly'] as bool? ?? false,
+      voiceOverlayPlaced: json['voiceOverlayPlaced'] as bool? ?? false,
+      voiceOverlayMoved: json['voiceOverlayMoved'] as bool? ?? false,
+      voiceOverlayX: clampOverlayOrigin(
+        (json['voiceOverlayX'] as num?)?.toDouble() ?? 80,
+      ),
+      voiceOverlayY: clampOverlayOrigin(
+        (json['voiceOverlayY'] as num?)?.toDouble() ?? 32,
+      ),
+      voiceOverlayWidth: clampOverlayWidth(
+        (json['voiceOverlayWidth'] as num?)?.toDouble() ?? 360,
+      ),
+      voiceOverlayHeight: clampOverlayHeight(
+        (json['voiceOverlayHeight'] as num?)?.toDouble() ?? 96,
+      ),
+      richPresenceEnabled: json['richPresenceEnabled'] as bool? ?? true,
+      richPresenceMode: normalizeRichPresenceMode(
+        (json['richPresenceMode'] as String?) ?? richPresenceAuto,
+      ),
+      richPresenceFixedPath: clampRichPresencePath(
+        (json['richPresenceFixedPath'] as String?) ?? '',
+      ),
+      richPresenceFixedName: clampRichPresenceName(
+        (json['richPresenceFixedName'] as String?) ?? '',
+      ),
+      richPresenceCustomName: clampRichPresenceName(
+        (json['richPresenceCustomName'] as String?) ?? '',
+      ),
+      richPresenceCustomKind: normalizeRichPresenceKind(
+        (json['richPresenceCustomKind'] as String?) ?? 'playing',
+      ),
+      accompanimentVolume:
+          ((json['accompanimentVolume'] as num?)?.toInt() ?? 100).clamp(0, 200),
       recentEmoji: [
         for (final e in (json['recentEmoji'] as List? ?? const []))
           e.toString(),

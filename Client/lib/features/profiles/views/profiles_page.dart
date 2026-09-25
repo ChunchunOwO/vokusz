@@ -1,3 +1,5 @@
+import 'package:bonfire/l10n/app_strings.dart';
+import 'package:bonfire/l10n/ui_copy.dart';
 import 'package:bonfire/features/profiles/controllers/profiles_controller.dart';
 import 'package:bonfire/shared/utils/confirm_dialog.dart';
 import 'package:bonfire/shared/utils/rest_result_ext.dart';
@@ -31,11 +33,11 @@ class ProfilesScreen extends ConsumerWidget {
     final activeId = notifier.activeId;
 
     return SettingsScaffold(
-      title: 'Device Profiles',
+      title: UiCopy.deviceProfiles(context: context),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _createProfile(context, ref),
         icon: const Icon(Icons.add),
-        label: const Text('New profile'),
+        label: Text(UiCopy.newProfile(context: context)),
       ),
       body: ListView(
         padding: const EdgeInsets.only(top: 8, bottom: 88),
@@ -43,9 +45,10 @@ class ProfilesScreen extends ConsumerWidget {
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
             child: Text(
-              'Profiles are isolated local spaces, each with its own accounts '
-              'and settings. Switching restarts the app. '
-              '$profilePinSecurityNotice',
+              UiCopy.profilesAreIsolatedLocalSpacesEachWith(
+                context: context,
+                arg0: AppStrings.label(profilePinSecurityNotice, context: context),
+              ),
               style: Theme.of(
                 context,
               ).textTheme.bodySmall!.copyWith(color: colors.gray),
@@ -90,9 +93,9 @@ class ProfilesScreen extends ConsumerWidget {
   ) async {
     final name = await showTextPromptDialog(
       context,
-      title: 'Rename profile',
+      title: UiCopy.renameProfile(context: context),
       initial: p.name,
-      confirmLabel: 'OK',
+      confirmLabel: UiCopy.ok(context: context),
     );
     if (name == null) return;
     ref.read(profilesControllerProvider.notifier).rename(p.id, name);
@@ -105,11 +108,12 @@ class ProfilesScreen extends ConsumerWidget {
   ) async {
     final confirmed = await showConfirmDialog(
       context,
-      title: 'Delete profile',
-      message:
-          "Delete '${p.name}' and all its accounts and settings? This cannot "
-          'be undone.',
-      confirmLabel: 'Delete',
+      title: UiCopy.deleteProfile(context: context),
+      message: UiCopy.deleteAndAllItsAccountsAndSettings(
+        context: context,
+        arg0: p.name,
+      ),
+      confirmLabel: UiCopy.delete(context: context),
       danger: true,
     );
     if (confirmed != true) return;
@@ -126,15 +130,15 @@ class ProfilesScreen extends ConsumerWidget {
       // Require the current PIN before clearing it.
       final pin = await showTextPromptDialog(
         context,
-        title: 'Enter current PIN to remove',
+        title: UiCopy.enterCurrentPinToRemove(context: context),
         obscureText: true,
         keyboardType: TextInputType.number,
-        confirmLabel: 'OK',
+        confirmLabel: UiCopy.ok(context: context),
       );
       if (pin == null) return;
       if (!notifier.verifyPin(p.id, pin)) {
         if (context.mounted) {
-          showInfoSnack(context, 'Incorrect PIN');
+          showInfoSnack(context, UiCopy.incorrectPin(context: context));
         }
         return;
       }
@@ -143,11 +147,11 @@ class ProfilesScreen extends ConsumerWidget {
     }
     final pin = await showTextPromptDialog(
       context,
-      title: 'Set a PIN',
+      title: UiCopy.setAPin(context: context),
       obscureText: true,
       keyboardType: TextInputType.number,
-      helperText: profilePinSecurityNotice,
-      confirmLabel: 'OK',
+      helperText: AppStrings.label(profilePinSecurityNotice, context: context),
+      confirmLabel: UiCopy.ok(context: context),
     );
     if (pin == null || pin.isEmpty) return;
     notifier.setPin(p.id, pin);
@@ -188,12 +192,18 @@ class _ProfileTile extends StatelessWidget {
           Flexible(child: Text(profile.name, overflow: TextOverflow.ellipsis)),
           if (isActive) ...[
             const SizedBox(width: 8),
-            LabelPill('Active', color: colors.primary, filled: true),
+            LabelPill(
+              UiCopy.active(context: context),
+              color: colors.primary,
+              filled: true,
+            ),
           ],
         ],
       ),
       subtitle: Text(
-        profile.hasPin ? 'Casual PIN lock (not encrypted)' : 'No PIN',
+        profile.hasPin
+            ? UiCopy.casualPinLockNotEncrypted(context: context)
+            : UiCopy.noPin(context: context),
         style: Theme.of(
           context,
         ).textTheme.bodySmall!.copyWith(color: colors.gray),
@@ -213,14 +223,27 @@ class _ProfileTile extends StatelessWidget {
         },
         itemBuilder: (_) => [
           if (!isActive)
-            const PopupMenuItem(value: 'switch', child: Text('Switch to')),
-          const PopupMenuItem(value: 'rename', child: Text('Rename')),
+            PopupMenuItem(
+              value: 'switch',
+              child: Text(UiCopy.switchTo(context: context)),
+            ),
+          PopupMenuItem(
+            value: 'rename',
+            child: Text(UiCopy.rename(context: context)),
+          ),
           PopupMenuItem(
             value: 'pin',
-            child: Text(profile.hasPin ? 'Remove PIN' : 'Set PIN'),
+            child: Text(
+              profile.hasPin
+                  ? UiCopy.removePin(context: context)
+                  : UiCopy.setPin(context: context),
+            ),
           ),
           if (onDelete != null)
-            const PopupMenuItem(value: 'delete', child: Text('Delete')),
+            PopupMenuItem(
+              value: 'delete',
+              child: Text(UiCopy.delete(context: context)),
+            ),
         ],
       ),
     );
@@ -249,23 +272,25 @@ class _CreateProfileDialogState extends State<_CreateProfileDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('New profile'),
+      title: Text(UiCopy.newProfile(context: context)),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           TextField(
             controller: _name,
             autofocus: true,
-            decoration: const InputDecoration(labelText: 'Profile name'),
+            decoration: InputDecoration(
+              labelText: UiCopy.profileName(context: context),
+            ),
           ),
           const SizedBox(height: 8),
           TextField(
             controller: _pin,
             obscureText: true,
             keyboardType: TextInputType.number,
-            decoration: const InputDecoration(
-              labelText: 'PIN (optional)',
-              helperText: profilePinSecurityNotice,
+            decoration: InputDecoration(
+              labelText: UiCopy.pinOptional(context: context),
+              helperText: AppStrings.label(profilePinSecurityNotice, context: context),
             ),
           ),
         ],
@@ -273,12 +298,12 @@ class _CreateProfileDialogState extends State<_CreateProfileDialog> {
       actions: [
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
+          child: Text(UiCopy.cancel(context: context)),
         ),
         FilledButton(
           onPressed: () =>
               Navigator.of(context).pop((name: _name.text, pin: _pin.text)),
-          child: const Text('Create'),
+          child: Text(UiCopy.create(context: context)),
         ),
       ],
     );

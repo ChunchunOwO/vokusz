@@ -1,3 +1,4 @@
+import 'package:bonfire/l10n/ui_copy.dart';
 import 'package:bonfire/features/messaging/controllers/withdrawn_attachments.dart';
 import 'package:bonfire/shared/components/async_state_views.dart';
 import 'package:bonfire/shared/utils/client_access.dart';
@@ -89,12 +90,12 @@ class _ImageLightboxState extends ConsumerState<_ImageLightbox> {
             child: Row(
               children: [
                 IconButton(
-                  tooltip: 'Open in browser',
+                  tooltip: UiCopy.openInBrowser(context: context),
                   onPressed: () async => openExternalUrl(context, url),
                   icon: const Icon(Icons.open_in_new, color: Colors.white),
                 ),
                 IconButton(
-                  tooltip: 'Close',
+                  tooltip: UiCopy.close(context: context),
                   onPressed: () => Navigator.of(context).maybePop(),
                   icon: const Icon(Icons.close, color: Colors.white),
                 ),

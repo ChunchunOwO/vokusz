@@ -76,6 +76,7 @@ pub struct UpdateChannel {
     pub channel_type: Option<String>,
     pub topic: Option<String>,
     pub position: Option<i64>,
+    #[serde(default, deserialize_with = "deserialize_parent_id")]
     pub parent_id: Option<Option<String>>,
     pub nsfw: Option<bool>,
     pub rate_limit: Option<i64>,
@@ -89,4 +90,10 @@ pub struct UpdateChannel {
 pub struct ChannelPositionUpdate {
     pub id: String,
     pub position: i64,
+}
+
+fn deserialize_parent_id<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<Option<String>>, D::Error> {
+    Option::<String>::deserialize(deserializer).map(Some)
 }

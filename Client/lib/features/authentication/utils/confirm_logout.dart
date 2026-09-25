@@ -1,3 +1,4 @@
+import 'package:bonfire/l10n/app_strings.dart';
 import 'package:bonfire/shared/utils/confirm_dialog.dart';
 import 'package:flutter/material.dart';
 
@@ -10,9 +11,9 @@ import 'package:flutter/material.dart';
 Future<bool> confirmLogout(BuildContext context) async {
   final confirmed = await showConfirmDialog(
     context,
-    title: 'Log out?',
-    message: "You'll need to sign in again to use this account.",
-    confirmLabel: 'Log out',
+    title: AppStrings.of(context).logOutTitle,
+    message: AppStrings.of(context).logOutMessage,
+    confirmLabel: AppStrings.of(context).logOut,
     danger: true,
   );
   return confirmed ?? false;

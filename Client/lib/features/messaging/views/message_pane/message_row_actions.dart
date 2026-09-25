@@ -24,7 +24,7 @@ class _FloatingActionsOverlay extends StatelessWidget {
           right: 4,
           child: Material(
             color: colors.foreground,
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: BorderRadius.circular(4),
             clipBehavior: Clip.antiAlias,
             child: actions,
           ),
@@ -159,12 +159,12 @@ class _HoverActions extends StatelessWidget {
         children: [
           _ReactButton(onPressed: onReact),
           IconButton(
-            tooltip: 'Reply',
+            tooltip: UiCopy.reply(context: context),
             onPressed: onReply,
             icon: Icon(Icons.reply, size: 18, color: colors.gray),
           ),
           IconButton(
-            tooltip: 'Thread',
+            tooltip: UiCopy.thread(context: context),
             onPressed: onThread,
             icon: Icon(Icons.forum_outlined, size: 18, color: colors.gray),
           ),
@@ -223,7 +223,7 @@ class _MessageActions extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = BonfireThemeExtension.of(context);
     return PopupMenuButton<String>(
-      tooltip: 'Message actions',
+      tooltip: UiCopy.messageActions(context: context),
       icon: Icon(Icons.more_horiz, size: 18, color: colors.gray),
       // `onOpened` fires before the menu's barrier steals the hover, which is
       // what keeps this button mounted long enough for `onSelected` to run.
@@ -246,17 +246,34 @@ class _MessageActions extends StatelessWidget {
       },
       itemBuilder: (context) => [
         if (canPin)
-          PopupMenuItem(value: 'pin', child: Text(pinned ? 'Unpin' : 'Pin')),
-        if (canEdit) const PopupMenuItem(value: 'edit', child: Text('Edit')),
+          PopupMenuItem(
+            value: 'pin',
+            child: Text(
+              pinned
+                  ? UiCopy.unpin(context: context)
+                  : UiCopy.pin(context: context),
+            ),
+          ),
+        if (canEdit)
+          PopupMenuItem(
+            value: 'edit',
+            child: Text(UiCopy.edit(context: context)),
+          ),
         if (onBlock != null)
-          const PopupMenuItem(
+          PopupMenuItem(
             value: 'block',
-            child: Text('Block files and delete'),
+            child: Text(UiCopy.blockFilesAndDelete(context: context)),
           ),
         if (canDelete)
-          const PopupMenuItem(value: 'delete', child: Text('Delete')),
+          PopupMenuItem(
+            value: 'delete',
+            child: Text(UiCopy.delete(context: context)),
+          ),
         if (canReport)
-          const PopupMenuItem(value: 'report', child: Text('Report')),
+          PopupMenuItem(
+            value: 'report',
+            child: Text(UiCopy.report(context: context)),
+          ),
       ],
     );
   }

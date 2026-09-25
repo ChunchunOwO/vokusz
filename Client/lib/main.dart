@@ -1,3 +1,5 @@
+import 'package:bonfire/l10n/app_strings.dart';
+import 'package:bonfire/l10n/ui_copy.dart';
 import 'dart:async';
 import 'dart:ui';
 
@@ -32,6 +34,7 @@ import 'package:bonfire/theme/app_theme.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:livekit_client/livekit_client.dart' as lk;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -319,7 +322,10 @@ class _MainWindowState extends ConsumerState<MainWindow> {
           } catch (error) {
             final ctx = rootNavigatorKey.currentContext;
             if (ctx != null && ctx.mounted) {
-              showInfoSnack(ctx, 'Could not use the saved account: $error');
+              showInfoSnack(
+                ctx,
+                UiCopy.couldNotUseTheSavedAccount(arg0: error),
+              );
             }
             break;
           }
@@ -416,6 +422,7 @@ class _MainWindowState extends ConsumerState<MainWindow> {
           accentColor: s.accentColor,
           uiScale: s.uiScale,
           reducedMotion: s.reducedMotion,
+          languageCode: s.languageCode,
         ),
       ),
     );
@@ -429,6 +436,8 @@ class _MainWindowState extends ConsumerState<MainWindow> {
     // Keep the desktop taskbar/dock unread badge alive so it tracks unread
     // state live, including while the window is minimised (no-op on web/mobile).
     ref.watch(taskbarBadgeControllerProvider);
+    AppStrings.languageCode = settings.languageCode;
+    updatePageLanguage(settings.languageCode);
     soundManager.enabled = settings.soundsEnabled;
     soundManager.volume = settings.sfxVolume;
     final theme = buildAppTheme(
@@ -442,6 +451,19 @@ class _MainWindowState extends ConsumerState<MainWindow> {
       title: 'Vokusz',
       theme: theme,
       darkTheme: theme,
+      locale: settings.languageCode == 'en'
+          ? const Locale('en')
+          : const Locale('zh', 'CN'),
+      supportedLocales: const [Locale('zh', 'CN'), Locale('zh'), Locale('en')],
+      localeListResolutionCallback: (locales, supported) {
+        if (settings.languageCode == 'en') return const Locale('en');
+        return const Locale('zh', 'CN');
+      },
+      localizationsDelegates: const [
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
       routerConfig: routerController,
       // Accessibility prefs (UI scale, reduced motion), the device-profile PIN
       // gate and the incoming-call banner all sit in the builder, above every

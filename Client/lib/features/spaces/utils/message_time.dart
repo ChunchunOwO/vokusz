@@ -1,3 +1,6 @@
+import 'package:bonfire/l10n/app_strings.dart';
+import 'package:bonfire/l10n/ui_copy.dart';
+
 const _weekdays = [
   'Monday',
   'Tuesday',
@@ -59,7 +62,7 @@ String messageTimeString(DateTime local, {DateTime? now}) {
   ).difference(DateTime.utc(thatDay.year, thatDay.month, thatDay.day)).inDays;
 
   if (daysAgo <= 0) return clock;
-  if (daysAgo == 1) return 'Yesterday at $clock';
+  if (daysAgo == 1) return UiCopy.yesterdayAt(arg0: clock);
 
   // DateTime's overflowing day constructor performs calendar arithmetic;
   // subtracting a Duration here would have the same DST problem as above.
@@ -69,7 +72,10 @@ String messageTimeString(DateTime local, {DateTime? now}) {
     today.day - (today.weekday - 1),
   );
   if (!thatDay.isBefore(startOfThisWeek)) {
-    return '${_weekdays[local.weekday - 1]} at $clock';
+    return AppStrings.choose(
+      '${_weekdays[local.weekday - 1]} at $clock',
+      '${AppStrings.label(_weekdays[local.weekday - 1])} $clock',
+    );
   }
 
   final startOfLastWeek = DateTime(
@@ -78,12 +84,18 @@ String messageTimeString(DateTime local, {DateTime? now}) {
     startOfThisWeek.day - 7,
   );
   if (!thatDay.isBefore(startOfLastWeek)) {
-    return 'Last ${_weekdays[local.weekday - 1]} at $clock';
+    return AppStrings.choose(
+      'Last ${_weekdays[local.weekday - 1]} at $clock',
+      '上${AppStrings.label(_weekdays[local.weekday - 1])} $clock',
+    );
   }
 
   final dd = local.day.toString().padLeft(2, '0');
   final mo = local.month.toString().padLeft(2, '0');
-  return '$dd/$mo/${local.year} $clock';
+  return AppStrings.choose(
+    '$dd/$mo/${local.year} $clock',
+    '${local.year}年${local.month}月${local.day}日 $clock',
+  );
 }
 
 /// [messageTimeString] for a raw ISO-8601 [iso] timestamp (the form carried on
@@ -107,6 +119,8 @@ String messageClockFromIso(String iso) {
 /// `Monday, 5 June 2026 at 14:30`. `intl` isn't a dependency, so the weekday and
 /// month names are spelled out by hand here rather than re-inlined per caller.
 String messageTimestampString(DateTime local) {
+  if (AppStrings.languageCode != 'en')
+    return '${local.year}年${local.month}月${local.day}日 ${AppStrings.label(_weekdays[local.weekday - 1])} ${messageClockString(local)}';
   final weekday = _weekdays[local.weekday - 1];
   final month = _months[local.month - 1];
   return '$weekday, ${local.day} $month ${local.year} at '

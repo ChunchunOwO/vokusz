@@ -133,8 +133,8 @@ void main() {
     });
 
     test('the fallback matches the accordserver defaults', () {
-      // migrations/011_server_settings.sql: 26214400 bytes, 10 attachments.
-      expect(AccordServerLimits.fallback.maxAttachmentBytes, 26214400);
+      // migrations/037_gigabyte_uploads.sql: 1 GiB, 10 attachments.
+      expect(AccordServerLimits.fallback.maxAttachmentBytes, 1073741824);
       expect(AccordServerLimits.fallback.maxAttachmentsPerMessage, 10);
       // No invented upload budget: an older server enforces none.
       expect(AccordServerLimits.fallback.uploadRequestsPerMinute, isNull);

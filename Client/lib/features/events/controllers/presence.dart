@@ -240,13 +240,14 @@ PresenceController? activePresenceNotifier(WidgetRef ref) {
 String accordPresenceStatus(PresenceMap presences, String userId) =>
     presences[userId]?.status ?? 'offline';
 
-/// The user's custom status text (the first activity's name), or null when
-/// none is set. Custom statuses are sent as a presence `activity` whose `name`
-/// carries the (optionally emoji-prefixed) text.
+/// The user's custom status text, or null when none is set. Only an activity
+/// of type `custom` counts — a game or music entry has its own line.
 String? accordCustomStatus(PresenceMap presences, String userId) {
   final activities = presences[userId]?.activities ?? const [];
-  for (final a in activities) {
-    if (a.name.trim().isNotEmpty) return a.name.trim();
+  for (final activity in activities) {
+    if (activity.type != 'custom') continue;
+    final name = activity.name.trim();
+    if (name.isNotEmpty) return name;
   }
   return null;
 }

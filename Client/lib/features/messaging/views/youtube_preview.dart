@@ -1,3 +1,4 @@
+import 'package:bonfire/l10n/ui_copy.dart';
 import 'package:bonfire/features/messaging/utils/youtube_video.dart';
 import 'package:bonfire/features/messaging/views/message_media_gate.dart';
 import 'package:bonfire/features/messaging/views/youtube_player.dart';
@@ -133,10 +134,12 @@ class _YouTubePreviewState extends State<YouTubePreview>
               ),
             ),
           if (canPlay && !_playing)
-            const Padding(
+            Padding(
               padding: EdgeInsets.only(top: 6),
               child: Text(
-                'Playing loads content from YouTube and shares your connection with Google.',
+                UiCopy.playingLoadsContentFromYoutubeAndShares(
+                  context: context,
+                ),
               ),
             ),
           Wrap(
@@ -153,14 +156,16 @@ class _YouTubePreviewState extends State<YouTubePreview>
                         }),
                   icon: Icon(_playing ? Icons.stop : Icons.play_arrow),
                   label: Text(
-                    _playing ? 'Stop playback' : 'Play · load from YouTube',
+                    _playing
+                        ? UiCopy.stopPlayback(context: context)
+                        : UiCopy.playLoadFromYoutube(context: context),
                   ),
                 ),
               TextButton.icon(
                 onPressed: () =>
                     openExternalUrl(context, widget.video.canonicalUrl),
                 icon: const Icon(Icons.open_in_new),
-                label: const Text('Open in YouTube'),
+                label: Text(UiCopy.openInYoutube(context: context)),
               ),
             ],
           ),

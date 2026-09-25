@@ -1,18 +1,18 @@
+import 'package:bonfire/l10n/app_strings.dart';
 import 'package:accordkit/accordkit.dart';
 import 'package:flutter/material.dart';
 
 /// Error-message helpers for accordkit's [RestResult].
 extension RestResultErrorText on RestResult {
   /// The error rendered as text, or [fallback] when there is none.
-  String errorOr(String fallback) => error?.toString() ?? fallback;
+  String errorOr(String fallback) => errorMessageOr(fallback);
 
-  /// The server's own explanation, for surfaces shown to end users rather than
-  /// to operators. [errorOr] renders `AccordError.toString()`, which carries the
-  /// `AccordError(code: …)` wrapper — fine in an admin screen, noise in the
-  /// message composer. Falls back to [fallback] when the error has no message.
+  /// Localized known server messages, without the diagnostic wrapper.
+  /// Unknown server messages remain intact so useful details are not lost.
+  /// Falls back to [fallback] when the error has no message.
   String errorMessageOr(String fallback) {
     final message = (error?.message ?? '').trim();
-    return message.isEmpty ? fallback : message;
+    return message.isEmpty ? fallback : AppStrings.label(message);
   }
 }
 
@@ -54,7 +54,11 @@ void showErrorSnack(
   required String prefix,
 }) {
   ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-    SnackBar(content: Text('$prefix: ${result.error ?? 'unknown error'}')),
+    SnackBar(
+      content: Text(
+        '$prefix: ${result.errorMessageOr(AppStrings.choose('Unknown error', '未知错误', context: context))}',
+      ),
+    ),
   );
 }
 

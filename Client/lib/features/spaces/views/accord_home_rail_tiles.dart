@@ -211,8 +211,10 @@ class _SpaceIcon extends ConsumerWidget {
       channelLevels: channelLevels,
     );
     // Dim the icon while its server's gateway is down, so an unreachable space
-    // reads as offline rather than just unselected.
+    // reads as offline rather than just unselected. The space the user is in
+    // stays at full strength — a reconnect must not darken the current domain.
     final unreachable =
+        !selected &&
         serverKey.isNotEmpty &&
         (ref
                 .watch(
@@ -222,7 +224,7 @@ class _SpaceIcon extends ConsumerWidget {
                 )
                 ?.isUnreachable ??
             false);
-    final radius = BorderRadius.circular(selected ? 16 : 24);
+    final radius = BorderRadius.circular(4);
     // No Tooltip here: in the rail, [RailDraggable] owns the name tooltip (its
     // long-press trigger must not compete with the drag / menu gesture), and
     // the other host — the hidden-servers sheet — prints the name beside it.
@@ -240,8 +242,12 @@ class _SpaceIcon extends ConsumerWidget {
                 height: 48,
                 clipBehavior: Clip.antiAlias,
                 decoration: BoxDecoration(
-                  color: selected ? colors.primary : colors.darkGray,
+                  color: colors.foreground,
                   borderRadius: radius,
+                  border: Border.all(
+                    color: selected ? colors.primary : colors.darkGray,
+                    width: selected ? 2 : 1,
+                  ),
                 ),
                 alignment: Alignment.center,
                 child: _SpaceIconImage(space: space, cdnUrl: cdnUrl),
@@ -304,7 +310,7 @@ class _SpaceIconImage extends StatelessWidget {
       child: Text(
         _initials,
         style: Theme.of(context).textTheme.titleSmall!.copyWith(
-          color: Colors.white,
+          color: BonfireThemeExtension.of(context).dirtyWhite,
           fontSize: size < 48 ? size / 2 : null,
         ),
       ),
@@ -366,8 +372,9 @@ class _RailIconTile extends StatelessWidget {
                 width: 48,
                 height: 48,
                 decoration: BoxDecoration(
-                  color: colors.darkGray,
-                  borderRadius: BorderRadius.circular(24),
+                  color: colors.foreground,
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(color: colors.darkGray, width: 1),
                 ),
                 alignment: Alignment.center,
                 child: Icon(
@@ -384,16 +391,14 @@ class _RailIconTile extends StatelessWidget {
                 )
               else if (hasUnread)
                 Positioned(
-                  left: -4,
-                  top: 18,
+                  right: -3,
+                  top: -3,
                   child: Container(
-                    width: 8,
-                    height: 12,
-                    decoration: const BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.horizontal(
-                        right: Radius.circular(4),
-                      ),
+                    width: 10,
+                    height: 10,
+                    decoration: BoxDecoration(
+                      color: colors.red,
+                      shape: BoxShape.circle,
                     ),
                   ),
                 ),
@@ -440,7 +445,7 @@ class _DirectMessagesButton extends ConsumerWidget {
       }
     }
     return _RailIconTile(
-      tooltip: 'Direct messages',
+      tooltip: UiCopy.directMessages(context: context),
       icon: Icons.chat_bubble_outline,
       iconSize: 22,
       hasUnread: hasUnread,
@@ -458,7 +463,11 @@ class _AddServerButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => _RailIconTile(
-    tooltip: 'Add a server',
+    tooltip: AppStrings.choose(
+      'Join / create domain',
+      '加入 / 创建域',
+      context: context,
+    ),
     icon: Icons.add,
     iconColor: const Color(0xFF43B581),
     onTap: onTap,
@@ -475,7 +484,11 @@ class _HiddenServersButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => _RailIconTile(
-    tooltip: '$count hidden ${count == 1 ? 'server' : 'servers'}',
+    tooltip: UiCopy.hidden(
+      context: context,
+      arg0: count,
+      arg1: count == 1 ? 'server' : 'servers',
+    ),
     icon: Icons.visibility_off_outlined,
     iconSize: 20,
     onTap: onTap,

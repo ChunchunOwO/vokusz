@@ -7,6 +7,7 @@
 /// directly.
 library;
 
+import 'package:bonfire/l10n/ui_copy.dart';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -40,7 +41,7 @@ Future<DownloadResult> downloadAttachment(
   final safeName = sanitizeAttachmentFilename(filename);
   final uri = Uri.tryParse(url);
   if (!_isAllowedDownloadUri(uri)) {
-    return const DownloadResult.failed('That attachment has no valid address.');
+    return DownloadResult.failed(UiCopy.thatAttachmentHasNoValidAddress());
   }
 
   final client = http.Client();
@@ -69,7 +70,7 @@ Future<DownloadResult> downloadAttachmentForTesting(
   final uri = Uri.tryParse(url);
   if (!_isAllowedDownloadUri(uri)) {
     client.close();
-    return const DownloadResult.failed('That attachment has no valid address.');
+    return DownloadResult.failed(UiCopy.thatAttachmentHasNoValidAddress());
   }
   return _downloadAttachment(
     client,
@@ -114,14 +115,12 @@ Future<DownloadResult> _downloadAttachment(
   } on _DownloadException catch (e) {
     return DownloadResult.failed(e.message);
   } on SocketException {
-    return const DownloadResult.failed(
-      "Couldn't reach the server. Check your connection and try again.",
-    );
+    return DownloadResult.failed(UiCopy.couldnTReachTheServerCheckYour());
   } on HttpException {
-    return const DownloadResult.failed('The download was interrupted.');
+    return DownloadResult.failed(UiCopy.theDownloadWasInterrupted());
   } catch (e) {
     debugPrint('Attachment download failed: $e');
-    return const DownloadResult.failed("Couldn't save the file.");
+    return DownloadResult.failed(UiCopy.couldnTSaveTheFile());
   } finally {
     client.close();
   }
@@ -190,13 +189,13 @@ Future<DownloadResult> _saveViaShareSheet(
     saved = saveAttachment != null
         ? await saveAttachment(safeName, bytes)
         : await FilePicker.platform.saveFile(
-            dialogTitle: 'Save attachment',
+            dialogTitle: UiCopy.saveAttachment(),
             fileName: safeName,
             bytes: bytes,
           );
   } catch (e) {
     debugPrint('Save sheet failed: $e');
-    return const DownloadResult.failed("Couldn't save the file.");
+    return DownloadResult.failed(UiCopy.couldnTSaveTheFile());
   }
   // `saveFile` returns null when the user backs out of the sheet.
   return saved == null
@@ -213,19 +212,19 @@ Future<http.StreamedResponse> _send(
   final response = await client.send(request);
   if (response.statusCode != 200) {
     throw _DownloadException(
-      'The server refused the download (HTTP ${response.statusCode}).',
+      UiCopy.theServerRefusedTheDownloadHttp(arg0: response.statusCode),
     );
   }
   final advertisedBytes = response.contentLength;
   if (advertisedBytes != null && advertisedBytes > maxBytes) {
-    throw const _DownloadException('That attachment is too large to download.');
+    throw _DownloadException(UiCopy.thatAttachmentIsTooLargeToDownload());
   }
   return response;
 }
 
 void _checkReceivedBytes(int received, int maxBytes) {
   if (received > maxBytes) {
-    throw const _DownloadException('That attachment is too large to download.');
+    throw _DownloadException(UiCopy.thatAttachmentIsTooLargeToDownload());
   }
 }
 
@@ -277,7 +276,7 @@ Future<File> _createExclusively(Directory dir, String safeName) async {
       );
     }
   }
-  throw const _DownloadException("Couldn't create a file to download into.");
+  throw _DownloadException(UiCopy.couldnTCreateAFileToDownload());
 }
 
 /// Fails closed if [filePath] would land anywhere but immediately inside
@@ -287,7 +286,7 @@ Future<File> _createExclusively(Directory dir, String safeName) async {
 void _assertDirectChild(String dirPath, String filePath) {
   final parent = p.canonicalize(p.dirname(filePath));
   if (parent != p.canonicalize(dirPath)) {
-    throw const _DownloadException('That attachment has an unsafe filename.');
+    throw _DownloadException(UiCopy.thatAttachmentHasAnUnsafeFilename());
   }
 }
 

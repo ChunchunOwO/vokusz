@@ -1,5 +1,4 @@
 # Vokusz — Flutter Client
-The current source code of this project has been specially licensed. See the license file for details. The license also covers future online updates for the project.
 
 ### Communication without compromise.
 
@@ -326,3 +325,29 @@ see [adding a server](docs/getting-started/adding-a-server.md#joining-with-a-sav
 YouTube previews offer consent-gated playback on Web and an external link on
 native clients. Appearance settings can hide embeds locally; see
 [link previews](docs/messaging/sending-messages.md#link-previews).
+
+## 界面语言
+
+Web 与 Windows 共用简体中文和英文界面，可在“设置 → 外观 → 语言”中切换。文案规范、验证与部署记录见 [中英双语复核](docs/localization-review.md)。
+
+Attachment uploads default to 1 GB per file; see [file sharing](docs/messaging/file-sharing.md) for server limits and upgrade behavior.
+
+Screen sharing: choose resolution (480p–1440p) and frame rate (5–60 FPS) in the desktop source picker or Voice & Video settings. New profiles default to 720p/30 FPS; existing saved choices are retained. Changes apply to the next share. Use 480p/10–15 FPS for lower resource usage, or 60 FPS for motion. Windows x64 uses bundled OBS core with Windows Graphics Capture for GPU scaling and color conversion before WebRTC encoding. No separate OBS installation is required. Web and other platforms retain their existing backends.
+
+Space overview changes are saved before leaving settings; failed saves retain the draft and show an error.
+
+
+Domain permissions: 社区 is the server-wide community; 域 maps to Space; a domain
+contains category groups and text/voice channels. The domain creator is 域主.
+Default groups are 高级管理员 (structure and moderation), 管理员 (moderation),
+嘉宾 (no administrative grants), and 普通成员 (the implicit position-zero role).
+Only the domain owner or community administrator creates permission groups;
+role edits and assignments respect hierarchy. Community administrators manage
+all domains and their names use a distinct color. Channel overrides refine
+existing domain roles; channels do not have a separate owner/role system.
+
+The account-switcher screen has been removed. Use Log out and the normal sign-in form to sign in with another account.
+
+OBS capture build, lifecycle and native verification: [docs/voice-and-video/obs-capture.md](docs/voice-and-video/obs-capture.md).
+
+The rail **+** opens Join / Create domain. Copy the domain ID from the square badge below its name. ID joins use public domains in the current community; private domains require an invitation. Creation exposes an explicit public-ID-join toggle.

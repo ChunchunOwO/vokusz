@@ -268,6 +268,12 @@ pub async fn resolve_channel_permissions(
         return Ok(perms);
     }
 
+    let channel = db::channels::get_channel_row(pool, channel_id).await?;
+    if channel.space_id.as_deref() != Some(space_id) {
+        return Err(AppError::Forbidden(
+            "channel belongs to another space".into(),
+        ));
+    }
     let overwrites = db::permission_overwrites::list_overwrites(pool, channel_id).await?;
     if overwrites.is_empty() {
         return Ok(perms);

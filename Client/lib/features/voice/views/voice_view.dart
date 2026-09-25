@@ -1,3 +1,4 @@
+import 'package:bonfire/l10n/ui_copy.dart';
 import 'dart:async' show unawaited;
 
 import 'package:accordkit/accordkit.dart'
@@ -6,20 +7,24 @@ import 'package:bonfire/shared/utils/client_access.dart';
 import 'package:bonfire/features/member/controllers/accord_members.dart';
 import 'package:bonfire/features/member/utils/member_display.dart';
 import 'package:bonfire/features/user/controllers/accord_users.dart';
+import 'package:bonfire/features/settings/controllers/settings.dart';
+import 'package:bonfire/features/voice/controllers/accompaniment.dart';
 import 'package:bonfire/features/voice/controllers/call.dart';
 import 'package:bonfire/features/voice/controllers/voice.dart';
 import 'package:bonfire/features/voice/controllers/voice_states.dart';
 import 'package:bonfire/features/voice/services/voice_session.dart'
     show VoiceSession;
 import 'package:bonfire/features/voice/utils/participant_display.dart';
+import 'package:bonfire/features/voice/views/accompaniment_picker.dart';
 import 'package:bonfire/features/voice/views/screen_share_picker.dart';
 import 'package:bonfire/features/voice/views/voice_settings_screen.dart';
 import 'package:bonfire/features/voice/views/voice_text_panel.dart';
 import 'package:bonfire/shared/components/horizontal_wheel_scroll.dart';
+import 'package:bonfire/l10n/app_strings.dart';
 import 'package:bonfire/theme/theme.dart';
 import 'package:bonfire/features/member/views/accord_member_avatar.dart';
 import 'package:bonfire/features/voice/views/voice_lobby.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show defaultTargetPlatform, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:livekit_client/livekit_client.dart' show VideoTrack;
@@ -242,7 +247,9 @@ class _VoiceChannelViewState extends ConsumerState<VoiceChannelView> {
             ),
           ),
           IconButton(
-            tooltip: _chatOpen ? 'Hide chat' : 'Show chat',
+            tooltip: _chatOpen
+                ? UiCopy.hideChat(context: context)
+                : UiCopy.showChat(context: context),
             onPressed: () => setState(() => _chatOpen = !_chatOpen),
             icon: Icon(
               _chatOpen ? Icons.chat_bubble : Icons.chat_bubble_outline,
@@ -251,7 +258,9 @@ class _VoiceChannelViewState extends ConsumerState<VoiceChannelView> {
             ),
           ),
           IconButton(
-            tooltip: widget.fullScreen ? 'Exit full screen' : 'Full screen',
+            tooltip: widget.fullScreen
+                ? UiCopy.exitFullScreen(context: context)
+                : UiCopy.fullScreen(context: context),
             onPressed: () {
               if (widget.fullScreen) {
                 Navigator.of(context).maybePop();
@@ -304,7 +313,9 @@ class _RingingBanner extends StatelessWidget {
           const SizedBox(width: 10),
           Flexible(
             child: Text(
-              name == null || name!.isEmpty ? 'Calling…' : 'Calling $name…',
+              name == null || name!.isEmpty
+                  ? UiCopy.calling(context: context)
+                  : 'Calling $name…',
               overflow: TextOverflow.ellipsis,
               style: Theme.of(
                 context,
@@ -354,15 +365,12 @@ class _ConnectedBody extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // Rebuild on any room change (track added/removed, speaker changes).
+    // Rebuild the grid for track changes; tiles watch their own speaking state.
     ref.watch(voiceControllerProvider.select((v) => v.tick));
     final states = ref.watch(
       voiceStatesControllerProvider(
         ref.readActiveServerKey() ?? '',
       ).select((cache) => voiceStatesFor(cache, channelId)),
-    );
-    final speaking = ref.watch(
-      voiceControllerProvider.select((v) => v.speakingUserIds),
     );
     final members = spaceId == null
         ? null
@@ -389,13 +397,12 @@ class _ConnectedBody extends ConsumerWidget {
     );
 
     if (tiles.isEmpty) {
-      return const Center(child: Text('Connecting…'));
+      return Center(child: Text(UiCopy.connecting(context: context)));
     }
 
     Widget tileWidget(_Tile t) => _VideoTile(
       key: ValueKey('${t.userId}:${t.isScreen}'),
       tile: t,
-      speaking: speaking.contains(t.userId),
       spotlighted: spotlightUserId == t.userId,
       onDoubleTap: () => onToggleSpotlight(t.userId),
     );
@@ -554,22 +561,25 @@ class _GridLayout extends StatelessWidget {
   }
 }
 
-class _VideoTile extends StatelessWidget {
+class _VideoTile extends ConsumerWidget {
   const _VideoTile({
     super.key,
     required this.tile,
-    required this.speaking,
     required this.spotlighted,
     required this.onDoubleTap,
   });
 
   final _Tile tile;
-  final bool speaking;
   final bool spotlighted;
   final VoidCallback onDoubleTap;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final speaking = ref.watch(
+      voiceControllerProvider.select(
+        (v) => v.speakingUserIds.contains(tile.userId),
+      ),
+    );
     final colors = BonfireThemeExtension.of(context);
     final initial = accordInitial(tile.name);
     return GestureDetector(
@@ -578,12 +588,15 @@ class _VideoTile extends StatelessWidget {
         clipBehavior: Clip.antiAlias,
         decoration: BoxDecoration(
           color: colors.foreground,
-          borderRadius: BorderRadius.circular(8),
-          border: speaking
-              ? Border.all(color: colors.green, width: 2)
-              : spotlighted
-              ? Border.all(color: colors.primary, width: 2)
-              : null,
+          borderRadius: BorderRadius.circular(4),
+          border: Border.all(
+            color: speaking
+                ? const Color(0xFF4DA3FF)
+                : spotlighted
+                ? colors.primary
+                : const Color(0x00000000),
+            width: 2,
+          ),
         ),
         child: Stack(
           fit: StackFit.expand,
@@ -670,8 +683,21 @@ class _ControlBar extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final colors = BonfireThemeExtension.of(context);
-    final voice = ref.watch(voiceControllerProvider);
+    final text = AppStrings.of(context);
+    final voice = ref.watch(
+      voiceControllerProvider.select(
+        (v) => (
+          selfMute: v.selfMute,
+          selfDeaf: v.selfDeaf,
+          selfVideo: v.selfVideo,
+          selfStream: v.selfStream,
+        ),
+      ),
+    );
     final notifier = ref.read(voiceControllerProvider.notifier);
+    final pushToTalk = ref.watch(
+      settingsControllerProvider.select((settings) => settings.voicePushToTalk),
+    );
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 8),
       decoration: BoxDecoration(
@@ -682,22 +708,35 @@ class _ControlBar extends ConsumerWidget {
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           _ControlButton(
-            icon: voice.selfMute ? Icons.mic_off : Icons.mic,
-            tooltip: voice.selfMute ? 'Unmute' : 'Mute',
-            active: voice.selfMute,
+            icon: pushToTalk
+                ? Icons.keyboard
+                : (voice.selfMute ? Icons.mic_off : Icons.mic),
+            tooltip: pushToTalk
+                ? AppStrings.choose(
+                    'Push to talk',
+                    '按键说话',
+                    context: context,
+                  )
+                : (voice.selfMute ? text.unmute : text.mute),
+            active: !pushToTalk && voice.selfMute,
             activeColor: colors.red,
-            onPressed: notifier.toggleMute,
+            onPressed: () {
+              if (!pushToTalk) notifier.toggleMute();
+            },
+            onSecondaryPressed: () => ref
+                .read(settingsControllerProvider.notifier)
+                .setVoicePushToTalk(!pushToTalk),
           ),
           _ControlButton(
             icon: voice.selfDeaf ? Icons.headset_off : Icons.headset,
-            tooltip: voice.selfDeaf ? 'Undeafen' : 'Deafen',
+            tooltip: voice.selfDeaf ? text.undeafen : text.deafen,
             active: voice.selfDeaf,
             activeColor: colors.red,
             onPressed: notifier.toggleDeafen,
           ),
           _ControlButton(
             icon: voice.selfVideo ? Icons.videocam_off : Icons.videocam,
-            tooltip: voice.selfVideo ? 'Stop camera' : 'Camera',
+            tooltip: voice.selfVideo ? text.stopCamera : text.camera,
             active: voice.selfVideo,
             activeColor: colors.green,
             onPressed: notifier.toggleVideo,
@@ -707,21 +746,35 @@ class _ControlBar extends ConsumerWidget {
               icon: voice.selfStream
                   ? Icons.stop_screen_share
                   : Icons.screen_share,
-              tooltip: voice.selfStream ? 'Stop sharing' : 'Screen share',
+              tooltip: voice.selfStream ? text.stopShare : text.screenShare,
               active: voice.selfStream,
               activeColor: colors.green,
               onPressed: () => toggleScreenShareWithPicker(context, ref),
             ),
+          if (!kIsWeb && defaultTargetPlatform == TargetPlatform.windows)
+            _ControlButton(
+              icon: Icons.music_note,
+              tooltip: AppStrings.choose(
+                'Accompaniment',
+                '伴奏',
+                context: context,
+              ),
+              active: ref.watch(
+                accompanimentControllerProvider.select((state) => state.active),
+              ),
+              activeColor: colors.primary,
+              onPressed: () => showAccompanimentPanel(context),
+            ),
           _ControlButton(
             icon: Icons.settings,
-            tooltip: 'Voice settings',
+            tooltip: text.voiceSettings,
             active: false,
             activeColor: colors.primary,
             onPressed: () => showVoiceSettings(context),
           ),
           _ControlButton(
             icon: Icons.call_end,
-            tooltip: 'Disconnect',
+            tooltip: text.disconnect,
             active: true,
             activeColor: colors.red,
             onPressed: () => _hangUp(ref),
@@ -739,6 +792,7 @@ class _ControlButton extends StatelessWidget {
     required this.active,
     required this.activeColor,
     required this.onPressed,
+    this.onSecondaryPressed,
   });
 
   final IconData icon;
@@ -746,22 +800,26 @@ class _ControlButton extends StatelessWidget {
   final bool active;
   final Color activeColor;
   final VoidCallback onPressed;
+  final VoidCallback? onSecondaryPressed;
 
   @override
   Widget build(BuildContext context) {
     final colors = BonfireThemeExtension.of(context);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 6),
-      child: Material(
-        color: active ? activeColor : colors.darkGray,
-        shape: const CircleBorder(),
-        child: IconButton(
-          tooltip: tooltip,
-          onPressed: onPressed,
-          icon: Icon(
-            icon,
-            size: 20,
-            color: active ? Colors.white : colors.dirtyWhite,
+      child: GestureDetector(
+        onSecondaryTap: onSecondaryPressed,
+        child: Material(
+          color: active ? activeColor : colors.darkGray,
+          shape: const CircleBorder(),
+          child: IconButton(
+            tooltip: tooltip,
+            onPressed: onPressed,
+            icon: Icon(
+              icon,
+              size: 20,
+              color: active ? Colors.white : colors.dirtyWhite,
+            ),
           ),
         ),
       ),

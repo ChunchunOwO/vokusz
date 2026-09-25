@@ -13,7 +13,9 @@ You can share files and images directly in any text channel or DM.
 
 Attach a file to your message using the attachment button in the composer, or drag files from your file manager and drop them onto the composer.
 
-The maximum file size is **25 MB** per file. Larger files are rejected as soon as you pick them, with the file's size shown next to the limit -- nothing is uploaded. Music and video files are the ones that most often run into this; a 320 kbps MP3 passes 25 MB at around ten minutes.
+The default maximum file size is **1 GB (1,073,741,824 bytes)** per file, with up to 10 files per message. The composer follows the connected server's configured limits. Oversize files are rejected when picked. Upload requests allow up to 60 minutes; the default per-user budget is 2 GB per minute. Upgraded servers migrate the previous stock limits while preserving custom administrator settings.
+
+Avatars, community icons and banners are cropped and exported as bounded PNG images on both web and desktop; their separate server image limits still apply.
 
 If the server refuses an upload for another reason -- you don't have the **Attach Files** permission in that channel, for example -- the reason it gives is shown above the composer.
 

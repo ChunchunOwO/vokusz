@@ -1,3 +1,4 @@
+import 'package:bonfire/l10n/ui_copy.dart';
 import 'package:accordkit/accordkit.dart';
 
 /// Connection details for a single Accord server.
@@ -49,7 +50,7 @@ class AccordServer {
     while (v.endsWith('/')) {
       v = v.substring(0, v.length - 1);
     }
-    validateHttpEndpoint(v, label: 'Accord server URL');
+    validateHttpEndpoint(v, label: UiCopy.accordServerUrl());
     return v;
   }
 

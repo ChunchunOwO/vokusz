@@ -5,6 +5,10 @@ import 'package:bonfire/features/voice/services/voice_session.dart';
 import 'package:bonfire/features/voice/utils/voice_logic.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:livekit_client/livekit_client.dart';
+import 'package:flutter/material.dart';
+import 'package:bonfire/features/voice/views/screen_share_picker.dart';
+import 'package:bonfire/theme/app_theme.dart';
 
 /// Captures the arguments the controller hands the LiveKit session, so the
 /// screen-share quality path can be asserted without a native room.
@@ -16,6 +20,7 @@ class _RecordingSession extends VoiceSession {
   int? bitrate;
   bool? motionPriority;
   int calls = 0;
+  bool failCapture = false;
 
   // Camera capture, recorded separately so a test can prove the two toggles
   // read different settings.
@@ -33,7 +38,9 @@ class _RecordingSession extends VoiceSession {
     int? fps,
     int? bitrate,
     bool motionPriority = true,
+    bool shareSystemAudio = false,
   }) async {
+    if (failCapture) throw StateError('OBS capture failed');
     calls++;
     this.enabled = enabled;
     this.width = width;
@@ -44,7 +51,7 @@ class _RecordingSession extends VoiceSession {
   }
 
   @override
-  Future<void> setCameraEnabled(
+  Future<bool> setCameraEnabled(
     bool enabled, {
     int? width,
     int? height,
@@ -56,6 +63,7 @@ class _RecordingSession extends VoiceSession {
     cameraHeight = height;
     cameraFps = fps;
     cameraBitrate = bitrate;
+    return true;
   }
 }
 
@@ -71,6 +79,16 @@ class _FixedSettingsController extends SettingsController {
   final AccordSettings _settings;
   @override
   AccordSettings build() => _settings;
+
+  @override
+  void setScreenShareResolution(int index) {
+    state = state.copyWith(screenShareResolution: index);
+  }
+
+  @override
+  void setScreenShareFps(int fps) {
+    state = state.copyWith(screenShareFps: fps);
+  }
 }
 
 ({ProviderContainer container, _RecordingSession session}) _harness(
@@ -91,7 +109,54 @@ class _FixedSettingsController extends SettingsController {
 }
 
 void main() {
+  testWidgets('share dialog lets users select low-resource quality', (
+    tester,
+  ) async {
+    final h = _harness(const AccordSettings());
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: h.container,
+        child: MaterialApp(
+          theme: buildAppTheme(AppThemePreset.dark),
+          home: Builder(
+            builder: (context) => Scaffold(
+              body: TextButton(
+                onPressed: () => showScreenShareSourcePicker(context),
+                child: const Text('Open'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('Open'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byType(DropdownButtonFormField<int>).first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('480p').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byType(DropdownButtonFormField<int>).last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('10 fps').last);
+    await tester.pumpAndSettle();
+    final settings = h.container.read(settingsControllerProvider);
+    expect(settings.screenShareResolution, 3);
+    expect(settings.screenShareFps, 10);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+  });
+
   group('toggleScreenShare quality', () {
+    test('a failed capture does not advertise a running share', () async {
+      final h = _harness(const AccordSettings());
+      h.session.failCapture = true;
+      await expectLater(
+        h.container.read(voiceControllerProvider.notifier).toggleScreenShare(),
+        throwsStateError,
+      );
+      expect(h.container.read(voiceControllerProvider).selfStream, isFalse);
+    });
+
     test('passes the screen-share settings, not the camera ones', () async {
       // Camera deliberately set to something different from screen share, so a
       // regression that reads `videoDimensions`/`videoFps`/`videoBitrate`
@@ -121,7 +186,7 @@ void main() {
       expect(h.session.bitrate, isNot(settings.videoBitrate));
     });
 
-    test('the default install shares at 720p60, not 720p30', () async {
+    test('the default install shares at resource-friendly 720p30', () async {
       final h = _harness(const AccordSettings());
 
       await h.container
@@ -130,8 +195,8 @@ void main() {
 
       expect(h.session.width, 1280);
       expect(h.session.height, 720);
-      expect(h.session.fps, 60);
-      expect(h.session.bitrate, 3000000);
+      expect(h.session.fps, 30);
+      expect(h.session.bitrate, 2100000);
     });
 
     test('the motion-priority preference is forwarded', () async {
@@ -177,14 +242,44 @@ void main() {
     });
   });
 
+  test('desktop capture forwards size and fps to native constraints', () {
+    const options = ScreenShareCaptureOptions(
+      sourceId: 'screen:1',
+      maxFrameRate: 10,
+      params: VideoParameters(dimensions: VideoDimensions(854, 480)),
+    );
+    final constraints = options.toMediaConstraintsMap();
+    expect(constraints['mandatory'], {
+      'maxWidth': 854,
+      'maxHeight': 480,
+      'frameRate': 10.0,
+    });
+    expect(constraints['deviceId'], {'exact': 'screen:1'});
+  });
+
+  test('low-resource choices persist and reach the session', () async {
+    for (final fps in AccordSettings.screenShareFpsOptions) {
+      final settings = AccordSettings.fromJson(
+        AccordSettings(screenShareResolution: 3, screenShareFps: fps).toJson(),
+      );
+      final h = _harness(settings);
+      await h.container
+          .read(voiceControllerProvider.notifier)
+          .toggleScreenShare();
+      expect(h.session.width, 854);
+      expect(h.session.height, 480);
+      expect(h.session.fps, fps);
+      expect(h.session.bitrate, lessThanOrEqualTo(1500000));
+    }
+  });
+
   group('screen-share fallbacks', () {
-    test('an unspecified frame rate means 60, never LiveKit\'s 15 fps '
-        'slideshow preset', () {
-      expect(defaultScreenShareFps, 60);
+    test('an unspecified frame rate uses the balanced default', () {
+      expect(defaultScreenShareFps, 30);
       expect(defaultScreenShareFps, AccordSettings.defaultScreenShareFps);
     });
 
-    test('the fallback bitrate matches the 720p60 setting', () {
+    test('the fallback bitrate matches the 720p30 setting', () {
       expect(
         defaultScreenShareBitrate,
         const AccordSettings().screenShareBitrate,

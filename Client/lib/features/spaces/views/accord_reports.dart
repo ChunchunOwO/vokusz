@@ -1,3 +1,5 @@
+import 'package:bonfire/l10n/app_strings.dart';
+import 'package:bonfire/l10n/ui_copy.dart';
 import 'package:accordkit/accordkit.dart';
 import 'package:bonfire/shared/components/async_state_views.dart';
 import 'package:bonfire/shared/components/load_more_footer.dart';
@@ -152,7 +154,7 @@ class _ReportDialogState extends ConsumerState<_ReportDialog> {
     if (client == null) return;
     final category = _category;
     if (category == null) {
-      setState(() => _error = 'Choose a reason for this report.');
+      setState(() => _error = UiCopy.chooseAReasonForThisReport());
       return;
     }
     setState(() {
@@ -182,7 +184,7 @@ class _ReportDialogState extends ConsumerState<_ReportDialog> {
         if (!result.ok) {
           setState(() {
             _busy = false;
-            _error = result.errorOr('Failed to submit report');
+            _error = result.errorOr(UiCopy.failedToSubmitReport());
           });
           return;
         }
@@ -196,7 +198,7 @@ class _ReportDialogState extends ConsumerState<_ReportDialog> {
         if (!result.ok && !ReportsApi.reportRouteMissing(result)) {
           setState(() {
             _busy = false;
-            _error = result.errorOr('Failed to submit report');
+            _error = result.errorOr(UiCopy.failedToSubmitReport());
           });
           return;
         }
@@ -227,9 +229,8 @@ class _ReportDialogState extends ConsumerState<_ReportDialog> {
         // filed when the server never took one is the thing App Review calls
         // out, so the wording tracks [delivered].
         final failure = delivered
-            ? 'Reported, but blocking the account failed'
-            : 'Nothing was sent — this server only accepts reports inside a '
-                  'space — and blocking the account failed';
+            ? UiCopy.reportedButBlockingTheAccountFailed()
+            : UiCopy.nothingWasSentThisServerOnlyAccepts();
         final detail = result.errorMessageOr('');
         setState(() {
           _busy = false;
@@ -253,24 +254,21 @@ class _ReportDialogState extends ConsumerState<_ReportDialog> {
   /// Everything the submission actually did. Empty when it did nothing, which
   /// the confirmation says outright rather than implying a report was filed.
   List<String> get _outcomes => [
-    if (_delivered) 'Moderators will review it shortly.',
-    if (widget.targetType == 'message') 'The message is now hidden for you.',
-    if (_blocked)
-      'The account is blocked: they can no longer message you, and their '
-          'messages are hidden.',
+    if (_delivered) UiCopy.moderatorsWillReviewItShortly(),
+    if (widget.targetType == 'message') UiCopy.theMessageIsNowHiddenForYou(),
+    if (_blocked) UiCopy.theAccountIsBlockedTheyCanNo(),
   ];
 
   String get _outcomeTitle {
-    if (_delivered) return 'Report submitted';
-    if (_outcomes.isNotEmpty) return 'Done';
-    return 'Report not sent';
+    if (_delivered) return UiCopy.reportSubmitted();
+    if (_outcomes.isNotEmpty) return UiCopy.done();
+    return UiCopy.reportNotSent();
   }
 
   String get _outcomeBody {
     final outcomes = _outcomes;
     if (outcomes.isNotEmpty) return outcomes.join(' ');
-    return 'This server only accepts reports inside a space, so nothing was '
-        'sent. You can still block the account to stop it contacting you.';
+    return UiCopy.thisServerOnlyAcceptsReportsInsideA();
   }
 
   @override
@@ -308,7 +306,7 @@ class _ReportDialogState extends ConsumerState<_ReportDialog> {
                       alignment: Alignment.centerRight,
                       child: FilledButton(
                         onPressed: () => Navigator.of(context).pop(),
-                        child: const Text('Done'),
+                        child: Text(UiCopy.done(context: context)),
                       ),
                     ),
                   ],
@@ -320,15 +318,18 @@ class _ReportDialogState extends ConsumerState<_ReportDialog> {
                     Text(
                       widget.targetType == 'user'
                           ? 'Report ${widget.reportedName ?? 'user'}'
-                          : 'Report message',
+                          : UiCopy.reportMessage(context: context),
                       style: theme.textTheme.titleMedium,
                     ),
                     const SizedBox(height: 6),
                     Text(
                       widget.spaceId != null
-                          ? 'Reports go to this space\'s moderators.'
-                          : 'Reports outside a space go to the server '
-                                'operator. Blocking takes effect immediately.',
+                          ? UiCopy.reportsGoToThisSpaceSModerators(
+                              context: context,
+                            )
+                          : UiCopy.reportsOutsideASpaceGoToThe(
+                              context: context,
+                            ),
                       style: theme.textTheme.bodySmall!.copyWith(
                         color: colors.gray,
                       ),
@@ -337,9 +338,9 @@ class _ReportDialogState extends ConsumerState<_ReportDialog> {
                     DropdownButtonFormField<String>(
                       initialValue: _category,
                       isExpanded: true,
-                      decoration: const InputDecoration(
-                        labelText: 'Reason',
-                        hintText: 'Choose a reason',
+                      decoration: InputDecoration(
+                        labelText: UiCopy.reason(context: context),
+                        hintText: UiCopy.chooseAReason(context: context),
                         isDense: true,
                         border: OutlineInputBorder(),
                       ),
@@ -347,7 +348,9 @@ class _ReportDialogState extends ConsumerState<_ReportDialog> {
                         for (final c in _categories)
                           DropdownMenuItem(
                             value: c.value,
-                            child: Text(c.label),
+                            child: Text(
+                              AppStrings.label(c.label, context: context),
+                            ),
                           ),
                       ],
                       onChanged: _busy
@@ -360,8 +363,12 @@ class _ReportDialogState extends ConsumerState<_ReportDialog> {
                       enabled: !_busy,
                       minLines: 2,
                       maxLines: 5,
-                      decoration: const InputDecoration(
-                        labelText: 'Details (optional)',
+                      decoration: InputDecoration(
+                        labelText: AppStrings.choose(
+                          'Details (optional)',
+                          '补充说明（可选）',
+                          context: context,
+                        ),
                         isDense: true,
                         border: OutlineInputBorder(),
                       ),
@@ -377,12 +384,14 @@ class _ReportDialogState extends ConsumerState<_ReportDialog> {
                         contentPadding: EdgeInsets.zero,
                         dense: true,
                         title: Text(
-                          'Also block ${widget.reportedName ?? 'this account'}',
+                          UiCopy.alsoBlock(
+                            context: context,
+                            arg0: widget.reportedName ?? 'this account',
+                          ),
                           style: theme.textTheme.bodyMedium,
                         ),
                         subtitle: Text(
-                          'They can no longer message you, and their messages '
-                          'are hidden from your view.',
+                          UiCopy.theyCanNoLongerMessageYouAnd(context: context),
                           style: theme.textTheme.bodySmall!.copyWith(
                             color: colors.gray,
                           ),
@@ -401,7 +410,7 @@ class _ReportDialogState extends ConsumerState<_ReportDialog> {
                           onPressed: _busy
                               ? null
                               : () => Navigator.of(context).maybePop(),
-                          child: const Text('Cancel'),
+                          child: Text(UiCopy.cancel(context: context)),
                         ),
                         const SizedBox(width: 8),
                         FilledButton(
@@ -410,7 +419,7 @@ class _ReportDialogState extends ConsumerState<_ReportDialog> {
                           // it here instead made that branch dead code and the
                           // button a no-op that never said why.
                           onPressed: _busy ? null : _submit,
-                          child: const Text('Submit report'),
+                          child: Text(UiCopy.submitReport(context: context)),
                         ),
                       ],
                     ),
@@ -473,11 +482,11 @@ class _ReportsPanelState extends ConsumerState<_ReportsPanel>
       data is List ? data.whereType<AccordReport>().toList() : const [];
 
   @override
-  String loadError(RestResult result) => result.errorOr('Failed to load');
+  String loadError(RestResult result) => result.errorOr(UiCopy.failedToLoad());
 
   @override
   String loadMoreError(RestResult result) =>
-      result.errorOr('Failed to load more');
+      result.errorOr(UiCopy.failedToLoadMore());
 
   Future<void> _resolve(
     String reportId,
@@ -492,7 +501,7 @@ class _ReportsPanelState extends ConsumerState<_ReportsPanel>
     });
     if (!mounted) return;
     if (!result.ok) {
-      setState(() => error = result.errorOr('Failed to resolve'));
+      setState(() => error = result.errorOr(UiCopy.failedToResolve()));
       return;
     }
     setState(() => items.removeWhere((r) => r.id == reportId));
@@ -506,9 +515,9 @@ class _ReportsPanelState extends ConsumerState<_ReportsPanel>
     if (client == null || channelId == null || messageId.isEmpty) return;
     final ok = await showConfirmDialog(
       context,
-      title: 'Delete message',
-      message: 'Delete the reported message and action this report?',
-      confirmLabel: 'Delete',
+      title: UiCopy.deleteMessage(),
+      message: UiCopy.deleteTheReportedMessageAndActionThis(),
+      confirmLabel: UiCopy.delete(),
     );
     if (ok != true) return;
     setState(() => _busy = true);
@@ -516,7 +525,7 @@ class _ReportsPanelState extends ConsumerState<_ReportsPanel>
     if (!mounted) return;
     setState(() => _busy = false);
     if (!result.ok) {
-      setState(() => error = result.errorOr('Failed to delete message'));
+      setState(() => error = result.errorOr(UiCopy.failedToDeleteMessage()));
       return;
     }
     await _resolve(id, 'actioned', actionTaken: 'delete_message');
@@ -529,9 +538,9 @@ class _ReportsPanelState extends ConsumerState<_ReportsPanel>
     if (client == null || userId == null) return;
     final ok = await showConfirmDialog(
       context,
-      title: 'Kick member',
-      message: 'Kick the reported member and action this report?',
-      confirmLabel: 'Kick',
+      title: UiCopy.kickMember(),
+      message: UiCopy.kickTheReportedMemberAndActionThis(),
+      confirmLabel: UiCopy.kick(),
     );
     if (ok != true) return;
     setState(() => _busy = true);
@@ -539,7 +548,7 @@ class _ReportsPanelState extends ConsumerState<_ReportsPanel>
     if (!mounted) return;
     setState(() => _busy = false);
     if (!result.ok) {
-      setState(() => error = result.errorOr('Failed to kick'));
+      setState(() => error = result.errorOr(UiCopy.failedToKick()));
       return;
     }
     await _resolve(id, 'actioned', actionTaken: 'kick_member');
@@ -552,7 +561,7 @@ class _ReportsPanelState extends ConsumerState<_ReportsPanel>
     if (client == null || userId == null) return;
     final request = await showBanDialog(
       context,
-      memberName: 'The reported member',
+      memberName: UiCopy.theReportedMember(),
     );
     if (request == null || !mounted) return;
     setState(() => _busy = true);
@@ -564,7 +573,7 @@ class _ReportsPanelState extends ConsumerState<_ReportsPanel>
     if (!mounted) return;
     setState(() => _busy = false);
     if (!result.ok) {
-      setState(() => error = result.errorOr('Failed to ban'));
+      setState(() => error = result.errorOr(UiCopy.failedToBan()));
       return;
     }
     await _resolve(id, 'actioned', actionTaken: 'ban_member');
@@ -576,7 +585,7 @@ class _ReportsPanelState extends ConsumerState<_ReportsPanel>
     final colors = BonfireThemeExtension.of(context);
     return Dialog(
       backgroundColor: colors.foreground,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
       child: ConstrainedBox(
         constraints: dialogConstraints(context, maxWidth: 540, maxHeight: 600),
         child: Column(
@@ -592,10 +601,13 @@ class _ReportsPanelState extends ConsumerState<_ReportsPanel>
               child: Row(
                 children: [
                   Expanded(
-                    child: Text('Reports', style: theme.textTheme.titleMedium),
+                    child: Text(
+                      UiCopy.reports(context: context),
+                      style: theme.textTheme.titleMedium,
+                    ),
                   ),
                   IconButton(
-                    tooltip: 'Close',
+                    tooltip: UiCopy.close(context: context),
                     onPressed: () => Navigator.of(context).pop(),
                     icon: Icon(Icons.close, size: 20, color: colors.gray),
                   ),
@@ -609,7 +621,7 @@ class _ReportsPanelState extends ConsumerState<_ReportsPanel>
                 children: [
                   for (final s in moderationReportStatuses)
                     ChoiceChip(
-                      label: Text(s.label),
+                      label: Text(AppStrings.label(s.label, context: context)),
                       selected: _status == s.value,
                       onSelected: loading
                           ? null
@@ -627,7 +639,7 @@ class _ReportsPanelState extends ConsumerState<_ReportsPanel>
                   : items.isEmpty
                   ? Center(
                       child: Text(
-                        'No reports',
+                        UiCopy.noReports(context: context),
                         style: theme.textTheme.bodyMedium,
                       ),
                     )

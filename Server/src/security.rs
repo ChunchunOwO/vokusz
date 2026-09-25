@@ -116,11 +116,11 @@ pub async fn bootstrap_admin(
     if username.trim() != username
         || username.is_empty()
         || username.len() > 32
-        || password.len() < 16
+        || password.len() < 8
         || password.len() > 128
     {
         return Err(AppError::BadRequest(
-            "admin username must be 1–32 characters and password 16–128 characters".into(),
+            "admin username must be 1–32 characters and password 8–128 characters".into(),
         ));
     }
     let password = password.to_string();
@@ -248,7 +248,7 @@ pub async fn reconcile_voice_access(state: &AppState) {
             Ok(user) if !user.disabled => {
                 let auth = crate::middleware::auth::AuthUser {
                     user_id: old.user_id.clone(),
-                    is_admin: false,
+                    is_admin: user.is_admin,
                     is_bot: false,
                     is_guest: false,
                     guest_space_id: None,
@@ -338,6 +338,24 @@ mod tests {
             "invalid SENTINEL",
         ] {
             assert!(!redact_database_url(url).contains("SENTINEL"));
+        }
+    }
+}
+
+/// Apply domain role changes to already-connected voice participants.
+pub async fn refresh_domain_voice_permissions(state: &AppState, space_id: &str) {
+    reconcile_voice_access(state).await;
+    if !state.test_mode {
+        if let Some(lk) = &state.livekit_client {
+            let channels: std::collections::HashSet<String> = state
+                .voice_states
+                .iter()
+                .filter(|voice| voice.space_id.as_deref() == Some(space_id))
+                .filter_map(|voice| voice.channel_id.clone())
+                .collect();
+            for channel in channels {
+                lk.refresh_channel_permissions(state, &channel).await;
+            }
         }
     }
 }

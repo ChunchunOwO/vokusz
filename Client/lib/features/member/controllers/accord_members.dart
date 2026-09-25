@@ -62,11 +62,7 @@ class AccordMembersController extends _$AccordMembersController {
         // `withUser` asks the server to embed each member's user object, so
         // `_resolveUsers` finds them already populated and skips the per-member
         // fetch. Older servers ignore the flag; the fallback fetch runs then.
-        list =
-            (await client.members
-                    .list(spaceId, query: {'limit': 100}, withUser: true)
-                    .timeout(const Duration(seconds: 20)))
-                .listOrLog<AccordMember>('members for $spaceId');
+        list = await _listAll(client, spaceId);
       } catch (e) {
         debugPrint('Failed to load members for $spaceId: $e');
       }
@@ -92,6 +88,36 @@ class AccordMembersController extends _$AccordMembersController {
           .read(membersLoadFailedProvider(serverKey, spaceId).notifier)
           .set(true);
     }
+  }
+
+  /// Follows the server cursor until every member is loaded. One page is 100.
+  Future<List<AccordMember>?> _listAll(
+    AccordClient client,
+    String spaceId,
+  ) async {
+    final members = <AccordMember>[];
+    String? after;
+    for (var page = 0; page < 100; page++) {
+      final result = await client.members
+          .list(
+            spaceId,
+            query: {
+              'limit': 100,
+              if (after != null) 'after': after,
+            },
+            withUser: true,
+          )
+          .timeout(const Duration(seconds: 20));
+      final list = result.listOrLog<AccordMember>('members for $spaceId');
+      if (list == null) return null;
+      members.addAll(list);
+      final cursor = result.extras['cursor'];
+      final next = cursor is Map ? cursor['after']?.toString() : null;
+      final more = cursor is Map && cursor['has_more'] == true;
+      if (!more || next == null || next.isEmpty || next == after) break;
+      after = next;
+    }
+    return members;
   }
 
   /// The members endpoint returns only `user_id` per member — no embedded user
@@ -146,6 +172,9 @@ class AccordMembersController extends _$AccordMembersController {
   /// Inserts [member], or replaces it in place if already present.
   void upsertMember(AccordMember member) {
     final current = {...(state ?? const <String, AccordMember>{})};
+    // Role updates omit the embedded profile; omission must not erase identity.
+    member.user ??= current[member.userId]?.user ??
+        ref.read(accordUsersControllerProvider(serverKey))[member.userId];
     current[member.userId] = member;
     state = current;
   }

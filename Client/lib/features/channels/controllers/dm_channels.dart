@@ -1,3 +1,4 @@
+import 'package:bonfire/l10n/ui_copy.dart';
 import 'package:accordkit/accordkit.dart';
 import 'package:bonfire/features/member/utils/member_display.dart';
 import 'package:bonfire/shared/utils/list_ext.dart';
@@ -153,9 +154,9 @@ String _messagePreview(AccordMessage message) {
   final content = message.content.trim().replaceAll(RegExp(r'\s+'), ' ');
   if (content.isNotEmpty) return content;
   final count = message.attachments.length;
-  if (count == 1) return 'Attachment';
+  if (count == 1) return UiCopy.attachment();
   if (count > 1) return '$count attachments';
-  return 'Message';
+  return UiCopy.message();
 }
 
 AccordChannel? _findChannel(List<AccordChannel> channels, String channelId) {

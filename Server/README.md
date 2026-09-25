@@ -1,5 +1,5 @@
 # Accord Server
-!!!The current source code of this project has been specially licensed. See the license file for details. The license also covers future online updates for the project.!!!
+This is Vokusz Accord Server
 
 A self-hosted chat and voice backend, built in Rust with [Axum](https://github.com/tokio-rs/axum). It powers the [Vokusz client](../Client) — messaging with **free screen sharing** and LiveKit-backed voice that is meant to stay smooth and stable. Any client that implements the Accord protocol can connect.
 
@@ -455,3 +455,15 @@ Tests use in-memory SQLite databases with per-test isolation — no external ser
 ## License
 
 See [LICENSE](LICENSE) for details.
+
+Attachment defaults are 1 GiB per file and 2 GiB per user per minute. Startup migrations upgrade the old stock values without overwriting custom settings. Deploy the updated server alongside the client. Reverse proxies must allow the intended multipart body size (up to 10 GiB plus framing for 10 files) and long-running uploads. Uploads are currently buffered in memory, so provision memory for concurrent files; browser uploads also require sufficient client memory.
+
+
+Domain permissions: 社区 is the server-wide community; 域 maps to Space; a domain
+contains category groups and text/voice channels. The domain creator is 域主.
+Default groups are 高级管理员 (structure and moderation), 管理员 (moderation),
+嘉宾 (no administrative grants), and 普通成员 (the implicit position-zero role).
+Only the domain owner or community administrator creates permission groups;
+role edits and assignments respect hierarchy. Community administrators manage
+all domains and their names use a distinct color. Channel overrides refine
+existing domain roles; channels do not have a separate owner/role system.

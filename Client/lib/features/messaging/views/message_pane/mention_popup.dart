@@ -23,7 +23,9 @@ class _MentionPopup extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final colors = BonfireThemeExtension.of(context);
-    final members = ref.watch(accordMembersControllerProvider(ref.readActiveServerKey() ?? '', spaceId));
+    final members = ref.watch(
+      accordMembersControllerProvider(ref.readActiveServerKey() ?? '', spaceId),
+    );
     final space = ref.watch(
       spacesControllerProvider.select(
         (s) => s?.firstWhereOrNull((sp) => sp.id == spaceId),
@@ -37,7 +39,7 @@ class _MentionPopup extends ConsumerWidget {
       padding: const EdgeInsets.symmetric(vertical: 4),
       decoration: BoxDecoration(
         color: colors.background,
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(4),
         border: Border.all(color: colors.foreground, width: 1),
       ),
       child: Column(
@@ -79,9 +81,7 @@ class _MentionPopup extends ConsumerWidget {
                     ),
                     Text(
                       "@${entry.handle}",
-                      style: Theme.of(
-                        context,
-                      ).textTheme.labelSmall!.copyWith(
+                      style: Theme.of(context).textTheme.labelSmall!.copyWith(
                         color: entry.kind == _MentionEntryKind.broadcast
                             ? _composerBroadcastColor
                             : colors.gray,
@@ -121,17 +121,17 @@ class _MentionPopup extends ConsumerWidget {
 
     if (allowBroadcast) {
       consider(
-        const _MentionEntry(
+        _MentionEntry(
           handle: 'everyone',
-          label: 'Notify everyone',
+          label: UiCopy.notifyEveryone(),
           kind: _MentionEntryKind.broadcast,
         ),
         broadcast: true,
       );
       consider(
-        const _MentionEntry(
+        _MentionEntry(
           handle: 'here',
-          label: 'Notify online members',
+          label: UiCopy.notifyOnlineMembers(),
           kind: _MentionEntryKind.broadcast,
         ),
         broadcast: true,

@@ -184,22 +184,25 @@ class _TabStripState extends ConsumerState<_TabStrip> {
         Offset.zero & overlay.size,
       ),
       items: [
-        const PopupMenuItem(value: 'copy', child: Text('Copy Link')),
+        PopupMenuItem(
+          value: 'copy',
+          child: Text(UiCopy.copyLink(context: context)),
+        ),
         const PopupMenuDivider(),
         PopupMenuItem(
           value: 'close',
           enabled: count > 1,
-          child: const Text('Close'),
+          child: Text(UiCopy.close(context: context)),
         ),
         PopupMenuItem(
           value: 'right',
           enabled: index < count - 1,
-          child: const Text('Close to the Right'),
+          child: Text(UiCopy.closeToTheRight(context: context)),
         ),
         PopupMenuItem(
           value: 'others',
           enabled: count > 1,
-          child: const Text('Close Others'),
+          child: Text(UiCopy.closeOthers(context: context)),
         ),
       ],
     );
@@ -225,7 +228,7 @@ class _TabStripState extends ConsumerState<_TabStrip> {
     final space = conn.spaces.firstWhereOrNull((s) => s.id == tab.spaceId);
     final url = _buildConnectLink(conn.session.server, space, tab.name);
     Clipboard.setData(ClipboardData(text: url));
-    showInfoSnack(context, 'Link copied!');
+    showInfoSnack(context, UiCopy.linkCopied(context: context));
   }
 }
 
@@ -279,7 +282,7 @@ class _TabChip extends StatelessWidget {
             padding: const EdgeInsets.only(left: 10, right: 4),
             decoration: BoxDecoration(
               color: active ? colors.foreground : Colors.transparent,
-              borderRadius: BorderRadius.circular(6),
+              borderRadius: BorderRadius.circular(4),
               border: Border.all(
                 color: active ? colors.darkGray : Colors.transparent,
               ),

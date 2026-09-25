@@ -90,6 +90,9 @@ class SettingsController extends _$SettingsController {
     );
   }
 
+  void setLanguage(String code) =>
+      _update(state.copyWith(languageCode: code == 'en' ? 'en' : 'zh'));
+
   void setThemePreset(AppThemePreset preset) =>
       _update(state.copyWith(themePreset: preset));
 
@@ -168,6 +171,90 @@ class SettingsController extends _$SettingsController {
 
   void setVoiceRelayOnly(bool enabled) =>
       _update(state.copyWith(voiceRelayOnly: enabled));
+
+  void setVoicePushToTalk(bool enabled) =>
+      _update(state.copyWith(voicePushToTalk: enabled));
+
+  void setVoicePushToTalkKey(int virtualKey) => _update(
+    state.copyWith(
+      voicePushToTalkKey: AccordSettings.clampVirtualKey(
+        virtualKey,
+        state.voicePushToTalkKey,
+      ),
+    ),
+  );
+
+  void setVoiceOverlayEnabled(bool enabled) =>
+      _update(state.copyWith(voiceOverlayEnabled: enabled));
+
+  void setVoiceOverlayHotkey(int virtualKey) => _update(
+    state.copyWith(
+      voiceOverlayHotkey: AccordSettings.clampVirtualKey(
+        virtualKey,
+        state.voiceOverlayHotkey,
+      ),
+    ),
+  );
+
+  void setVoiceOverlayEdit(bool enabled) =>
+      _update(state.copyWith(voiceOverlayEdit: enabled));
+
+  void setVoiceOverlaySpeakersOnly(bool speakersOnly) =>
+      _update(state.copyWith(voiceOverlaySpeakersOnly: speakersOnly));
+
+  void setRichPresenceEnabled(bool enabled) =>
+      _update(state.copyWith(richPresenceEnabled: enabled));
+
+  void setRichPresenceMode(String mode) => _update(
+    state.copyWith(
+      richPresenceMode: AccordSettings.normalizeRichPresenceMode(mode),
+    ),
+  );
+
+  void setRichPresenceFixedName(String name) => _update(
+    state.copyWith(
+      richPresenceFixedName: AccordSettings.clampRichPresenceName(name),
+    ),
+  );
+
+  void setRichPresenceFixedWindow(String path, String name) => _update(
+    state.copyWith(
+      richPresenceMode: AccordSettings.richPresenceFixed,
+      richPresenceFixedPath: AccordSettings.clampRichPresencePath(path),
+      richPresenceFixedName: AccordSettings.clampRichPresenceName(name),
+    ),
+  );
+
+  void setRichPresenceCustomName(String name) => _update(
+    state.copyWith(
+      richPresenceCustomName: AccordSettings.clampRichPresenceName(name),
+    ),
+  );
+
+  void setRichPresenceCustomKind(String kind) => _update(
+    state.copyWith(
+      richPresenceCustomKind: AccordSettings.normalizeRichPresenceKind(kind),
+    ),
+  );
+
+  void setVoiceOverlayFrame({
+    required double x,
+    required double y,
+    required double width,
+    required double height,
+  }) => _update(
+    state.copyWith(
+      voiceOverlayPlaced: true,
+      voiceOverlayMoved: true,
+      voiceOverlayX: AccordSettings.clampOverlayOrigin(x),
+      voiceOverlayY: AccordSettings.clampOverlayOrigin(y),
+      voiceOverlayWidth: AccordSettings.clampOverlayWidth(width),
+      voiceOverlayHeight: AccordSettings.clampOverlayHeight(height),
+    ),
+  );
+
+  void setAccompanimentVolume(int volume) =>
+      _update(state.copyWith(accompanimentVolume: volume.clamp(0, 200)));
 
   void setInputVolume(int volume) =>
       _update(state.copyWith(inputVolume: volume.clamp(0, 200)));

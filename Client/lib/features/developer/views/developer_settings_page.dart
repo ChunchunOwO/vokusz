@@ -1,3 +1,5 @@
+import 'package:bonfire/l10n/app_strings.dart';
+import 'package:bonfire/l10n/ui_copy.dart';
 import 'package:bonfire/features/developer/controllers/mcp_server_controller.dart';
 import 'package:bonfire/shared/components/settings_scaffold.dart';
 import 'package:bonfire/shared/components/section_header.dart';
@@ -47,29 +49,29 @@ class DeveloperSettingsPage extends ConsumerWidget {
     final server = ref.watch(mcpServerControllerProvider);
 
     return SettingsScaffold(
-      title: 'Developer',
+      title: UiCopy.developer(context: context),
       body: ListView(
         padding: const EdgeInsets.symmetric(vertical: 8),
         children: [
-          SectionHeader('Client MCP server'),
+          SectionHeader(UiCopy.clientMcpServer(context: context)),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
             child: Text(
-              'Exposes a local Model Context Protocol server on '
-              '127.0.0.1 so AI agents on this machine can read state and '
-              'drive the app. Bound to loopback only and protected by a '
-              'bearer token that never leaves this device.',
+              UiCopy.exposesALocalModelContextProtocolServer(context: context),
               style: Theme.of(
                 context,
               ).textTheme.bodySmall?.copyWith(color: colors.gray),
             ),
           ),
           SwitchListTile(
-            title: const Text('Enable MCP server'),
+            title: Text(UiCopy.enableMcpServer(context: context)),
             subtitle: Text(
               server.listening
-                  ? 'Listening on 127.0.0.1:${server.port}'
-                  : 'Stopped',
+                  ? UiCopy.listeningOn127001(
+                      context: context,
+                      arg0: server.port,
+                    )
+                  : UiCopy.stopped(context: context),
             ),
             value: mcpEnabled,
             onChanged: (v) => controller.setMcpEnabled(v),
@@ -78,30 +80,35 @@ class DeveloperSettingsPage extends ConsumerWidget {
             const _PortField(),
             const _TokenTile(),
             const Divider(height: 24),
-            SectionHeader('Exposed tool groups'),
+            SectionHeader(UiCopy.exposedToolGroups(context: context)),
             for (final group in AccordSettings.mcpToolGroups)
               CheckboxListTile(
                 dense: true,
-                title: Text(_groupLabels[group] ?? group),
+                title: Text(
+                  AppStrings.label(
+                    _groupLabels[group] ?? group,
+                    context: context,
+                  ),
+                ),
                 value: mcpAllowedGroups.contains(group),
                 onChanged: (v) =>
                     controller.setMcpGroupAllowed(group, v ?? false),
               ),
             const Divider(height: 24),
             SectionHeader(
-              'Recent activity',
+              UiCopy.recentActivity(context: context),
               trailing: TextButton(
                 onPressed: () => ref
                     .read(mcpServerControllerProvider.notifier)
                     .clearActivity(),
-                child: const Text('Clear'),
+                child: Text(UiCopy.clear(context: context)),
               ),
             ),
             if (server.activity.isEmpty)
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
                 child: Text(
-                  'No tool calls yet.',
+                  UiCopy.noToolCallsYet(context: context),
                   style: Theme.of(
                     context,
                   ).textTheme.bodySmall?.copyWith(color: colors.gray),
@@ -182,16 +189,19 @@ class _PortFieldState extends ConsumerState<_PortField> {
               controller: _controller,
               keyboardType: TextInputType.number,
               inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-              decoration: const InputDecoration(
+              decoration: InputDecoration(
                 isDense: true,
-                labelText: 'Port',
+                labelText: UiCopy.port(context: context),
                 border: OutlineInputBorder(),
               ),
               onSubmitted: (_) => _save(),
             ),
           ),
           const SizedBox(width: 8),
-          FilledButton(onPressed: _save, child: const Text('Save')),
+          FilledButton(
+            onPressed: _save,
+            child: Text(UiCopy.save(context: context)),
+          ),
         ],
       ),
     );
@@ -211,7 +221,7 @@ class _TokenTile extends ConsumerWidget {
         ? '(none)'
         : '${token.substring(0, 8)}…${token.substring(token.length - 4)}';
     return ListTile(
-      title: const Text('Bearer token'),
+      title: Text(UiCopy.bearerToken(context: context)),
       subtitle: Text(
         masked,
         style: TextStyle(fontFamily: 'monospace', color: colors.gray),
@@ -220,17 +230,20 @@ class _TokenTile extends ConsumerWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           IconButton(
-            tooltip: 'Copy',
+            tooltip: UiCopy.copy(context: context),
             icon: const Icon(Icons.copy, size: 18),
             onPressed: token.isEmpty
                 ? null
                 : () {
                     Clipboard.setData(ClipboardData(text: token));
-                    showInfoSnack(context, 'Token copied');
+                    showInfoSnack(
+                      context,
+                      UiCopy.tokenCopied(context: context),
+                    );
                   },
           ),
           IconButton(
-            tooltip: 'Regenerate',
+            tooltip: UiCopy.regenerate(context: context),
             icon: const Icon(Icons.refresh, size: 18),
             onPressed: () => ref
                 .read(settingsControllerProvider.notifier)

@@ -124,6 +124,17 @@ class LocalAudioTrack extends LocalTrack with AudioTrack, LocalAudioManagementMi
           track,
         );
 
+  /// Wraps an already-open audio stream (application loopback, for example)
+  /// so it can be published next to the microphone.
+  static LocalAudioTrack fromStream(
+    rtc.MediaStream stream,
+    rtc.MediaStreamTrack track, {
+    TrackSource source = TrackSource.unknown,
+    AudioCaptureOptions options = const AudioCaptureOptions(),
+  }) {
+    return LocalAudioTrack(source, stream, track, options);
+  }
+
   /// Creates a new audio track from the default audio input device.
   static Future<LocalAudioTrack> create([
     AudioCaptureOptions? options,

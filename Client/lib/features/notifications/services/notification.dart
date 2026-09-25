@@ -1,3 +1,4 @@
+import 'package:bonfire/l10n/ui_copy.dart';
 import 'package:bonfire/features/channels/utils/message_position.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
@@ -59,7 +60,7 @@ Future<void> dismissReadNotifications({
 Future<void> initializeNotifications() async {
   if (UniversalPlatform.isWeb) return;
 
-  const initializationSettings = InitializationSettings(
+  final initializationSettings = InitializationSettings(
     android: AndroidInitializationSettings('app_icon'),
     iOS: DarwinInitializationSettings(
       requestAlertPermission: false,
@@ -71,7 +72,7 @@ Future<void> initializeNotifications() async {
       requestBadgePermission: false,
       requestSoundPermission: false,
     ),
-    linux: LinuxInitializationSettings(defaultActionName: 'Open'),
+    linux: LinuxInitializationSettings(defaultActionName: UiCopy.open()),
     windows: WindowsInitializationSettings(
       appName: 'Vokusz',
       appUserModelId: 'com.vokusz.app',
@@ -141,11 +142,11 @@ Future<void> showMentionNotification({
 }) async {
   if (UniversalPlatform.isWeb || !_initialized) return;
 
-  const details = NotificationDetails(
+  final details = NotificationDetails(
     android: AndroidNotificationDetails(
       'mentions',
       'Mentions',
-      channelDescription: 'Notifications for messages that mention you.',
+      channelDescription: UiCopy.notificationsForMessagesThatMentionYou(),
       importance: Importance.high,
       priority: Priority.high,
     ),

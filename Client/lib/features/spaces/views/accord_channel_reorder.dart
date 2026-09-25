@@ -1,3 +1,4 @@
+import 'package:bonfire/l10n/ui_copy.dart';
 import 'package:accordkit/accordkit.dart';
 import 'package:bonfire/shared/components/async_state_views.dart';
 import 'package:bonfire/shared/utils/rest_result_ext.dart';
@@ -97,7 +98,7 @@ class _ChannelReorderState extends ConsumerState<_ChannelReorder> {
         if (!mounted) return;
         setState(() {
           _busy = false;
-          _error = result.errorOr('Failed to reorder');
+          _error = result.errorOr(UiCopy.failedToReorder());
         });
         return;
       }
@@ -108,7 +109,10 @@ class _ChannelReorderState extends ConsumerState<_ChannelReorder> {
     // Mirror successful updates into the channel cache. The gateway echo will
     // typically arrive too, but updating optimistically keeps the UI snappy.
     final notifier = ref.read(
-      accordChannelsControllerProvider(ref.readActiveServerKey() ?? '', widget.spaceId).notifier,
+      accordChannelsControllerProvider(
+        ref.readActiveServerKey() ?? '',
+        widget.spaceId,
+      ).notifier,
     );
     for (final channel in updated) {
       notifier.upsertChannel(channel);
@@ -122,9 +126,9 @@ class _ChannelReorderState extends ConsumerState<_ChannelReorder> {
     final ids = _selected.toList();
     final ok = await showConfirmDialog(
       context,
-      title: 'Delete channels',
-      message: 'Delete ${ids.length} channel(s)? This cannot be undone.',
-      confirmLabel: 'Delete',
+      title: UiCopy.deleteChannels(),
+      message: UiCopy.deleteChannelSThisCannotBeUndone(arg0: ids.length),
+      confirmLabel: UiCopy.delete(),
       danger: true,
     );
     if (ok != true || !mounted) return;
@@ -133,7 +137,10 @@ class _ChannelReorderState extends ConsumerState<_ChannelReorder> {
       _error = null;
     });
     final notifier = ref.read(
-      accordChannelsControllerProvider(ref.readActiveServerKey() ?? '', widget.spaceId).notifier,
+      accordChannelsControllerProvider(
+        ref.readActiveServerKey() ?? '',
+        widget.spaceId,
+      ).notifier,
     );
     final failed = <String>[];
     for (final id in ids) {
@@ -152,7 +159,9 @@ class _ChannelReorderState extends ConsumerState<_ChannelReorder> {
         ..clear()
         ..addAll(failed);
       _selecting = _selected.isNotEmpty;
-      _error = failed.isEmpty ? null : 'Failed to delete ${failed.length}';
+      _error = failed.isEmpty
+          ? null
+          : UiCopy.failedToDelete2(arg0: failed.length);
     });
   }
 
@@ -178,12 +187,16 @@ class _ChannelReorderState extends ConsumerState<_ChannelReorder> {
                   ),
                   const SizedBox(width: 8),
                   Text(
-                    _selecting ? 'Delete channels' : 'Reorder channels',
+                    _selecting
+                        ? UiCopy.deleteChannels(context: context)
+                        : UiCopy.reorderChannels(context: context),
                     style: theme.textTheme.titleMedium,
                   ),
                   const Spacer(),
                   IconButton(
-                    tooltip: _selecting ? 'Done selecting' : 'Select to delete',
+                    tooltip: _selecting
+                        ? UiCopy.doneSelecting(context: context)
+                        : UiCopy.selectToDelete(context: context),
                     onPressed: _busy
                         ? null
                         : () => setState(() {
@@ -196,7 +209,7 @@ class _ChannelReorderState extends ConsumerState<_ChannelReorder> {
                     ),
                   ),
                   IconButton(
-                    tooltip: 'Close',
+                    tooltip: UiCopy.close(context: context),
                     onPressed: _busy
                         ? null
                         : () => Navigator.of(context).maybePop(),
@@ -207,10 +220,12 @@ class _ChannelReorderState extends ConsumerState<_ChannelReorder> {
               const SizedBox(height: 4),
               Text(
                 _selecting
-                    ? 'Select channels to delete. This cannot be undone.'
-                    : 'Drag categories and channels into your preferred order. '
-                          'Drop a channel onto a category to move it into that '
-                          'category.',
+                    ? UiCopy.selectChannelsToDeleteThisCannotBe(
+                        context: context,
+                      )
+                    : UiCopy.dragCategoriesAndChannelsIntoYourPreferred(
+                        context: context,
+                      ),
                 style: theme.textTheme.bodySmall!.copyWith(color: colors.gray),
               ),
               if (_error != null) ...[
@@ -312,7 +327,7 @@ class _ChannelReorderState extends ConsumerState<_ChannelReorder> {
                     onPressed: _busy
                         ? null
                         : () => Navigator.of(context).maybePop(),
-                    child: const Text('Cancel'),
+                    child: Text(UiCopy.cancel(context: context)),
                   ),
                   const SizedBox(width: 8),
                   if (_selecting)
@@ -330,7 +345,12 @@ class _ChannelReorderState extends ConsumerState<_ChannelReorder> {
                               child: CircularProgressIndicator(strokeWidth: 2),
                             )
                           : const Icon(Icons.delete_outline, size: 16),
-                      label: Text('Delete selected (${_selected.length})'),
+                      label: Text(
+                        UiCopy.deleteSelected(
+                          context: context,
+                          arg0: _selected.length,
+                        ),
+                      ),
                     )
                   else
                     FilledButton(
@@ -341,7 +361,7 @@ class _ChannelReorderState extends ConsumerState<_ChannelReorder> {
                               height: 16,
                               child: CircularProgressIndicator(strokeWidth: 2),
                             )
-                          : const Text('Save'),
+                          : Text(UiCopy.save(context: context)),
                     ),
                 ],
               ),

@@ -1143,7 +1143,7 @@ async fn test_reorder_channels_cannot_affect_other_space() {
         &serde_json::json!([{ "id": channel_b, "position": 99 }]),
     );
     let response = server.router().oneshot(req).await.unwrap();
-    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 
     // Verify the channel in Space B was NOT changed
     let ch_after = accordserver::db::channels::get_channel_row(server.pool(), &channel_b)

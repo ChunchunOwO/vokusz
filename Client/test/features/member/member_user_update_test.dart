@@ -84,6 +84,22 @@ void applyUserUpdate(ProviderContainer c, AccordUser user) {
 }
 
 void main() {
+  test('domain role update retains the embedded profile and avatar', () async {
+    final c = makeContainer(_membersJson([{
+      'user_id': 'u1',
+      'user': {'id': 'u1', 'username': 'Alice', 'avatar': 'avatarhash'},
+    }]));
+    final provider = accordMembersControllerProvider(_serverKey, _spaceId);
+    await _waitUntil(() => c.read(provider)?['u1']?.user != null);
+    c.read(provider.notifier).upsertMember(AccordMember(
+      userId: 'u1', spaceId: _spaceId, roles: ['domain-admin'],
+    ));
+    final member = c.read(provider)!['u1']!;
+    expect(accordMemberName(member), 'Alice');
+    expect(member.user?.avatar, 'avatarhash');
+    expect(member.roles, ['domain-admin']);
+  });
+
   test('refreshes the global user cache and every open space member', () async {
     final c = makeContainer(
       _membersJson([

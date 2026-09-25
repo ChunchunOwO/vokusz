@@ -1,3 +1,4 @@
+import 'package:bonfire/l10n/app_strings.dart';
 import 'package:bonfire/theme/theme.dart';
 import 'package:flutter/material.dart';
 
@@ -25,14 +26,14 @@ Future<bool?> showConfirmDialog(
       actions: [
         TextButton(
           onPressed: () => Navigator.of(ctx).pop(false),
-          child: Text(cancelLabel),
+          child: Text(AppStrings.label(cancelLabel, context: context)),
         ),
         FilledButton(
           onPressed: () => Navigator.of(ctx).pop(true),
           style: danger
               ? FilledButton.styleFrom(backgroundColor: colors.red)
               : null,
-          child: Text(confirmLabel),
+          child: Text(AppStrings.label(confirmLabel, context: context)),
         ),
       ],
     ),

@@ -1,3 +1,5 @@
+import 'package:bonfire/l10n/app_strings.dart';
+import 'package:bonfire/l10n/ui_copy.dart';
 import 'package:bonfire/shared/components/self_hosting_dialog.dart';
 import 'package:bonfire/theme/theme.dart';
 import 'package:flutter/material.dart';
@@ -58,19 +60,16 @@ const List<WelcomeHighlight> kWelcomeHighlights = <WelcomeHighlight>[
 /// button has to stay above the fold.
 ///
 /// [onBrowse] opens the server browser (the default next step); [onManualConnect]
-/// jumps straight to the connect-by-URL credentials form; [onSwitchAccount], when
-/// non-null, surfaces a link back to saved accounts.
+/// jumps straight to the connect-by-URL credentials form.
 class WelcomeView extends StatelessWidget {
   const WelcomeView({
     super.key,
     required this.onBrowse,
     required this.onManualConnect,
-    this.onSwitchAccount,
   });
 
   final VoidCallback onBrowse;
   final VoidCallback onManualConnect;
-  final VoidCallback? onSwitchAccount;
 
   @override
   Widget build(BuildContext context) {
@@ -84,14 +83,6 @@ class WelcomeView extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.center,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Center(
-              child: Image.asset(
-                'assets/images/icon.png',
-                width: wide ? 88 : 76,
-                height: wide ? 88 : 76,
-              ),
-            ),
-            const SizedBox(height: 14),
             Text(
               'Vokusz',
               textAlign: TextAlign.center,
@@ -103,8 +94,7 @@ class WelcomeView extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             Text(
-              'Free screen sharing. Smooth, stable voice — on infrastructure you '
-              'control or trust.',
+              UiCopy.freeScreenSharingSmoothStableVoiceOn(context: context),
               textAlign: TextAlign.center,
               style: theme.textTheme.bodyLarge?.copyWith(color: colors.gray),
             ),
@@ -131,18 +121,10 @@ class WelcomeView extends StatelessWidget {
             TextButton(
               onPressed: onManualConnect,
               child: Text(
-                'Connect directly to a server',
+                UiCopy.connectDirectlyToAServer(context: context),
                 style: theme.textTheme.bodyMedium,
               ),
             ),
-            if (onSwitchAccount != null)
-              TextButton(
-                onPressed: onSwitchAccount,
-                child: Text(
-                  'Switch account',
-                  style: theme.textTheme.bodyMedium,
-                ),
-              ),
             // Narrow: the self-hosting CTA keeps its full button weight but
             // sits last, so adding it can't push "Browse Servers" or the
             // connect-by-URL link below the fold on a small phone.
@@ -162,13 +144,15 @@ class WelcomeView extends StatelessWidget {
         child: ElevatedButton.icon(
           onPressed: onBrowse,
           icon: const Icon(Icons.explore_outlined, size: 20),
-          label: const Text('Browse Servers'),
+          label: Text(UiCopy.browseServers()),
           style: ElevatedButton.styleFrom(
-            backgroundColor: colors.primary,
-            foregroundColor: Colors.white,
+            elevation: 0,
+            backgroundColor: colors.background,
+            foregroundColor: colors.dirtyWhite,
             textStyle: theme.textTheme.titleSmall,
+            side: BorderSide(color: colors.primary),
             shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(4),
             ),
           ),
         ),
@@ -184,12 +168,12 @@ class WelcomeView extends StatelessWidget {
       onPressed: () =>
           showSelfHostingDialog(context, onConnect: onManualConnect),
       icon: const Icon(Icons.home_work_outlined, size: 20),
-      label: const Text('Run your own server'),
+      label: Text(UiCopy.runYourOwnServer(context: context)),
       style: OutlinedButton.styleFrom(
         foregroundColor: colors.dirtyWhite,
         side: BorderSide(color: colors.primary),
         textStyle: theme.textTheme.titleSmall,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
       ),
     ),
   );
@@ -231,7 +215,7 @@ class _HighlightCard extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 18),
       decoration: BoxDecoration(
         color: colors.foreground,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(4),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -239,14 +223,14 @@ class _HighlightCard extends StatelessWidget {
           Icon(highlight.icon, size: 22, color: colors.primary),
           const SizedBox(height: 10),
           Text(
-            highlight.title,
+            AppStrings.label(highlight.title, context: context),
             style: theme.textTheme.titleSmall?.copyWith(
               fontWeight: FontWeight.w700,
             ),
           ),
           const SizedBox(height: 6),
           Text(
-            highlight.body,
+            AppStrings.label(highlight.body, context: context),
             style: theme.textTheme.bodySmall?.copyWith(color: colors.gray),
           ),
         ],

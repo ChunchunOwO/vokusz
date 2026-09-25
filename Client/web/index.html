@@ -1,11 +1,11 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-CN">
 
 <head>
   <base href="$FLUTTER_BASE_HREF">
   <meta charset="UTF-8">
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
-  <meta name="description" content="A fast, cross-platform Flutter client for Vokusz.">
+  <meta name="description" content="Vokusz：免费屏幕共享，流畅稳定的语音与社区聊天。">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black">
@@ -30,148 +30,82 @@
       overflow: hidden;
     }
 
-    .loading-container {
+    .boot {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
       text-align: center;
-      position: relative;
     }
 
-    .welcome-text {
-      font-size: 28px;
-      margin-bottom: 10px;
-      color: #939BA3;
-      font-weight: 300;
-      letter-spacing: 2px;
-    }
-
-    .app-name {
-      font-size: 72px;
+    .mark {
+      font-size: clamp(48px, 9vw, 76px);
       font-weight: 600;
-      margin-bottom: 20px;
-      /* Accent-family gradient (#5764F1 ± a tint) instead of Bonfire's fire
-         palette, so it shimmers but stays on Vokusz brand. */
-      background: linear-gradient(45deg, #5764F1, #8A93F6, #5764F1);
-      background-size: 200% auto;
+      letter-spacing: 0.08em;
+      line-height: 1;
+      background-image: linear-gradient(
+        100deg,
+        rgba(213, 217, 223, 0.45) 0%,
+        rgba(213, 217, 223, 0.45) 36%,
+        #D5D9DF 46%,
+        #8B96FF 52%,
+        #5764F1 58%,
+        rgba(213, 217, 223, 0.45) 68%,
+        rgba(213, 217, 223, 0.45) 100%
+      );
+      background-size: 220% 100%;
+      background-position: 100% 0;
       -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      animation: accentShimmer 3s ease infinite;
+      background-clip: text;
+      color: transparent;
+      animation: vokusz-shimmer 4s linear infinite;
     }
 
-    .loading-text {
-      font-size: 18px;
-      margin-top: 30px;
-      color: #939BA3;
-      font-weight: 300;
-    }
-
-    @keyframes accentShimmer {
-      0% {
-        background-position: 0% 50%;
-      }
-
-      50% {
-        background-position: 100% 50%;
-      }
-
-      100% {
-        background-position: 0% 50%;
-      }
-    }
-
-    .complex-loader {
-      width: 100px;
-      height: 100px;
-      position: relative;
-      margin: 0 auto;
-    }
-
-    .complex-loader div {
-      position: absolute;
-      width: 100%;
-      height: 100%;
-      border: 4px solid transparent;
-      border-top-color: #5764F1;
+    .spin {
+      width: 28px;
+      height: 28px;
+      margin: 36px 0 18px;
       border-radius: 50%;
-      animation: spinnerOne 1.2s linear infinite;
+      border: 2px solid rgba(213, 217, 223, 0.16);
+      border-top-color: #5764F1;
+      animation: vokusz-spin 0.8s linear infinite;
     }
 
-    .complex-loader div:nth-child(2) {
-      border: 4px solid transparent;
-      border-bottom-color: #8A93F6;
-      animation: spinnerTwo 1.2s linear infinite;
+    .hint {
+      font-size: 14px;
+      color: #5C636B;
     }
 
-    .complex-loader div:nth-child(3) {
-      border: 4px solid transparent;
-      border-left-color: #4049C0;
-      animation: spinnerThree 1.2s linear infinite;
+    @keyframes vokusz-shimmer {
+      from { background-position: 120% 0; }
+      to { background-position: -120% 0; }
     }
 
-    @keyframes spinnerOne {
-      0% {
-        transform: rotate(0deg);
-        border-width: 4px;
-      }
-
-      50% {
-        transform: rotate(180deg);
-        border-width: 1px;
-      }
-
-      100% {
-        transform: rotate(360deg);
-        border-width: 4px;
-      }
+    @keyframes vokusz-spin {
+      to { transform: rotate(360deg); }
     }
 
-    @keyframes spinnerTwo {
-      0% {
-        transform: rotate(0deg);
-        border-width: 1px;
-      }
-
-      50% {
-        transform: rotate(180deg);
-        border-width: 4px;
-      }
-
-      100% {
-        transform: rotate(360deg);
-        border-width: 1px;
-      }
-    }
-
-    @keyframes spinnerThree {
-      0% {
-        transform: rotate(0deg);
-        border-width: 2px;
-      }
-
-      50% {
-        transform: rotate(180deg);
-        border-width: 3px;
-      }
-
-      100% {
-        transform: rotate(360deg);
-        border-width: 2px;
-      }
+    @media (prefers-reduced-motion: reduce) {
+      .mark, .spin { animation: none; }
+      .mark { background-position: 40% 0; }
     }
   </style>
 </head>
 
 <body>
-  <div class="loading-container">
-    <div class="welcome-text">Welcome to</div>
-    <div class="app-name">Vokusz</div>
-    <div class="complex-loader">
-      <div></div>
-      <div></div>
-      <div></div>
-    </div>
-    <div class="loading-text">Loading Vokusz</div>
+  <div class="boot">
+    <div class="mark">Vokusz</div>
+    <div class="spin" role="progressbar" aria-label="正在加载"></div>
+    <div class="hint">正在加载 Vokusz</div>
   </div>
 
   <script>
+    try {
+      const english = localStorage.getItem('vokusz-language') === 'en';
+      document.documentElement.lang = english ? 'en' : 'zh-CN';
+      document.querySelector('.hint').textContent = english ? 'Loading Vokusz' : '正在加载 Vokusz';
+      document.querySelector('.spin').setAttribute('aria-label', english ? 'Loading' : '正在加载');
+    } catch (_) { /* Storage may be disabled; use the default language. */ }
+
     // Service-worker update bridge (#91). Surfaces a newer deployed build to the
     // running tab so the app can offer a one-tap reload instead of relying on a
     // manual refresh. Read by lib/features/updates/services/web_update_web.dart.
@@ -223,6 +157,12 @@
     })();
   </script>
 
+  <script>
+    window.addEventListener('flutter-first-frame', function () {
+      var boot = document.querySelector('.boot');
+      if (boot) boot.remove();
+    });
+  </script>
   <script src="flutter_bootstrap.js" async></script>
 </body>
 

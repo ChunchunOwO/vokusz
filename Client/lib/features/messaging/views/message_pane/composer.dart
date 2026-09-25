@@ -156,23 +156,20 @@ class _ComposerState extends ConsumerState<_Composer> {
     return showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Paste large text'),
-        content: Text(
-          "That's a lot of text ($length characters). Attach it as a .txt "
-          'file instead of pasting inline?',
-        ),
+        title: Text(UiCopy.pasteLargeText()),
+        content: Text(UiCopy.thatSALotOfTextCharacters(arg0: length)),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('Cancel'),
+            child: Text(UiCopy.cancel()),
           ),
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Paste inline'),
+            child: Text(UiCopy.pasteInline()),
           ),
           FilledButton(
             onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Attach as file'),
+            child: Text(UiCopy.attachAsFile()),
           ),
         ],
       ),
@@ -374,7 +371,7 @@ class _ComposerState extends ConsumerState<_Composer> {
     } catch (e) {
       debugPrint('File picker failed: $e');
       if (mounted) {
-        setState(() => _error = "Couldn't open the file picker: $e");
+        setState(() => _error = UiCopy.couldnTOpenTheFilePicker(arg0: e));
       }
       return;
     }
@@ -398,9 +395,7 @@ class _ComposerState extends ConsumerState<_Composer> {
       // share a handler that types every dropped path as a file, so the path
       // itself has to be checked or a folder reads as an unreadable file.
       if (item is DropItemDirectory || isDroppedDirectory(item.path)) {
-        rejections.add(
-          '${item.name} is a folder — drop the files inside it instead.',
-        );
+        rejections.add(UiCopy.isAFolderDropTheFilesInside(arg0: item.name));
         continue;
       }
       // macOS sandbox: a file dragged in from outside the container is only
@@ -570,7 +565,7 @@ class _ComposerState extends ConsumerState<_Composer> {
       if (mounted) {
         setState(() {
           _sending = false;
-          _error = 'Failed to send: $e';
+          _error = UiCopy.failedToSend(arg0: e);
           _attachments.insertAll(0, attachments);
         });
         restoreFailedSend(_controller, text);
@@ -624,10 +619,8 @@ class _ComposerState extends ConsumerState<_Composer> {
     final atAttachmentLimit =
         _attachments.length >= limits.maxAttachmentsPerMessage;
     final hint = _dragging
-        ? 'Drop files to attach'
-        : widget.channelName != null
-        ? 'Message #${widget.channelName}'
-        : 'Message';
+        ? AppStrings.of(context).dropToAttach
+        : AppStrings.of(context).messageHint(widget.channelName);
     final unauthorizedBroadcast =
         !widget.canMentionEveryone &&
         _broadcastMention.hasMatch(_controller.text);
@@ -670,9 +663,11 @@ class _ComposerState extends ConsumerState<_Composer> {
           padding: const EdgeInsets.symmetric(horizontal: 8),
           decoration: BoxDecoration(
             color: colors.darkGray,
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(4),
             border: Border.all(
-              color: _dragging ? colors.primary : Colors.transparent,
+              color: _dragging
+                  ? colors.primary
+                  : colors.gray.withValues(alpha: 0.35),
             ),
           ),
           child: Column(
@@ -687,7 +682,10 @@ class _ComposerState extends ConsumerState<_Composer> {
                       const SizedBox(width: 6),
                       Expanded(
                         child: Text(
-                          'Replying to ${widget.replyName ?? 'message'}',
+                          UiCopy.replyingTo(
+                            context: context,
+                            arg0: widget.replyName ?? 'message',
+                          ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: Theme.of(
@@ -696,7 +694,7 @@ class _ComposerState extends ConsumerState<_Composer> {
                         ),
                       ),
                       IconButton(
-                        tooltip: 'Cancel reply',
+                        tooltip: UiCopy.cancelReply(context: context),
                         visualDensity: VisualDensity.compact,
                         onPressed: widget.onCancelReply,
                         icon: Icon(Icons.close, size: 14, color: colors.gray),
@@ -712,7 +710,7 @@ class _ComposerState extends ConsumerState<_Composer> {
                     children: [
                       Expanded(child: InlineError(_error!, centered: false)),
                       IconButton(
-                        tooltip: 'Dismiss',
+                        tooltip: UiCopy.dismiss(context: context),
                         visualDensity: VisualDensity.compact,
                         onPressed: () => setState(() => _error = null),
                         icon: Icon(Icons.close, size: 14, color: colors.gray),
@@ -743,7 +741,7 @@ class _ComposerState extends ConsumerState<_Composer> {
                   child: Align(
                     alignment: Alignment.centerLeft,
                     child: Text(
-                      "You don't have permission to mention @everyone or @here in this channel.",
+                      UiCopy.youDonTHavePermissionToMention(context: context),
                       style: Theme.of(
                         context,
                       ).textTheme.bodySmall!.copyWith(color: colors.yellow),
@@ -786,11 +784,18 @@ class _ComposerState extends ConsumerState<_Composer> {
                 children: [
                   IconButton(
                     tooltip: atAttachmentLimit
-                        ? 'Attachment limit reached '
-                              '(${limits.maxAttachmentsPerMessage} per message)'
+                        ? UiCopy.attachmentLimitReachedPerMessage(
+                            context: context,
+                            arg0: limits.maxAttachmentsPerMessage,
+                          )
                         : [
-                            'Attach files '
-                                '(${attachmentLimitsHint(maxBytes: limits.maxAttachmentBytes, maxCount: limits.maxAttachmentsPerMessage)})',
+                            UiCopy.attachFiles(
+                              context: context,
+                              arg0: attachmentLimitsHint(
+                                maxBytes: limits.maxAttachmentBytes,
+                                maxCount: limits.maxAttachmentsPerMessage,
+                              ),
+                            ),
                             if (budgetHint != null) budgetHint,
                           ].join('\n'),
                     onPressed: _sending || atAttachmentLimit
@@ -835,7 +840,7 @@ class _ComposerState extends ConsumerState<_Composer> {
                     ),
                   ),
                   IconButton(
-                    tooltip: 'Emoji',
+                    tooltip: AppStrings.of(context).emoji,
                     onPressed: _sending ? null : _pickEmoji,
                     icon: Icon(
                       Icons.emoji_emotions_outlined,
@@ -846,7 +851,7 @@ class _ComposerState extends ConsumerState<_Composer> {
                   IconButton(
                     tooltip: sendBlocked && cooldown != null
                         ? sendCooldownLabel(cooldown, now)
-                        : 'Send',
+                        : UiCopy.send(context: context),
                     onPressed: _sending || sendBlocked ? null : _send,
                     icon: Icon(
                       Icons.send,

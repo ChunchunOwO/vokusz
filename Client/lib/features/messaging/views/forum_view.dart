@@ -1,3 +1,4 @@
+import 'package:bonfire/l10n/ui_copy.dart';
 import 'package:accordkit/accordkit.dart';
 import 'package:bonfire/features/messaging/utils/send_cooldown.dart';
 import 'package:bonfire/shared/utils/client_access.dart';
@@ -20,10 +21,10 @@ enum ForumSort { latestActivity, newest, mostReplies }
 
 extension on ForumSort {
   String get label => switch (this) {
-        ForumSort.latestActivity => 'Latest activity',
-        ForumSort.newest => 'Newest',
-        ForumSort.mostReplies => 'Most replies',
-      };
+    ForumSort.latestActivity => UiCopy.latestActivity(),
+    ForumSort.newest => UiCopy.newest(),
+    ForumSort.mostReplies => UiCopy.mostReplies(),
+  };
 }
 
 /// A forum channel's body: a traditional forum board of top-level posts (each a
@@ -79,8 +80,12 @@ class _ForumChannelViewState extends ConsumerState<ForumChannelView> {
 
   AccordClient? get _client => ref.accordClient;
 
-  ForumPostsController get _postsNotifier =>
-      ref.read(forumPostsControllerProvider(ref.readActiveServerKey() ?? '', widget.channelId).notifier);
+  ForumPostsController get _postsNotifier => ref.read(
+    forumPostsControllerProvider(
+      ref.readActiveServerKey() ?? '',
+      widget.channelId,
+    ).notifier,
+  );
 
   Future<void> _reload() async {
     final client = _client;
@@ -115,9 +120,9 @@ class _ForumChannelViewState extends ConsumerState<ForumChannelView> {
     final created = await showDialog<AccordMessage>(
       context: context,
       builder: (dialogContext) => PostComposerDialog(
-        title: 'New post',
+        title: UiCopy.newPost(),
         sendFailure: () => sendFailure,
-        submitLabel: 'Post',
+        submitLabel: UiCopy.post(),
         bodyLabel: 'Body (optional)',
         initialTitle: '',
         autofocusTitle: true,
@@ -132,7 +137,10 @@ class _ForumChannelViewState extends ConsumerState<ForumChannelView> {
             Navigator.of(dialogContext).pop(message);
             return null;
           }
-          sendFailure = SendFailure.fromResult(result, 'Failed to create post');
+          sendFailure = SendFailure.fromResult(
+            result,
+            UiCopy.failedToCreatePost(),
+          );
           return sendFailure!.message;
         },
       ),
@@ -189,34 +197,36 @@ class _ForumChannelViewState extends ConsumerState<ForumChannelView> {
     final isOwn = _isOwn(post);
     final entries = <AccordMenuEntry>[
       AccordMenuEntry(
-        label: 'Open',
+        label: UiCopy.open(),
         icon: Icons.open_in_new,
         onSelected: () => _openPost(post),
       ),
       if (isOwn)
         AccordMenuEntry(
-          label: 'Edit',
+          label: UiCopy.edit(),
           icon: Icons.edit_outlined,
           onSelected: () => _editPost(post),
         ),
       if (widget.canManageMessages)
         AccordMenuEntry(
-          label: post.pinned ? 'Unpin' : 'Pin',
+          label: post.pinned ? UiCopy.unpin() : UiCopy.pin(),
           icon: post.pinned ? Icons.push_pin_outlined : Icons.push_pin,
           onSelected: () => _togglePin(post),
         ),
       if (isOwn || widget.canManageMessages)
         AccordMenuEntry(
-          label: 'Delete',
+          label: UiCopy.delete(),
           icon: Icons.delete_outline,
           destructive: true,
           onSelected: () => _deletePost(post),
         ),
     ];
-    showAccordContextMenu(context,
-        entries: entries,
-        globalPosition: position,
-        title: resolveForumPostTitle(post));
+    showAccordContextMenu(
+      context,
+      entries: entries,
+      globalPosition: position,
+      title: resolveForumPostTitle(post),
+    );
   }
 
   @override
@@ -234,7 +244,12 @@ class _ForumChannelViewState extends ConsumerState<ForumChannelView> {
         onClose: (result) => _onThreadClosed(openPost, result),
       );
     }
-    final posts = ref.watch(forumPostsControllerProvider(ref.readActiveServerKey() ?? '', widget.channelId));
+    final posts = ref.watch(
+      forumPostsControllerProvider(
+        ref.readActiveServerKey() ?? '',
+        widget.channelId,
+      ),
+    );
     // Compute once and capture in the itemBuilder closure so the sort is not
     // re-run O(n) times as items scroll into view.
     final sorted = posts == null ? const <AccordMessage>[] : _sorted(posts);
@@ -251,33 +266,35 @@ class _ForumChannelViewState extends ConsumerState<ForumChannelView> {
               child: posts == null
                   ? const LoadingView()
                   : posts.isEmpty
-                      ? Center(
-                          child: Text('No posts yet',
-                              style: theme.textTheme.bodyMedium))
-                      : RefreshIndicator(
-                          onRefresh: _reload,
-                          child: ListView.separated(
-                            padding: const EdgeInsets.fromLTRB(12, 12, 12, 88),
-                            itemCount: sorted.length,
-                            separatorBuilder: (_, _) =>
-                                const SizedBox(height: 8),
-                            itemBuilder: (context, index) {
-                              final post = sorted[index];
-                              return _PostRow(
-                                // Keyed by post id so rows follow their post
-                                // across re-sorts and insertions rather than
-                                // their list slot (see #198). The row's
-                                // callbacks already capture [post] explicitly.
-                                key: ValueKey(post.id),
-                                post: post,
-                                colors: colors,
-                                spaceId: widget.spaceId,
-                                onTap: () => _openPost(post),
-                                onMenu: (pos) => _showPostMenu(post, pos),
-                              );
-                            },
-                          ),
-                        ),
+                  ? Center(
+                      child: Text(
+                        UiCopy.noPostsYet(context: context),
+                        style: theme.textTheme.bodyMedium,
+                      ),
+                    )
+                  : RefreshIndicator(
+                      onRefresh: _reload,
+                      child: ListView.separated(
+                        padding: const EdgeInsets.fromLTRB(12, 12, 12, 88),
+                        itemCount: sorted.length,
+                        separatorBuilder: (_, _) => const SizedBox(height: 8),
+                        itemBuilder: (context, index) {
+                          final post = sorted[index];
+                          return _PostRow(
+                            // Keyed by post id so rows follow their post
+                            // across re-sorts and insertions rather than
+                            // their list slot (see #198). The row's
+                            // callbacks already capture [post] explicitly.
+                            key: ValueKey(post.id),
+                            post: post,
+                            colors: colors,
+                            spaceId: widget.spaceId,
+                            onTap: () => _openPost(post),
+                            onMenu: (pos) => _showPostMenu(post, pos),
+                          );
+                        },
+                      ),
+                    ),
             ),
           ],
         ),
@@ -288,7 +305,7 @@ class _ForumChannelViewState extends ConsumerState<ForumChannelView> {
             child: FloatingActionButton.extended(
               onPressed: _newPost,
               icon: const Icon(Icons.add),
-              label: const Text('New post'),
+              label: Text(UiCopy.newPost(context: context)),
             ),
           ),
       ],
@@ -316,15 +333,16 @@ class _SortBar extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
       child: Row(
         children: [
-          Text('$count ${count == 1 ? 'post' : 'posts'}',
-              style: theme.textTheme.labelMedium!
-                  .copyWith(color: colors.gray)),
+          Text(
+            '$count ${count == 1 ? 'post' : 'posts'}',
+            style: theme.textTheme.labelMedium!.copyWith(color: colors.gray),
+          ),
           const Spacer(),
           Icon(Icons.sort, size: 16, color: colors.gray),
           const SizedBox(width: 6),
           PopupMenuButton<ForumSort>(
             initialValue: sort,
-            tooltip: 'Sort posts',
+            tooltip: UiCopy.sortPosts(context: context),
             onSelected: onChanged,
             itemBuilder: (context) => [
               for (final s in ForumSort.values)
@@ -370,16 +388,36 @@ class _PostRow extends ConsumerWidget {
     final authorId = post.authorId;
     final member = spaceId == null
         ? null
-        : ref.watch(accordMembersControllerProvider(ref.readActiveServerKey() ?? '', spaceId!)
-            .select((m) => m?[authorId]));
-    final user =
-        ref.watch(accordUsersControllerProvider(ref.readActiveServerKey() ?? '').select((m) => m[authorId]));
-    final ensure = ref.read(accordUsersControllerProvider(ref.readActiveServerKey() ?? '').notifier).ensure;
+        : ref.watch(
+            accordMembersControllerProvider(
+              ref.readActiveServerKey() ?? '',
+              spaceId!,
+            ).select((m) => m?[authorId]),
+          );
+    final user = ref.watch(
+      accordUsersControllerProvider(
+        ref.readActiveServerKey() ?? '',
+      ).select((m) => m[authorId]),
+    );
+    final ensure = ref
+        .read(
+          accordUsersControllerProvider(
+            ref.readActiveServerKey() ?? '',
+          ).notifier,
+        )
+        .ensure;
     final cdnUrl = ref.watchCdnUrl();
-    final author =
-        accordAuthorNameOf(authorId, member: member, user: user, ensure: ensure);
-    final avatarUrl =
-        accordAuthorAvatarUrlOf(member: member, user: user, cdnUrl: cdnUrl);
+    final author = accordAuthorNameOf(
+      authorId,
+      member: member,
+      user: user,
+      ensure: ensure,
+    );
+    final avatarUrl = accordAuthorAvatarUrlOf(
+      member: member,
+      user: user,
+      cdnUrl: cdnUrl,
+    );
     final avatarBg = accordAvatarColor(member?.user ?? user, authorId);
     final initial = accordInitial(author);
     final replies = post.replyCount;
@@ -414,31 +452,42 @@ class _PostRow extends ConsumerWidget {
                       Row(
                         children: [
                           if (post.pinned) ...[
-                            Icon(Icons.push_pin,
-                                size: 14, color: colors.primary),
+                            Icon(
+                              Icons.push_pin,
+                              size: 14,
+                              color: colors.primary,
+                            ),
                             const SizedBox(width: 4),
                           ],
                           Expanded(
-                            child: Text(resolveForumPostTitle(post),
-                                style: theme.textTheme.titleSmall,
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis),
+                            child: Text(
+                              resolveForumPostTitle(post),
+                              style: theme.textTheme.titleSmall,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
                           ),
                         ],
                       ),
                       const SizedBox(height: 4),
-                      Text(_metaLine(author),
-                          style: theme.textTheme.labelMedium!
-                              .copyWith(color: colors.gray),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis),
+                      Text(
+                        _metaLine(author),
+                        style: theme.textTheme.labelMedium!.copyWith(
+                          color: colors.gray,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
                       if (post.content.isNotEmpty) ...[
                         const SizedBox(height: 4),
-                        Text(post.content,
-                            style: theme.textTheme.bodySmall!
-                                .copyWith(color: colors.gray),
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis),
+                        Text(
+                          post.content,
+                          style: theme.textTheme.bodySmall!.copyWith(
+                            color: colors.gray,
+                          ),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ],
                     ],
                   ),
@@ -448,7 +497,7 @@ class _PostRow extends ConsumerWidget {
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
                     IconButton(
-                      tooltip: 'Post actions',
+                      tooltip: UiCopy.postActions(context: context),
                       visualDensity: VisualDensity.compact,
                       onPressed: () {
                         final box = context.findRenderObject() as RenderBox?;
@@ -457,8 +506,11 @@ class _PostRow extends ConsumerWidget {
                             : box.localToGlobal(box.size.center(Offset.zero));
                         onMenu(pos);
                       },
-                      icon: Icon(Icons.more_horiz,
-                          size: 18, color: colors.gray),
+                      icon: Icon(
+                        Icons.more_horiz,
+                        size: 18,
+                        color: colors.gray,
+                      ),
                     ),
                     if (replies > 0)
                       Padding(
@@ -466,12 +518,18 @@ class _PostRow extends ConsumerWidget {
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Icon(Icons.forum_outlined,
-                                size: 14, color: colors.gray),
+                            Icon(
+                              Icons.forum_outlined,
+                              size: 14,
+                              color: colors.gray,
+                            ),
                             const SizedBox(width: 4),
-                            Text('$replies',
-                                style: theme.textTheme.labelMedium!
-                                    .copyWith(color: colors.gray)),
+                            Text(
+                              '$replies',
+                              style: theme.textTheme.labelMedium!.copyWith(
+                                color: colors.gray,
+                              ),
+                            ),
                           ],
                         ),
                       ),
@@ -500,12 +558,11 @@ class _PostRow extends ConsumerWidget {
 String resolveForumPostTitle(AccordMessage post) {
   final title = post.title;
   if (title is String && title.trim().isNotEmpty) return title.trim();
-  final firstLine = post.content.split('\n').firstWhere(
-        (l) => l.trim().isNotEmpty,
-        orElse: () => '',
-      );
+  final firstLine = post.content
+      .split('\n')
+      .firstWhere((l) => l.trim().isNotEmpty, orElse: () => '');
   if (firstLine.trim().isNotEmpty) return firstLine.trim();
-  return 'Untitled post';
+  return UiCopy.untitledPost();
 }
 
 /// Parses an ISO timestamp to a comparable instant, or epoch for unparseable
@@ -530,6 +587,5 @@ String? _lastReplyText(AccordMessage post) {
   final last = post.lastReplyAt;
   if (last is! String || last.isEmpty) return null;
   final when = messageTimeFromIso(last);
-  return when.isEmpty ? null : 'last reply $when';
+  return when.isEmpty ? null : UiCopy.lastReply(arg0: when);
 }
-

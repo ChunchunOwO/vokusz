@@ -1,3 +1,4 @@
+import 'package:bonfire/l10n/ui_copy.dart';
 import 'package:bonfire/features/channels/controllers/muted_channels.dart';
 import 'package:bonfire/shared/utils/rest_result_ext.dart';
 import 'package:flutter/material.dart';
@@ -23,6 +24,8 @@ Future<void> toggleChannelMute(
   if (result != MuteResult.failed || !context.mounted) return;
   showInfoSnack(
     context,
-    muted ? 'Failed to unmute channel' : 'Failed to mute channel',
+    muted
+        ? UiCopy.failedToUnmuteChannel(context: context)
+        : UiCopy.failedToMuteChannel(context: context),
   );
 }

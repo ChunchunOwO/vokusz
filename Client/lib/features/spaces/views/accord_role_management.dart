@@ -1,3 +1,5 @@
+import 'package:bonfire/l10n/app_strings.dart';
+import 'package:bonfire/l10n/ui_copy.dart';
 import 'package:accordkit/accordkit.dart';
 import 'package:bonfire/shared/components/async_state_views.dart';
 import 'package:bonfire/shared/components/color_swatch_chip.dart';
@@ -83,7 +85,12 @@ class _RoleManagementState extends ConsumerState<_RoleManagement> {
         ?.firstWhereOrNull((s) => s.id == widget.spaceId);
     final currentUserId = ref.readUserId();
     final isAdmin = ref.readIsAdmin();
-    final members = ref.read(accordMembersControllerProvider(ref.readActiveServerKey() ?? '', widget.spaceId));
+    final members = ref.read(
+      accordMembersControllerProvider(
+        ref.readActiveServerKey() ?? '',
+        widget.spaceId,
+      ),
+    );
     return accordMyHighestRolePosition(
       space: space,
       selfMember: currentUserId == null ? null : members?[currentUserId],
@@ -121,13 +128,13 @@ class _RoleManagementState extends ConsumerState<_RoleManagement> {
   Future<void> _createRole() async {
     final role = await _run<AccordRole>(
       (c) => c.roles.create(widget.spaceId, {
-        'name': 'new role',
+        'name': UiCopy.newRole(),
         'color': 0,
         'hoist': false,
         'mentionable': false,
         'permissions': <String>[],
       }),
-      failure: 'Failed to create role',
+      failure: UiCopy.failedToCreateRole(),
     );
     if (role == null || !mounted) return;
     ref
@@ -145,7 +152,7 @@ class _RoleManagementState extends ConsumerState<_RoleManagement> {
         'mentionable': edited.mentionable,
         'permissions': edited.permissions,
       }),
-      failure: 'Failed to save role',
+      failure: UiCopy.failedToSaveRole(),
     );
     if (role == null || !mounted) return;
     ref
@@ -171,15 +178,15 @@ class _RoleManagementState extends ConsumerState<_RoleManagement> {
   Future<void> _deleteRole(AccordRole role) async {
     final confirmed = await showConfirmDialog(
       context,
-      title: 'Delete role',
-      message: 'Delete the "${role.name}" role? This cannot be undone.',
-      confirmLabel: 'Delete',
+      title: UiCopy.deleteRole(),
+      message: UiCopy.deleteTheRoleThisCannotBeUndone(arg0: role.name),
+      confirmLabel: UiCopy.delete(),
       danger: true,
     );
     if (confirmed != true) return;
     final ok = await _run(
       (c) => c.roles.delete(widget.spaceId, role.id),
-      failure: 'Failed to delete role',
+      failure: UiCopy.failedToDeleteRole(),
     );
     if (ok == null && _error != null) return;
     if (!mounted) return;
@@ -203,7 +210,7 @@ class _RoleManagementState extends ConsumerState<_RoleManagement> {
     }
     final updated = await _run<List<dynamic>>(
       (c) => c.roles.reorder(widget.spaceId, payload),
-      failure: 'Failed to reorder roles',
+      failure: UiCopy.failedToReorderRoles(),
     );
     if (!mounted) return;
     if (updated != null) {
@@ -240,7 +247,7 @@ class _RoleManagementState extends ConsumerState<_RoleManagement> {
 
     return Dialog(
       backgroundColor: colors.foreground,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
       child: ConstrainedBox(
         constraints: dialogConstraints(context, maxWidth: 720, maxHeight: 560),
         child: Column(
@@ -259,7 +266,17 @@ class _RoleManagementState extends ConsumerState<_RoleManagement> {
                       busy: _busy,
                       canEdit: _canEdit,
                       onSelect: (id) => setState(() => _selectedRoleId = id),
-                      onCreate: _createRole,
+                      onCreate:
+                          ref.readIsAdmin() ||
+                              ref
+                                      .read(spacesControllerProvider)
+                                      ?.firstWhereOrNull(
+                                        (s) => s.id == widget.spaceId,
+                                      )
+                                      ?.ownerId ==
+                                  ref.readUserId()
+                          ? _createRole
+                          : null,
                       onReorder: _reorder,
                     ),
                   ),
@@ -268,7 +285,7 @@ class _RoleManagementState extends ConsumerState<_RoleManagement> {
                     child: selected == null
                         ? Center(
                             child: Text(
-                              'Select a role to edit',
+                              UiCopy.selectARoleToEdit(context: context),
                               style: Theme.of(context).textTheme.bodyMedium,
                             ),
                           )
@@ -314,10 +331,13 @@ class _Header extends StatelessWidget {
       ),
       child: Row(
         children: [
-          Text('Roles', style: Theme.of(context).textTheme.titleMedium),
+          Text(
+            UiCopy.roles2(context: context),
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
           const Spacer(),
           IconButton(
-            tooltip: 'Close',
+            tooltip: UiCopy.close(context: context),
             onPressed: onClose,
             icon: Icon(Icons.close, size: 20, color: colors.gray),
           ),
@@ -343,7 +363,7 @@ class _RoleListPane extends StatelessWidget {
   final bool busy;
   final bool Function(AccordRole) canEdit;
   final ValueChanged<String> onSelect;
-  final VoidCallback onCreate;
+  final VoidCallback? onCreate;
   final ValueChanged<List<AccordRole>> onReorder;
 
   @override
@@ -361,7 +381,7 @@ class _RoleListPane extends StatelessWidget {
           child: FilledButton.icon(
             onPressed: busy ? null : onCreate,
             icon: const Icon(Icons.add, size: 18),
-            label: const Text('Create role'),
+            label: Text(UiCopy.createRole(context: context)),
           ),
         ),
         Expanded(
@@ -426,9 +446,9 @@ class _RoleListTile extends StatelessWidget {
     final dot = accordRoleColor(role.color) ?? colors.gray;
     final tile = Material(
       color: selected ? colors.darkGray : Colors.transparent,
-      borderRadius: BorderRadius.circular(8),
+      borderRadius: BorderRadius.circular(4),
       child: InkWell(
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(4),
         onTap: onTap,
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
@@ -540,13 +560,13 @@ class _RoleEditorPaneState extends State<_RoleEditorPane> {
               padding: const EdgeInsets.only(bottom: 12),
               child: Text(
                 widget.role.managed
-                    ? 'This role is managed by an integration.'
-                    : 'This role is at or above your highest role.',
+                    ? UiCopy.thisRoleIsManagedByAnIntegration(context: context)
+                    : UiCopy.thisRoleIsAtOrAboveYour(context: context),
                 style: theme.textTheme.bodySmall!.copyWith(color: colors.gray),
               ),
             ),
           Text(
-            'ROLE NAME',
+            UiCopy.roleName(context: context),
             style: theme.textTheme.labelSmall!.copyWith(
               color: colors.gray,
               fontWeight: FontWeight.bold,
@@ -561,14 +581,14 @@ class _RoleEditorPaneState extends State<_RoleEditorPane> {
               filled: true,
               fillColor: colors.darkGray,
               border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: BorderRadius.circular(4),
                 borderSide: BorderSide.none,
               ),
             ),
           ),
           const SizedBox(height: 16),
           Text(
-            'COLOR',
+            UiCopy.color(context: context),
             style: theme.textTheme.labelSmall!.copyWith(
               color: colors.gray,
               fontWeight: FontWeight.bold,
@@ -590,27 +610,19 @@ class _RoleEditorPaneState extends State<_RoleEditorPane> {
           const SizedBox(height: 16),
           SwitchListTile(
             contentPadding: EdgeInsets.zero,
-            value: _hoist,
-            onChanged: enabled ? (v) => setState(() => _hoist = v) : null,
-            title: const Text('Display separately'),
-            subtitle: Text(
-              'Show members with this role in their own section',
-              style: theme.textTheme.bodySmall!.copyWith(color: colors.gray),
-            ),
-          ),
-          SwitchListTile(
-            contentPadding: EdgeInsets.zero,
             value: _mentionable,
             onChanged: enabled ? (v) => setState(() => _mentionable = v) : null,
-            title: const Text('Allow @mention'),
+            title: Text(
+              AppStrings.choose('Allow @mention', '允许 @提及', context: context),
+            ),
             subtitle: Text(
-              'Anyone can @mention this role',
+              UiCopy.anyoneCanMentionThisRole(context: context),
               style: theme.textTheme.bodySmall!.copyWith(color: colors.gray),
             ),
           ),
           const SizedBox(height: 8),
           Text(
-            'PERMISSIONS',
+            UiCopy.permissions3(context: context),
             style: theme.textTheme.labelSmall!.copyWith(
               color: colors.gray,
               fontWeight: FontWeight.bold,
@@ -620,7 +632,7 @@ class _RoleEditorPaneState extends State<_RoleEditorPane> {
           for (final group in accordPermissionGroups) ...[
             const SizedBox(height: 10),
             Text(
-              group.label.toUpperCase(),
+              AppStrings.label(group.label, context: context).toUpperCase(),
               style: theme.textTheme.labelSmall!.copyWith(
                 color: colors.gray,
                 fontWeight: FontWeight.bold,
@@ -647,18 +659,18 @@ class _RoleEditorPaneState extends State<_RoleEditorPane> {
                 TextButton(
                   onPressed: enabled ? widget.onDelete : null,
                   style: TextButton.styleFrom(foregroundColor: colors.red),
-                  child: const Text('Delete role'),
+                  child: Text(UiCopy.deleteRole(context: context)),
                 ),
               if (widget.onPreview != null)
                 TextButton.icon(
                   onPressed: widget.busy ? null : widget.onPreview,
                   icon: const Icon(Icons.visibility, size: 16),
-                  label: const Text('Preview as role'),
+                  label: Text(UiCopy.previewAsRole(context: context)),
                 ),
               const Spacer(),
               FilledButton(
                 onPressed: enabled ? _save : null,
-                child: const Text('Save changes'),
+                child: Text(UiCopy.saveChanges(context: context)),
               ),
             ],
           ),
@@ -690,7 +702,7 @@ class _ColorSwatch extends StatelessWidget {
       selected: selected,
       onTap: onTap,
       size: 28,
-      borderRadius: BorderRadius.circular(6),
+      borderRadius: BorderRadius.circular(4),
       borderWidth: 2,
       icon: color == null ? Icons.format_color_reset : null,
       iconColor: color == null ? colors.gray : Colors.white,

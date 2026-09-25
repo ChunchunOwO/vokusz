@@ -67,7 +67,7 @@ void main() {
       expect(find.byType(ListView), findsOneWidget);
     });
 
-    testWidgets('still shows all ten sections and Log out in one scroll', (
+    testWidgets('still shows every section and Log out in one scroll', (
       tester,
     ) async {
       // Tall viewport so the whole (lazy) list is laid out at once.
@@ -79,6 +79,7 @@ void main() {
         'Sounds',
         'Voice & Video',
         'Account',
+        'Servers',
         'Server Directory',
         'Updates',
         'Backup',
@@ -121,6 +122,7 @@ void main() {
 
       // Account is the default category.
       expect(_section('Account'), findsOneWidget);
+      expect(_section('Servers'), findsOneWidget);
       expect(_section('Connections'), findsOneWidget);
       expect(_section('Privacy & Data'), findsOneWidget);
       expect(_section('Server Directory'), findsOneWidget);
@@ -161,6 +163,7 @@ void main() {
 
       await _selectCategory(tester, 'Account');
       expect(_section('Account'), findsOneWidget);
+      expect(_section('Servers'), findsOneWidget);
       expect(_section('Server Directory'), findsOneWidget);
     });
 
@@ -183,6 +186,7 @@ void main() {
       await _pumpAt(tester, const Size(1400, 3000));
       final headings = [
         _section('Account'),
+        _section('Servers'),
         _section('Connections'),
         _section('Privacy & Data'),
         _section('Server Directory'),

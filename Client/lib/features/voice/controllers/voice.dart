@@ -2,7 +2,9 @@ import 'dart:async';
 
 import 'package:accordkit/accordkit.dart';
 import 'package:bonfire/features/authentication/repositories/accord_auth.dart';
+import 'package:bonfire/l10n/app_strings.dart';
 import 'package:bonfire/features/events/controllers/presence.dart';
+import 'package:bonfire/features/presence/local_presence.dart';
 import 'package:bonfire/features/notifications/services/sound.dart';
 import 'package:bonfire/features/server/controllers/connections.dart';
 import 'package:bonfire/features/settings/controllers/settings.dart';
@@ -10,9 +12,11 @@ import 'package:bonfire/features/voice/controllers/voice_states.dart';
 import 'package:bonfire/features/voice/services/afk_monitor.dart';
 import 'package:bonfire/features/voice/services/voice_session.dart';
 import 'package:bonfire/features/voice/utils/afk_logic.dart';
+import 'package:bonfire/features/voice/utils/desktop_keys.dart';
 import 'package:bonfire/features/voice/utils/voice_logic.dart';
 import 'package:collection/collection.dart';
 import 'package:flutter/foundation.dart';
+import 'package:livekit_client/livekit_client.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
@@ -113,6 +117,11 @@ class VoiceConnection {
 class VoiceController extends _$VoiceController {
   VoiceSession? _session;
 
+  /// Last microphone capture state applied to the session. Push-to-talk flips
+  /// this without changing [VoiceConnection.selfMute], so a held key is not a
+  /// mute toggle and does not play the mute sound.
+  bool _micLive = false;
+
   /// The live LiveKit session, exposed so the video grid can render its room.
   /// Null whenever we're not connected.
   VoiceSession? get session => _session;
@@ -120,10 +129,24 @@ class VoiceController extends _$VoiceController {
   /// Installs a stand-in session so tests can exercise the media toggles
   /// (mute/camera/screen share) without a native LiveKit room.
   @visibleForTesting
-  set debugSession(VoiceSession? session) => _session = session;
+  set debugSession(VoiceSession? session) {
+    _session = session;
+    if (session == null) return;
+    // Same callbacks a real session gets from [_buildSession], so a stand-in
+    // still drives the shipped connecting/connected transitions.
+    session
+      ..onChanged = _onSessionChanged
+      ..onTracksChanged = _onSessionTracksChanged
+      ..onStateChanged = _onSessionStateChanged
+      ..onDisconnected = _onSessionDisconnected;
+  }
 
   /// The local microphone level (0–1), for the mic-activity meter.
   double get localAudioLevel => _session?.localAudioLevel ?? 0;
+
+  /// Per-user audio levels (0–1) sampled on this client. Empty while no voice
+  /// session is polling.
+  Map<String, double> get audioLevels => _session?.audioLevels ?? const {};
 
   /// Whether the local mic is currently registering as speaking.
   bool get localIsSpeaking => _session?.localIsSpeaking ?? false;
@@ -236,47 +259,47 @@ class VoiceController extends _$VoiceController {
     _syncAfk();
   }
 
-  Future<void> _joinLocked(String channelId, String? spaceId) async {
-    if (state.channelId == channelId) return;
-    if (state.isConnected) await _leaveLocked();
+  Future<void> handleMemberMove(String channelId, String spaceId, String serverKey) =>
+      _serialize(() async {
+        if (state.serverKey != serverKey || state.channelId == null) return;
+        await _joinLocked(channelId, spaceId, pinnedServerKey: serverKey);
+      });
+
+  Future<void> _joinLocked(String channelId, String? spaceId, {String? pinnedServerKey}) async {
+    final serverKey =
+        pinnedServerKey ?? ref.read(connectionsControllerProvider).activeKey;
+    if (state.channelId == channelId &&
+        state.serverKey == serverKey &&
+        state.isConnected) {
+      return;
+    }
+    final previous = state.channelId;
+    if (previous != null) {
+      final oldClient = _client;
+      await _session?.disconnect();
+      if (oldClient != null) unawaited(oldClient.voice.leave(previous));
+    }
 
     // Pin to whichever connection is active *now* — that's the server whose
     // channel was tapped. Resolve its client by key so later voice calls keep
     // hitting it even after the user makes another server active.
-    final serverKey = ref.read(connectionsControllerProvider).activeKey;
     final client = serverKey == null
         ? null
         : ref.read(accordAuthProvider.notifier).clientForKey(serverKey);
     if (client == null) {
-      state = state.copyWith(error: 'No connection found');
+      state = state.copyWith(
+        error: AppStrings.choose('No connection found', '没有可用的连接'),
+      );
       return;
     }
 
     _session ??= _buildSession();
     _reconnectAttempted = false;
-
-    final result = await client.voice.join(
-      channelId,
-      selfMute: state.selfMute,
-      selfDeaf: state.selfDeaf,
-    );
-    final info = result.data;
-    if (!result.ok || info is! AccordVoiceServerUpdate) {
-      state = state.copyWith(
-        error: result.error?.message ?? 'Failed to join voice channel',
-      );
-      return;
-    }
-    final url = info.livekitUrl;
-    final token = info.token;
-    if (url == null || url.isEmpty || token == null || token.isEmpty) {
-      await client.voice.leave(channelId);
-      state = state.copyWith(
-        error: 'Voice backend unavailable — server returned no credentials',
-      );
-      return;
-    }
-
+    final settings = ref.read(settingsControllerProvider);
+    final holdMic =
+        state.selfMute || settings.voicePushToTalk || state.selfDeaf;
+    _micLive = false;
+    // Show the channel as joining before the token comes back.
     state = state.copyWith(
       channelId: channelId,
       spaceId: spaceId,
@@ -284,24 +307,60 @@ class VoiceController extends _$VoiceController {
       sessionState: VoiceSessionState.connecting,
       clearError: true,
     );
-    final settings = ref.read(settingsControllerProvider);
+    final micFuture = holdMic
+        ? Future<LocalAudioTrack?>.value(null)
+        : _session!.captureMic(settings.audioInputDeviceId);
+    final result = await client.voice.join(
+      channelId,
+      selfMute: state.selfMute,
+      selfDeaf: state.selfDeaf,
+    );
+    final mic = await micFuture;
+    final info = result.data;
+    if (!result.ok || info is! AccordVoiceServerUpdate) {
+      await _session!.releaseMic(mic);
+      state = const VoiceConnection().copyWith(
+        error: result.error?.message ??
+            AppStrings.choose(
+              'Failed to join voice channel',
+              '没能加入语音频道',
+            ),
+      );
+      return;
+    }
+    final url = info.livekitUrl;
+    final token = info.token;
+    if (url == null || url.isEmpty || token == null || token.isEmpty) {
+      await _session!.releaseMic(mic);
+      unawaited(client.voice.leave(channelId));
+      state = const VoiceConnection().copyWith(
+        error: AppStrings.choose(
+          'Voice backend unavailable — server returned no credentials',
+          '语音服务没有返回连接信息',
+        ),
+      );
+      return;
+    }
+
     // Flag the live call *before* the media session comes up, so no chime can
     // reconfigure the platform audio session underneath it (#323).
     soundManager.setVoiceSessionActive(true);
     await _session!.connect(
       url,
       token,
-      selfMute: state.selfMute,
+      selfMute: holdMic,
       selfDeaf: state.selfDeaf,
-      relayOnly: ref.read(settingsControllerProvider).voiceRelayOnly,
+      relayOnly: settings.voiceRelayOnly,
       audioInputDeviceId: settings.audioInputDeviceId,
       audioOutputDeviceId: settings.audioOutputDeviceId,
       outputVolume: settings.outputVolume,
       inputVolume: settings.inputVolume,
+      preparedMic: mic,
     );
     _applyMicOutcome();
+    _micLive = !holdMic && !state.selfMute;
     soundManager.play('voice_join');
-    await _refreshVoiceStates(channelId);
+    unawaited(_refreshVoiceStates(channelId));
   }
 
   /// After a (re)connect: if the microphone could not be captured or
@@ -326,11 +385,18 @@ class VoiceController extends _$VoiceController {
     final channelId = state.channelId;
     if (channelId == null) return;
     _reconnectAttempted = false;
-    await _session?.disconnect();
+    final session = _session;
+    final client = _client;
+    // The bar disappears now. Media teardown and the server leave run
+    // together, instead of one after the other.
     soundManager.setVoiceSessionActive(false);
-    await _client?.voice.leave(channelId);
-    soundManager.play('voice_leave');
+    _micLive = false;
     state = const VoiceConnection();
+    soundManager.play('voice_leave');
+    await Future.wait<void>([
+      if (session != null) session.disconnect(),
+      if (client != null) client.voice.leave(channelId).then((_) {}),
+    ]);
   }
 
   void toggleMute() => setMute(!state.selfMute);
@@ -341,20 +407,63 @@ class VoiceController extends _$VoiceController {
     state = state.copyWith(selfMute: muted);
     soundManager.play(muted ? 'mute' : 'unmute');
     _sendVoiceStateUpdate();
+    final settings = ref.read(settingsControllerProvider);
+    final live = microphoneLive(
+      selfMute: muted,
+      pushToTalk: settings.voicePushToTalk,
+      pushToTalkHeld: DesktopKeys.isDown(settings.voicePushToTalkKey),
+    );
+    _micLive = live;
     final session = _session;
-    if (session != null) unawaited(_applyMic(session, enabled: !muted));
+    if (session != null) unawaited(_applyMic(session, enabled: live));
+  }
+
+  /// Opens or closes the mic for push-to-talk without touching [selfMute] or
+  /// playing the mute sound. The desktop key poll calls this every tick; it
+  /// does nothing when the capture state is already correct.
+  void syncTransmit({required bool pushToTalk, required bool held}) {
+    if (!state.isConnected) return;
+    final live = microphoneLive(
+      selfMute: state.selfMute,
+      pushToTalk: pushToTalk,
+      pushToTalkHeld: held,
+    );
+    if (live == _micLive) return;
+    _micLive = live;
+    final session = _session;
+    if (session != null) unawaited(_applyMic(session, enabled: live));
   }
 
   /// Applies a mute toggle to the media session. An *unmute* that fails (the
   /// OS denied the mic, no capture device) is reverted so the bar doesn't show
   /// a live mic that isn't, and the reason is surfaced.
   Future<void> _applyMic(VoiceSession session, {required bool enabled}) async {
-    final error = await session.setMicEnabled(enabled);
+    final error = await session.setMicEnabled(
+      enabled,
+      deviceId: ref.read(settingsControllerProvider).audioInputDeviceId,
+    );
     if (error == null || !enabled || !state.isConnected || state.selfMute) {
+      return;
+    }
+    // Push-to-talk must not latch the hard mute: the key would stop opening
+    // the mic, and the button only shows a keyboard icon.
+    if (ref.read(settingsControllerProvider).voicePushToTalk) {
+      _micLive = false;
+      state = state.copyWith(error: error);
       return;
     }
     state = state.copyWith(selfMute: true, error: error);
     _sendVoiceStateUpdate();
+  }
+
+  bool _micShouldBeLive() {
+    if (state.selfDeaf) return false;
+    final settings = ref.read(settingsControllerProvider);
+    return microphoneLive(
+      selfMute: state.selfMute,
+      pushToTalk: settings.voicePushToTalk,
+      pushToTalkHeld: DesktopKeys.isDown(settings.voicePushToTalkKey),
+    );
   }
 
   void toggleDeafen() => setDeafen(!state.selfDeaf);
@@ -366,6 +475,11 @@ class VoiceController extends _$VoiceController {
     state = state.copyWith(selfDeaf: deafened);
     soundManager.play(deafened ? 'deafen' : 'undeafen');
     _sendVoiceStateUpdate();
+    final session = _session;
+    if (session == null) return;
+    final live = _micShouldBeLive();
+    _micLive = live;
+    unawaited(_applyMic(session, enabled: live));
   }
 
   Future<void> toggleVideo() async {
@@ -374,14 +488,21 @@ class VoiceController extends _$VoiceController {
     if (enable) {
       final settings = ref.read(settingsControllerProvider);
       final (width, height) = settings.videoDimensions;
-      await _session?.setCameraEnabled(
-        true,
-        width: width,
-        height: height,
-        fps: settings.videoFps,
-        bitrate: settings.videoBitrate,
-        deviceId: settings.videoInputDeviceId,
-      );
+      final ok = await _session?.setCameraEnabled(
+            true,
+            width: width,
+            height: height,
+            fps: settings.videoFps,
+            bitrate: settings.videoBitrate,
+            deviceId: settings.videoInputDeviceId,
+          ) ??
+          false;
+      if (!ok) {
+        state = state.copyWith(
+          error: AppStrings.choose('Could not start the camera', '摄像头没能打开'),
+        );
+        return;
+      }
     } else {
       await _session?.setCameraEnabled(false);
     }
@@ -396,7 +517,10 @@ class VoiceController extends _$VoiceController {
   /// Quality comes from the *screen-share* settings, not the camera ones: a
   /// webcam preset (720p30 @ 1.7 Mbps) is the wrong shape for gameplay, which
   /// is what people actually share (issue #151).
-  Future<void> toggleScreenShare({String? sourceId}) async {
+  Future<void> toggleScreenShare({
+    String? sourceId,
+    bool shareSystemAudio = false,
+  }) async {
     if (!state.isConnected) return;
     final enable = !state.selfStream;
     if (enable) {
@@ -405,6 +529,7 @@ class VoiceController extends _$VoiceController {
       await _session?.setScreenShareEnabled(
         true,
         sourceId: sourceId,
+        shareSystemAudio: shareSystemAudio,
         width: width,
         height: height,
         fps: settings.screenShareFps,
@@ -434,14 +559,20 @@ class VoiceController extends _$VoiceController {
     if (url == null || url.isEmpty || token == null || token.isEmpty) return;
     final sessionState = _session?.state;
     if (sessionState == null || !needsReconnect(sessionState)) return;
+    final settings = ref.read(settingsControllerProvider);
+    final holdMic = state.selfMute || settings.voicePushToTalk || state.selfDeaf;
     await _session?.connect(
       url,
       token,
-      selfMute: state.selfMute,
+      selfMute: holdMic,
       selfDeaf: state.selfDeaf,
-      relayOnly: ref.read(settingsControllerProvider).voiceRelayOnly,
+      relayOnly: settings.voiceRelayOnly,
+      audioInputDeviceId: settings.audioInputDeviceId,
+      audioOutputDeviceId: settings.audioOutputDeviceId,
+      outputVolume: settings.outputVolume,
+      inputVolume: settings.inputVolume,
     );
-    _applyMicOutcome();
+    await _restoreLocalMedia();
   }
 
   /// The server removed us from voice (our gateway state's channel went null).
@@ -462,6 +593,7 @@ class VoiceController extends _$VoiceController {
     _reconnectAttempted = false;
     await _session?.disconnect();
     soundManager.setVoiceSessionActive(false);
+    _micLive = false;
     state = const VoiceConnection();
     _syncAfk();
   }
@@ -480,9 +612,50 @@ class VoiceController extends _$VoiceController {
   /// every active-speaker/audio-level report — many times per second while
   /// anyone talks — so an unconditional update here pegs the UI thread.
   void _onSessionChanged() {
-    final speaking = _session?.speakingUserIds ?? const {};
+    final session = _session;
+    final levels = session?.audioLevels ?? const <String, double>{};
+    final server = session?.speakingUserIds ?? const <String>{};
+    final threshold = ref.read(settingsControllerProvider).speakingThreshold;
+    final speaking = <String>{
+      for (final id in {...levels.keys, ...server})
+        if (levelSaysSpeaking(
+          level: levels.containsKey(id) ? levels[id] : null,
+          threshold: threshold,
+          serverSpeaking: server.contains(id),
+        ))
+          id,
+    };
     if (setEquals(speaking, state.speakingUserIds)) return;
     state = state.copyWith(speakingUserIds: speaking);
+  }
+
+  /// After a LiveKit reconnect the published camera and share are gone.
+  /// Open the camera again when it was on. Screen share needs the window the
+  /// user picked, so that flag is cleared instead of left looking live.
+  Future<void> _restoreLocalMedia() async {
+    final session = _session;
+    if (session == null || !state.isConnected) return;
+    final live = _micShouldBeLive();
+    _micLive = live;
+    if (live) await _applyMic(session, enabled: true);
+    if (state.selfVideo) {
+      final settings = ref.read(settingsControllerProvider);
+      final (width, height) = settings.videoDimensions;
+      final ok = await session.setCameraEnabled(
+        true,
+        width: width,
+        height: height,
+        fps: settings.videoFps,
+        bitrate: settings.videoBitrate,
+        deviceId: settings.videoInputDeviceId,
+      );
+      if (!ok && state.isConnected) {
+        state = state.copyWith(selfVideo: false);
+      }
+    }
+    if (state.selfStream) state = state.copyWith(selfStream: false);
+    _sendVoiceStateUpdate();
+    _applyMicOutcome();
   }
 
   /// Structural change (track sub/unsub, publish, participant join/leave): bump
@@ -547,7 +720,10 @@ class VoiceController extends _$VoiceController {
     if (!result.ok || info is! AccordVoiceServerUpdate) {
       state = state.copyWith(
         sessionState: VoiceSessionState.failed,
-        error: 'Voice reconnect failed — could not refresh credentials',
+        error: AppStrings.choose(
+          'Voice reconnect failed — could not refresh credentials',
+          '语音重连失败，没能刷新凭证',
+        ),
       );
       return;
     }
@@ -556,23 +732,24 @@ class VoiceController extends _$VoiceController {
     if (url == null || url.isEmpty || token == null || token.isEmpty) {
       state = state.copyWith(
         sessionState: VoiceSessionState.failed,
-        error: 'Voice reconnect failed',
+        error: AppStrings.choose('Voice reconnect failed', '语音重连失败'),
       );
       return;
     }
     final settings = ref.read(settingsControllerProvider);
+    final holdMic = state.selfMute || settings.voicePushToTalk || state.selfDeaf;
     await _session?.connect(
       url,
       token,
-      selfMute: state.selfMute,
+      selfMute: holdMic,
       selfDeaf: state.selfDeaf,
-      relayOnly: ref.read(settingsControllerProvider).voiceRelayOnly,
+      relayOnly: settings.voiceRelayOnly,
       audioInputDeviceId: settings.audioInputDeviceId,
       audioOutputDeviceId: settings.audioOutputDeviceId,
       outputVolume: settings.outputVolume,
       inputVolume: settings.inputVolume,
     );
-    _applyMicOutcome();
+    await _restoreLocalMedia();
   }
 
   Future<void> _refreshVoiceStates(String channelId) async {
@@ -580,6 +757,7 @@ class VoiceController extends _$VoiceController {
     final serverKey = state.serverKey;
     if (client == null || serverKey == null) return;
     final result = await client.voice.getStatus(channelId);
+    if (!ref.mounted) return;
     final data = result.data;
     if (_client != client ||
         state.serverKey != serverKey ||
@@ -671,22 +849,13 @@ class VoiceController extends _$VoiceController {
     String status,
     PresenceMap presences,
   ) {
-    final custom = accordCustomStatus(presences, userId);
-    client.gateway.updatePresence(
-      status,
-      activity: custom == null ? const {} : {'name': custom, 'type': 'custom'},
+    LocalPresence.ensureSeeded(presences, userId);
+    LocalPresence.status = status;
+    LocalPresence.publish(
+      client,
+      ref.read(presenceControllerProvider(serverKey).notifier),
+      userId,
     );
-    ref
-        .read(presenceControllerProvider(serverKey).notifier)
-        .upsert(
-          AccordPresence(
-            userId: userId,
-            status: status,
-            activities: custom == null
-                ? []
-                : [AccordActivity(name: custom, type: 'custom')],
-          ),
-        );
   }
 
   /// Moves us into the space's designated AFK channel, when it has one.

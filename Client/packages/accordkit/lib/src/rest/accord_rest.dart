@@ -182,7 +182,6 @@ class AccordRest {
     bool retryOnRateLimit = true,
   }) async {
     final uri = _buildUri(path, query);
-    final bodyBytes = form.build();
     final headers = <String, String>{
       'Content-Type': form.contentType(),
       'User-Agent': AccordConfig.userAgent,
@@ -197,9 +196,7 @@ class AccordRest {
       attemptTimeout: uploadTimeout,
       retryOnRateLimit: retryOnRateLimit,
       send: () async {
-        final request = http.Request(method, uri)
-          ..headers.addAll(headers)
-          ..bodyBytes = bodyBytes;
+        final request = form.request(method, uri)..headers.addAll(headers);
         final streamed = await _client.send(request);
         return http.Response.fromStream(streamed);
       },

@@ -9,6 +9,7 @@
 /// import this directly.
 library;
 
+import 'package:bonfire/l10n/ui_copy.dart';
 import 'package:bonfire/shared/utils/download_attachment.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -28,7 +29,7 @@ Future<DownloadResult> downloadAttachment(
       !uri.hasAuthority ||
       uri.host.isEmpty ||
       (uri.scheme != 'http' && uri.scheme != 'https')) {
-    return const DownloadResult.failed('That attachment has no valid address.');
+    return DownloadResult.failed(UiCopy.thatAttachmentHasNoValidAddress());
   }
   try {
     // A cross-origin `<a download>` is ignored by browsers anyway, so an
@@ -37,11 +38,9 @@ Future<DownloadResult> downloadAttachment(
     final launched = await launchUrl(uri, webOnlyWindowName: '_blank');
     return launched
         ? const DownloadResult.handedToBrowser()
-        : const DownloadResult.failed(
-            'Your browser blocked the download. Allow pop-ups and try again.',
-          );
+        : DownloadResult.failed(UiCopy.yourBrowserBlockedTheDownloadAllowPop());
   } catch (_) {
-    return const DownloadResult.failed("Couldn't start the download.");
+    return DownloadResult.failed(UiCopy.couldnTStartTheDownload());
   }
 }
 

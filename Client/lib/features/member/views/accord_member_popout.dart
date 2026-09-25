@@ -1,3 +1,7 @@
+import 'dart:async';
+
+import 'package:bonfire/l10n/app_strings.dart';
+import 'package:bonfire/l10n/ui_copy.dart';
 import 'package:accordkit/accordkit.dart';
 import 'package:bonfire/shared/components/async_state_views.dart';
 import 'package:bonfire/shared/utils/rest_result_ext.dart';
@@ -6,17 +10,21 @@ import 'package:bonfire/shared/utils/confirm_dialog.dart';
 import 'package:bonfire/shared/utils/client_access.dart';
 import 'package:bonfire/shared/utils/text_prompt_dialog.dart';
 import 'package:bonfire/features/events/controllers/presence.dart';
+import 'package:bonfire/features/presence/rich_presence.dart';
+import 'package:bonfire/features/presence/rich_presence_view.dart';
 import 'package:bonfire/features/member/controllers/accord_members.dart';
 import 'package:bonfire/features/member/utils/member_display.dart';
 import 'package:bonfire/features/member/utils/permissions.dart';
 import 'package:bonfire/features/member/views/accord_member_avatar.dart';
 import 'package:bonfire/features/member/views/remote_origin_badge.dart';
 import 'package:bonfire/features/spaces/controllers/spaces.dart';
+import 'package:bonfire/features/spaces/views/accord_role_management.dart';
 import 'package:bonfire/features/user/controllers/accord_users.dart';
 import 'package:bonfire/features/user/controllers/blocked_users.dart';
 import 'package:bonfire/features/user/views/accord_direct_messages.dart';
 import 'package:bonfire/features/spaces/views/accord_reports.dart';
 import 'package:bonfire/theme/theme.dart';
+import 'package:bonfire/features/member/views/user_banner.dart';
 import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -35,13 +43,13 @@ Future<void> showAccordMemberPopout(
 
 /// Available timeout durations (label → seconds), mirroring the reference
 /// client's `moderate_member_dialog`.
-const _timeoutDurations = <(String, int)>[
-  ('60 seconds', 60),
-  ('5 minutes', 300),
-  ('10 minutes', 600),
-  ('1 hour', 3600),
-  ('1 day', 86400),
-  ('1 week', 604800),
+List<(String, int)> _timeoutDurations(BuildContext context) => [
+  (AppStrings.choose('60 seconds', '60 秒', context: context), 60),
+  (AppStrings.choose('5 minutes', '5 分钟', context: context), 300),
+  (AppStrings.choose('10 minutes', '10 分钟', context: context), 600),
+  (AppStrings.choose('1 hour', '1 小时', context: context), 3600),
+  (AppStrings.choose('1 day', '1 天', context: context), 86400),
+  (AppStrings.choose('1 week', '1 周', context: context), 604800),
 ];
 
 class _MemberPopout extends ConsumerStatefulWidget {
@@ -57,6 +65,34 @@ class _MemberPopout extends ConsumerStatefulWidget {
 class _MemberPopoutState extends ConsumerState<_MemberPopout> {
   bool _busy = false;
   String? _error;
+  AccordUser? _profile;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_refreshProfile());
+  }
+
+  /// The roster copy of a user is often from before they set a banner. Fetch
+  /// the live profile so the banner and bio in this dialog are current.
+  Future<void> _refreshProfile() async {
+    final client = _client;
+    if (client == null) return;
+    final result = await client.users.fetch(widget.userId);
+    if (!mounted) return;
+    final user = result.data;
+    if (user is! AccordUser) return;
+    ref.read(accordUsersControllerProvider(_serverKey).notifier).upsert(user);
+    ref
+        .read(
+          accordMembersControllerProvider(
+            _serverKey,
+            widget.spaceId,
+          ).notifier,
+        )
+        .applyUserUpdate(user);
+    setState(() => _profile = user);
+  }
 
   AccordClient? get _client => ref.accordClient;
   String get _serverKey => ref.readActiveServerKey() ?? '';
@@ -114,11 +150,16 @@ class _MemberPopoutState extends ConsumerState<_MemberPopout> {
   void _kick() {
     _run(
       (c) => c.members.kick(widget.spaceId, widget.userId),
-      failure: 'Failed to kick member',
+      failure: UiCopy.failedToKickMember(),
       closeOnSuccess: true,
       missingIsSuccess: true,
       onSuccess: () => ref
-          .read(accordMembersControllerProvider(_serverKey, widget.spaceId).notifier)
+          .read(
+            accordMembersControllerProvider(
+              _serverKey,
+              widget.spaceId,
+            ).notifier,
+          )
           .removeMember(widget.userId),
     );
   }
@@ -141,17 +182,16 @@ class _MemberPopoutState extends ConsumerState<_MemberPopout> {
   /// list.
   Future<void> _block() async {
     final confirmed = await _confirm(
-      title: 'Block user',
-      message:
-          'Blocked users can\'t DM you and their messages are hidden. Continue?',
-      action: 'Block',
+      title: UiCopy.blockUser(),
+      message: UiCopy.blockedUsersCanTDmYouAnd(),
+      action: UiCopy.block(),
     );
     if (confirmed != true) return;
     _run(
       (c) => c.users.putRelationship(widget.userId, {
         'type': accordBlockedRelationship,
       }),
-      failure: 'Failed to block user',
+      failure: UiCopy.failedToBlockUser(),
       closeOnSuccess: true,
       // Applies the "their messages are hidden" half of the promise right away
       // rather than at the next relationship fetch (#290).
@@ -166,7 +206,9 @@ class _MemberPopoutState extends ConsumerState<_MemberPopout> {
       accordMembersControllerProvider(_serverKey, widget.spaceId),
     )?[widget.userId];
     if (member != null) return accordMemberName(member);
-    final cached = ref.read(accordUsersControllerProvider(_serverKey))[widget.userId];
+    final cached = ref.read(
+      accordUsersControllerProvider(_serverKey),
+    )[widget.userId];
     return accordUserName(cached, fallback: widget.userId);
   }
 
@@ -182,11 +224,16 @@ class _MemberPopoutState extends ConsumerState<_MemberPopout> {
     _run(
       (c) =>
           c.bans.create(widget.spaceId, widget.userId, data: request.toJson()),
-      failure: 'Failed to ban member',
+      failure: UiCopy.failedToBanMember(),
       closeOnSuccess: true,
       missingIsSuccess: true,
       onSuccess: () => ref
-          .read(accordMembersControllerProvider(_serverKey, widget.spaceId).notifier)
+          .read(
+            accordMembersControllerProvider(
+              _serverKey,
+              widget.spaceId,
+            ).notifier,
+          )
           .removeMember(widget.userId),
       onResult: (result) {
         if (request.deleteMessageSeconds == 0) return;
@@ -197,8 +244,8 @@ class _MemberPopoutState extends ConsumerState<_MemberPopout> {
           SnackBar(
             content: Text(
               count == 1
-                  ? 'Banned $name and deleted 1 message'
-                  : 'Banned $name and deleted $count messages',
+                  ? UiCopy.bannedAndDeleted1Message(arg0: name)
+                  : UiCopy.bannedAndDeletedMessages(arg0: name, arg1: count),
             ),
           ),
         );
@@ -222,7 +269,7 @@ class _MemberPopoutState extends ConsumerState<_MemberPopout> {
       (c) => c.members.update(widget.spaceId, widget.userId, {
         'communication_disabled_until': iso,
       }),
-      failure: 'Failed to time out member',
+      failure: UiCopy.failedToTimeOutMember(),
     );
   }
 
@@ -231,7 +278,7 @@ class _MemberPopoutState extends ConsumerState<_MemberPopout> {
       (c) => c.members.update(widget.spaceId, widget.userId, {
         'communication_disabled_until': null,
       }),
-      failure: 'Failed to remove timeout',
+      failure: UiCopy.failedToRemoveTimeout(),
     );
   }
 
@@ -241,22 +288,27 @@ class _MemberPopoutState extends ConsumerState<_MemberPopout> {
     final initial = member.nickname ?? '';
     final next = (await showTextPromptDialog(
       context,
-      title: 'Change nickname',
-      label: 'Nickname',
-      hintText: 'Leave empty to reset to their display name',
+      title: UiCopy.changeNickname(),
+      label: UiCopy.nickname(),
+      hintText: UiCopy.leaveEmptyToResetToTheirDisplay(),
       initial: initial,
-      resetLabel: initial.isNotEmpty ? 'Reset' : null,
+      resetLabel: initial.isNotEmpty ? UiCopy.reset() : null,
     ))?.trim();
     if (next == null || !mounted) return;
     _run(
       (c) => c.members.update(widget.spaceId, widget.userId, {
         'nickname': next.isEmpty ? null : next,
       }),
-      failure: 'Failed to update nickname',
+      failure: UiCopy.failedToUpdateNickname(),
       onSuccess: () {
         member.nickname = next.isEmpty ? null : next;
         ref
-            .read(accordMembersControllerProvider(_serverKey, widget.spaceId).notifier)
+            .read(
+              accordMembersControllerProvider(
+                _serverKey,
+                widget.spaceId,
+              ).notifier,
+            )
             .upsertMember(member);
       },
     );
@@ -267,7 +319,7 @@ class _MemberPopoutState extends ConsumerState<_MemberPopout> {
       (c) => add
           ? c.members.addRole(widget.spaceId, widget.userId, role.id)
           : c.members.removeRole(widget.spaceId, widget.userId, role.id),
-      failure: 'Failed to update roles',
+      failure: UiCopy.failedToUpdateRoles(),
       onSuccess: () {
         final roles = [...member.roles];
         if (add) {
@@ -277,7 +329,12 @@ class _MemberPopoutState extends ConsumerState<_MemberPopout> {
         }
         member.roles = roles;
         ref
-            .read(accordMembersControllerProvider(_serverKey, widget.spaceId).notifier)
+            .read(
+              accordMembersControllerProvider(
+                _serverKey,
+                widget.spaceId,
+              ).notifier,
+            )
             .upsertMember(member);
       },
     );
@@ -298,16 +355,21 @@ class _MemberPopoutState extends ConsumerState<_MemberPopout> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     final colors = BonfireThemeExtension.of(context);
 
-    final members = ref.watch(accordMembersControllerProvider(_serverKey, widget.spaceId));
+    final members = ref.watch(
+      accordMembersControllerProvider(_serverKey, widget.spaceId),
+    );
     final member = members?[widget.userId];
     // Backfill the target from the on-demand user cache when outside the page.
     final cachedUser = ref.watch(
       accordUsersControllerProvider(_serverKey).select((m) => m[widget.userId]),
     );
-    if (member == null && cachedUser == null && members != null) {
-      ref.read(accordUsersControllerProvider(_serverKey).notifier).ensure(widget.userId);
+    if (member?.user == null && cachedUser == null && members != null) {
+      ref
+          .read(accordUsersControllerProvider(_serverKey).notifier)
+          .ensure(widget.userId);
     }
 
     final space = ref.watch(
@@ -326,20 +388,32 @@ class _MemberPopoutState extends ConsumerState<_MemberPopout> {
         (p) => accordCustomStatus(p, widget.userId),
       ),
     );
+    final rich = richPresenceOf(
+      ref.watch(
+        activePresencesProvider.select(
+          (p) => p[widget.userId]?.activities,
+        ),
+      ),
+    );
     final cdnUrl = ref.watchCdnUrl();
     final currentUserId = ref.watchUserId();
 
+    final profileUser = _profile ?? cachedUser ?? member?.user;
+    final bannerUrl = accordUserBannerUrl(_profile, cdnUrl) ??
+        accordUserBannerUrl(cachedUser, cdnUrl) ??
+        accordUserBannerUrl(member?.user, cdnUrl);
+    final bio = profileUser?.bio?.trim();
     final name = member != null
-        ? accordMemberName(member)
+        ? accordMemberName(member, fallback: accordUserName(cachedUser, fallback: widget.userId))
         : accordUserName(cachedUser, fallback: widget.userId);
     final username = member?.user?.username ?? cachedUser?.username;
     final avatarUrl = member != null
         ? accordMemberAvatarUrl(member, cdnUrl)
         : accordAvatarUrl(cachedUser, cdnUrl);
     final colorRole = member == null ? null : memberColorRole(member, roles);
-    final nameColor = colorRole == null
-        ? null
-        : accordRoleColor(colorRole.color);
+    final nameColor =
+        communityNameColor(member?.user) ??
+        (colorRole == null ? null : accordRoleColor(colorRole.color));
 
     final perms = ref.watchAccordPermissions(space, widget.spaceId);
     final isSelf = currentUserId != null && currentUserId == widget.userId;
@@ -380,32 +454,68 @@ class _MemberPopoutState extends ConsumerState<_MemberPopout> {
 
     return Dialog(
       backgroundColor: colors.foreground,
+      clipBehavior: Clip.antiAlias,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 360),
         child: SingleChildScrollView(
-          padding: const EdgeInsets.all(20),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _ProfileHeader(
-                name: name,
-                username: username,
-                avatarUrl: avatarUrl,
-                avatarBackgroundColor: accordAvatarColor(
-                  member?.user,
-                  widget.userId,
+              if (bannerUrl != null)
+                _BannerIdentity(
+                  bannerUrl: bannerUrl,
+                  name: name,
+                  username: username,
+                  avatarUrl: avatarUrl,
+                  avatarBackgroundColor: accordAvatarColor(
+                    member?.user,
+                    widget.userId,
+                  ),
+                  status: status,
+                  nameColor: nameColor,
+                  customStatus: customStatus,
+                  remoteDomain: remoteDomain,
+                )
+              else
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
+                  child: _ProfileHeader(
+                    name: name,
+                    username: username,
+                    avatarUrl: avatarUrl,
+                    avatarBackgroundColor: accordAvatarColor(
+                      member?.user,
+                      widget.userId,
+                    ),
+                    status: status,
+                    nameColor: nameColor,
+                    customStatus: customStatus,
+                    remoteDomain: remoteDomain,
+                  ),
                 ),
-                status: status,
-                nameColor: nameColor,
-                customStatus: customStatus,
-                remoteDomain: remoteDomain,
-              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+              if (bio != null && bio.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                Text(bio, style: theme.textTheme.bodyMedium),
+              ],
+              if (rich != null) ...[
+                const SizedBox(height: 12),
+                RichPresenceCard(presence: rich),
+              ],
               if (timedOut) ...[
                 const SizedBox(height: 12),
                 _TimeoutBanner(
-                  label: 'Timed out until ${member.timedOutUntil}',
+                  label: UiCopy.timedOutUntil(
+                    context: context,
+                    arg0: member.timedOutUntil,
+                  ),
                 ),
               ],
               if (member != null)
@@ -414,24 +524,19 @@ class _MemberPopoutState extends ConsumerState<_MemberPopout> {
                   roles: roles,
                   memberRoleIds: memberRoleIds,
                 ),
-              if (canManageRoles &&
-                  member != null &&
-                  assignableRoles.isNotEmpty)
+              if (canManageRoles && member != null) ...[
+                const SizedBox(height: 12),
+                Divider(color: colors.background, height: 1),
                 _RoleEditor(
+                  domainName: space?.name ?? widget.spaceId,
                   roles: assignableRoles,
                   memberRoleIds: memberRoleIds,
                   enabled: !_busy,
                   onToggle: (role, add) => _toggleRole(member, role, add),
-                ),
-              if (canEditNickname && member != null) ...[
-                const SizedBox(height: 8),
-                _ActionTile(
-                  icon: Icons.badge_outlined,
-                  label: (member.nickname ?? '').isEmpty
-                      ? 'Set nickname'
-                      : 'Edit nickname',
-                  color: colors.dirtyWhite,
-                  onTap: _busy ? null : () => _editNickname(member),
+                  onManage: () => showAccordRoleManagement(
+                    context,
+                    spaceId: widget.spaceId,
+                  ),
                 ),
               ],
               if (canKick || canBan || canTimeout) ...[
@@ -466,7 +571,7 @@ class _MemberPopoutState extends ConsumerState<_MemberPopout> {
                       foregroundColor: colors.primary,
                     ),
                     icon: const Icon(Icons.chat_bubble_outline, size: 18),
-                    label: const Text('Direct Message'),
+                    label: Text(UiCopy.directMessage(context: context)),
                   ),
                 ),
                 Align(
@@ -475,7 +580,7 @@ class _MemberPopoutState extends ConsumerState<_MemberPopout> {
                     onPressed: _busy ? null : _report,
                     style: TextButton.styleFrom(foregroundColor: colors.red),
                     icon: const Icon(Icons.flag_outlined, size: 18),
-                    label: const Text('Report user'),
+                    label: Text(UiCopy.reportUser(context: context)),
                   ),
                 ),
                 Align(
@@ -484,7 +589,7 @@ class _MemberPopoutState extends ConsumerState<_MemberPopout> {
                     onPressed: _busy ? null : _block,
                     style: TextButton.styleFrom(foregroundColor: colors.red),
                     icon: const Icon(Icons.block, size: 18),
-                    label: const Text('Block user'),
+                    label: Text(UiCopy.blockUser(context: context)),
                   ),
                 ),
               ],
@@ -492,10 +597,128 @@ class _MemberPopoutState extends ConsumerState<_MemberPopout> {
                 const SizedBox(height: 10),
                 InlineError(_error!, centered: false),
               ],
+              if (canEditNickname && member != null) ...[
+                const SizedBox(height: 8),
+                _ActionTile(
+                  icon: Icons.badge_outlined,
+                  label: (member.nickname ?? '').isEmpty
+                      ? UiCopy.setNickname(context: context)
+                      : UiCopy.editNickname(context: context),
+                  color: colors.dirtyWhite,
+                  onTap: _busy ? null : () => _editNickname(member),
+                ),
+              ],
+                  ],
+                ),
+              ),
             ],
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Banner across the top of the card. The avatar sits on the banner's lower
+/// edge: its upper half covers the banner, its lower half hangs below, and
+/// the name stays to the right of the avatar.
+class _BannerIdentity extends StatelessWidget {
+  const _BannerIdentity({
+    required this.bannerUrl,
+    required this.name,
+    required this.username,
+    required this.avatarUrl,
+    required this.avatarBackgroundColor,
+    required this.status,
+    required this.nameColor,
+    required this.customStatus,
+    required this.remoteDomain,
+  });
+
+  final String bannerUrl;
+  final String name;
+  final String? username;
+  final String? avatarUrl;
+  final Color avatarBackgroundColor;
+  final String status;
+  final Color? nameColor;
+  final String? customStatus;
+  final String? remoteDomain;
+
+  static const double _radius = 28;
+  static const double _ring = 3;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = BonfireThemeExtension.of(context);
+    final avatarBox = (_radius + _ring) * 2;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final width = constraints.maxWidth.isFinite && constraints.maxWidth > 0
+            ? constraints.maxWidth
+            : 360.0;
+        final bannerHeight = width * 9 / 16;
+        return Stack(
+          children: [
+            Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SizedBox(
+                  width: width,
+                  height: bannerHeight,
+                  child: UserBannerImage(
+                    url: bannerUrl,
+                    borderRadius: BorderRadius.zero,
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      SizedBox(width: avatarBox, height: _radius + _ring),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: _ProfileHeader(
+                          name: name,
+                          username: username,
+                          avatarUrl: null,
+                          avatarBackgroundColor: avatarBackgroundColor,
+                          status: status,
+                          nameColor: nameColor,
+                          customStatus: customStatus,
+                          remoteDomain: remoteDomain,
+                          nameOnly: true,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            Positioned(
+              left: 16,
+              top: bannerHeight - _radius - _ring,
+              child: Container(
+                padding: const EdgeInsets.all(_ring),
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: colors.foreground,
+                ),
+                child: AccordMemberAvatar(
+                  avatarUrl: avatarUrl,
+                  initial: accordInitial(name),
+                  status: status,
+                  radius: _radius,
+                  backgroundColor: avatarBackgroundColor,
+                  ringColor: colors.foreground,
+                ),
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 }
@@ -513,6 +736,7 @@ class _ProfileHeader extends StatelessWidget {
     required this.nameColor,
     required this.customStatus,
     required this.remoteDomain,
+    this.nameOnly = false,
   });
 
   final String name;
@@ -524,10 +748,46 @@ class _ProfileHeader extends StatelessWidget {
   final String? customStatus;
   final String? remoteDomain;
 
+  /// Name column only. Used beside an avatar that already overlaps the banner.
+  final bool nameOnly;
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colors = BonfireThemeExtension.of(context);
+    final names = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          name,
+          style: theme.textTheme.titleMedium!.copyWith(color: nameColor),
+          overflow: TextOverflow.ellipsis,
+        ),
+        if (username != null)
+          Text(
+            '@$username',
+            style: theme.textTheme.bodySmall!.copyWith(color: colors.gray),
+          ),
+        Text(
+          _statusLabel(status),
+          style: theme.textTheme.bodySmall!.copyWith(color: colors.gray),
+        ),
+        if (customStatus != null) ...[
+          const SizedBox(height: 2),
+          Text(
+            customStatus!,
+            style: theme.textTheme.bodyMedium!.copyWith(
+              color: colors.dirtyWhite,
+            ),
+          ),
+        ],
+        if (remoteDomain != null) ...[
+          const SizedBox(height: 4),
+          RemoteOriginBadge(domain: remoteDomain!),
+        ],
+      ],
+    );
+    if (nameOnly) return names;
     return Row(
       children: [
         AccordMemberAvatar(
@@ -538,42 +798,7 @@ class _ProfileHeader extends StatelessWidget {
           backgroundColor: avatarBackgroundColor,
         ),
         const SizedBox(width: 14),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                name,
-                style: theme.textTheme.titleMedium!.copyWith(color: nameColor),
-                overflow: TextOverflow.ellipsis,
-              ),
-              if (username != null)
-                Text(
-                  '@$username',
-                  style: theme.textTheme.bodySmall!.copyWith(
-                    color: colors.gray,
-                  ),
-                ),
-              Text(
-                _statusLabel(status),
-                style: theme.textTheme.bodySmall!.copyWith(color: colors.gray),
-              ),
-              if (customStatus != null) ...[
-                const SizedBox(height: 2),
-                Text(
-                  customStatus!,
-                  style: theme.textTheme.bodyMedium!.copyWith(
-                    color: colors.dirtyWhite,
-                  ),
-                ),
-              ],
-              if (remoteDomain != null) ...[
-                const SizedBox(height: 4),
-                RemoteOriginBadge(domain: remoteDomain!),
-              ],
-            ],
-          ),
-        ),
+        Expanded(child: names),
       ],
     );
   }
@@ -581,13 +806,13 @@ class _ProfileHeader extends StatelessWidget {
   String _statusLabel(String status) {
     switch (status) {
       case 'online':
-        return 'Online';
+        return UiCopy.online();
       case 'idle':
-        return 'Idle';
+        return UiCopy.idle();
       case 'dnd':
-        return 'Do Not Disturb';
+        return UiCopy.doNotDisturb();
       default:
-        return 'Offline';
+        return UiCopy.offline();
     }
   }
 }
@@ -643,20 +868,12 @@ class _MembershipInfo extends StatelessWidget {
         if (member.joinedAt.isNotEmpty) ...[
           const SizedBox(height: 12),
           Text(
-            'Member since ${_date(member.joinedAt)}',
+            UiCopy.memberSince(context: context, arg0: _date(member.joinedAt)),
             style: theme.textTheme.bodySmall!.copyWith(color: colors.gray),
           ),
         ],
         if (memberRoleIds.isNotEmpty) ...[
           const SizedBox(height: 14),
-          Text(
-            'ROLES',
-            style: theme.textTheme.labelSmall!.copyWith(
-              color: colors.gray,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          const SizedBox(height: 6),
           Wrap(
             spacing: 6,
             runSpacing: 6,
@@ -718,16 +935,20 @@ class _RoleChip extends StatelessWidget {
 
 class _RoleEditor extends StatelessWidget {
   const _RoleEditor({
+    required this.domainName,
     required this.roles,
     required this.memberRoleIds,
     required this.enabled,
     required this.onToggle,
+    required this.onManage,
   });
 
+  final String domainName;
   final List<AccordRole> roles;
   final List<String> memberRoleIds;
   final bool enabled;
   final void Function(AccordRole role, bool add) onToggle;
+  final VoidCallback onManage;
 
   @override
   Widget build(BuildContext context) {
@@ -736,13 +957,34 @@ class _RoleEditor extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const SizedBox(height: 14),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Text(
+              UiCopy.assignRoles(context: context),
+              style: theme.textTheme.labelSmall!.copyWith(
+                color: colors.gray,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            IconButton(
+              tooltip: AppStrings.choose(
+                'Open role settings',
+                '打开权限分配',
+                context: context,
+              ),
+              onPressed: enabled ? onManage : null,
+              visualDensity: VisualDensity.compact,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+              icon: Icon(Icons.add, size: 18, color: colors.dirtyWhite),
+            ),
+          ],
+        ),
+        const SizedBox(height: 6),
         Text(
-          'ASSIGN ROLES',
-          style: theme.textTheme.labelSmall!.copyWith(
-            color: colors.gray,
-            fontWeight: FontWeight.bold,
-          ),
+          AppStrings.choose('Only applies within $domainName', '仅对「$domainName」域生效', context: context),
+          style: theme.textTheme.bodySmall?.copyWith(color: colors.gray),
         ),
         const SizedBox(height: 6),
         Wrap(
@@ -795,36 +1037,36 @@ class _ModerationActions extends StatelessWidget {
         if (canTimeout)
           PopupMenuButton<int>(
             enabled: !busy,
-            tooltip: 'Time out',
+            tooltip: UiCopy.timeOut(context: context),
             onSelected: onTimeout,
             itemBuilder: (context) => [
-              for (final (label, seconds) in _timeoutDurations)
+              for (final (label, seconds) in _timeoutDurations(context))
                 PopupMenuItem(value: seconds, child: Text(label)),
             ],
             child: _ActionRow(
               icon: Icons.timer_outlined,
-              label: 'Time out…',
+              label: UiCopy.timeOut2(context: context),
               color: const Color(0xFFFAA81A),
             ),
           ),
         if (canTimeout && timedOut)
           _ActionTile(
             icon: Icons.timer_off_outlined,
-            label: 'Remove timeout',
+            label: UiCopy.removeTimeout(context: context),
             color: colors.dirtyWhite,
             onTap: busy ? null : onRemoveTimeout,
           ),
         if (canKick)
           _ActionTile(
             icon: Icons.exit_to_app,
-            label: 'Kick member',
+            label: UiCopy.kickMember(context: context),
             color: const Color(0xFFFAA81A),
             onTap: busy ? null : onKick,
           ),
         if (canBan)
           _ActionTile(
             icon: Icons.gavel,
-            label: 'Ban member',
+            label: UiCopy.banMember(context: context),
             color: colors.red,
             onTap: busy ? null : onBan,
           ),

@@ -59,6 +59,13 @@ pub async fn create_channel(
     input: &CreateChannel,
 ) -> Result<ChannelRow, AppError> {
     validate_rate_limit(input.rate_limit)?;
+    validate_parent(
+        pool,
+        Some(space_id),
+        &input.channel_type,
+        input.parent_id.as_deref(),
+    )
+    .await?;
     let id = snowflake::generate();
     let position = input.position.unwrap_or(0);
 
@@ -90,6 +97,19 @@ pub async fn update_channel(
     is_postgres: bool,
 ) -> Result<ChannelRow, AppError> {
     validate_rate_limit(input.rate_limit)?;
+    if let Some(parent) = &input.parent_id {
+        let channel = get_channel_row(pool, channel_id).await?;
+        validate_parent(
+            pool,
+            channel.space_id.as_deref(),
+            input
+                .channel_type
+                .as_deref()
+                .unwrap_or(&channel.channel_type),
+            parent.as_deref(),
+        )
+        .await?;
+    }
     let now_fn = crate::db::now_sql(is_postgres);
     let mut sets = Vec::new();
     let mut str_values: Vec<Option<String>> = Vec::new();
@@ -186,6 +206,14 @@ pub async fn reorder_channels(
     space_id: &str,
     updates: &[(String, i64)],
 ) -> Result<(), AppError> {
+    let mut seen = std::collections::HashSet::new();
+    for (id, position) in updates {
+        let channel = get_channel_row(pool, id).await?;
+        if channel.space_id.as_deref() != Some(space_id) || *position < 0 || !seen.insert(id) {
+            return Err(AppError::BadRequest("invalid domain channel order".into()));
+        }
+    }
+    let mut tx = pool.begin().await?;
     for (id, position) in updates {
         sqlx::query(&super::q(
             "UPDATE channels SET position = ? WHERE id = ? AND space_id = ?",
@@ -193,9 +221,10 @@ pub async fn reorder_channels(
         .bind(position)
         .bind(id)
         .bind(space_id)
-        .execute(pool)
+        .execute(&mut *tx)
         .await?;
     }
+    tx.commit().await?;
     Ok(())
 }
 
@@ -204,6 +233,27 @@ fn validate_rate_limit(value: Option<i64>) -> Result<(), AppError> {
         return Err(AppError::BadRequest(
             "rate_limit must be 0–21600 seconds".into(),
         ));
+    }
+    Ok(())
+}
+
+async fn validate_parent(
+    pool: &AnyPool,
+    space_id: Option<&str>,
+    kind: &str,
+    parent_id: Option<&str>,
+) -> Result<(), AppError> {
+    if let Some(parent_id) = parent_id {
+        let parent = get_channel_row(pool, parent_id).await?;
+        if kind == "category"
+            || parent.channel_type != "category"
+            || space_id.is_none()
+            || parent.space_id.as_deref() != space_id
+        {
+            return Err(AppError::BadRequest(
+                "parent must be a category in the same domain".into(),
+            ));
+        }
     }
     Ok(())
 }

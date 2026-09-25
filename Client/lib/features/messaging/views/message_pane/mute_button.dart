@@ -27,13 +27,13 @@ class _MuteButton extends ConsumerWidget {
     final levelLabel = level == null
         ? 'Mentions (default)'
         : level == AccordSettings.channelNotifAll
-        ? 'All messages'
+        ? UiCopy.allMessages(context: context)
         : level == AccordSettings.channelNotifMentions
-        ? 'Mentions only'
-        : 'Nothing';
+        ? UiCopy.mentionsOnly(context: context)
+        : UiCopy.nothing(context: context);
 
     return PopupMenuButton<_NotifAction>(
-      tooltip: 'Notification settings — $levelLabel',
+      tooltip: UiCopy.notificationSettings(context: context, arg0: levelLabel),
       icon: Icon(
         muted
             ? Icons.notifications_off
@@ -90,28 +90,34 @@ class _MuteButton extends ConsumerWidget {
         CheckedPopupMenuItem(
           value: _NotifAction.levelDefault,
           checked: level == null,
-          child: const Text('Use default'),
+          child: Text(UiCopy.useDefault(context: context)),
         ),
         CheckedPopupMenuItem(
           value: _NotifAction.levelAll,
           checked: level == AccordSettings.channelNotifAll,
-          child: const Text('All messages'),
+          child: Text(UiCopy.allMessages(context: context)),
         ),
         CheckedPopupMenuItem(
           value: _NotifAction.levelMentions,
           checked: level == AccordSettings.channelNotifMentions,
-          child: const Text('Only @mentions'),
+          child: Text(
+            AppStrings.choose('Only @mentions', '仅 @提及', context: context),
+          ),
         ),
         CheckedPopupMenuItem(
           value: _NotifAction.levelNothing,
           checked: level == AccordSettings.channelNotifNothing,
-          child: const Text('Nothing'),
+          child: Text(UiCopy.nothing(context: context)),
         ),
         const PopupMenuDivider(),
         PopupMenuItem(
           value: _NotifAction.toggleMute,
           enabled: activeKey != null && !mutedChannels.isLoading,
-          child: Text(muted ? 'Unmute channel' : 'Mute channel'),
+          child: Text(
+            muted
+                ? UiCopy.unmuteChannel(context: context)
+                : UiCopy.muteChannel(context: context),
+          ),
         ),
       ],
     );

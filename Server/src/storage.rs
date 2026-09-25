@@ -8,9 +8,16 @@ use crate::state::AppState;
 pub const MAX_EMOJI_SIZE: usize = 256 * 1024; // 256 KB
 pub const MAX_AVATAR_SIZE: usize = 2 * 1024 * 1024; // 2 MB
 pub const MAX_SOUND_SIZE: usize = 2 * 1024 * 1024; // 2 MB
-pub const MAX_ATTACHMENT_SIZE: usize = 25 * 1024 * 1024; // 25 MB
+pub const MAX_ATTACHMENT_SIZE: usize = 1024 * 1024 * 1024; // 1 GiB
 
-pub const ALLOWED_IMAGE_TYPES: &[&str] = &["image/png", "image/gif", "image/webp"];
+pub const ALLOWED_IMAGE_TYPES: &[&str] = &["image/png", "image/gif", "image/webp", "image/jpeg"];
+
+/// JSON body cap for profile, space, and member image uploads.
+///
+/// Axum's default JSON limit is 2MB. A banner is sent as a base64 data URI,
+/// which is about 4/3 of the decoded image, so a picture still under
+/// [`MAX_AVATAR_SIZE`] is rejected before the handler runs.
+pub const MAX_IMAGE_UPLOAD_BODY: usize = 8 * 1024 * 1024;
 pub const ALLOWED_AUDIO_TYPES: &[&str] = &["audio/ogg", "audio/mpeg", "audio/wav"];
 
 /// Canonical lowercase SHA-256 hex digest used for every stored file. Hash
@@ -35,7 +42,7 @@ pub fn validate_image_data_uri_with_limit(
 
     if !ALLOWED_IMAGE_TYPES.contains(&mime) {
         return Err(AppError::BadRequest(format!(
-            "unsupported image type: {mime}. allowed: png, gif, webp"
+            "unsupported image type: {mime}. allowed: png, gif, webp, jpeg"
         )));
     }
 
@@ -410,6 +417,21 @@ fn base64_decode(input: &str) -> Result<Vec<u8>, AppError> {
     }
 
     Ok(output)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::validate_image_data_uri_with_limit;
+
+    #[test]
+    fn jpeg_data_uri_is_an_image() {
+        let (bytes, mime, animated) =
+            validate_image_data_uri_with_limit("data:image/jpeg;base64,aGk=", 1024)
+                .expect("jpeg");
+        assert_eq!(mime, "image/jpeg");
+        assert_eq!(bytes, b"hi");
+        assert!(!animated);
+    }
 }
 
 /// Resolve a storage path to a canonical PathBuf for tests.

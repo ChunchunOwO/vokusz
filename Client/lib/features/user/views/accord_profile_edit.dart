@@ -1,3 +1,4 @@
+import 'package:bonfire/l10n/ui_copy.dart';
 import 'package:bonfire/shared/utils/client_access.dart';
 import 'dart:typed_data';
 import 'package:bonfire/shared/utils/rest_result_ext.dart';
@@ -13,6 +14,7 @@ import 'package:bonfire/features/user/controllers/accord_users.dart';
 import 'package:bonfire/shared/components/async_state_views.dart';
 import 'package:bonfire/shared/components/color_swatch_chip.dart';
 import 'package:bonfire/shared/components/image_crop_dialog.dart';
+import 'package:bonfire/shared/utils/cropped_image.dart';
 import 'package:bonfire/shared/components/ticker_aware_circle_avatar.dart';
 import 'package:bonfire/theme/theme.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -20,7 +22,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-/// Opens the self-profile editor (display name, bio, avatar). Mirrors the
+/// Opens the self-profile editor (display name, bio, avatar, banner). Mirrors the
 /// reference client's editable profile card. Calls `users.updateMe` and
 /// updates the global user cache so the change is visible everywhere the
 /// current user is rendered.
@@ -56,6 +58,11 @@ class _ProfileEditState extends ConsumerState<_ProfileEdit> {
   /// it as a data URI; otherwise the current server-side avatar is unchanged.
   List<int>? _newAvatarBytes;
   String? _newAvatarFilename;
+
+  /// A cropped banner waiting to be saved, or a request to clear the current one.
+  Uint8List? _newBannerBytes;
+  String _bannerFilename = 'banner.jpg';
+  bool _bannerRemoved = false;
 
   /// The chosen imageless-avatar background color (stored as the user's
   /// `accent_color`). `null` means "transparent" — the avatar falls back to the
@@ -122,7 +129,13 @@ class _ProfileEditState extends ConsumerState<_ProfileEdit> {
       // Only seed the shared user cache when editing the active server (the
       // cache belongs to it); a background server's user shouldn't leak in.
       if (_isActiveServer) {
-        ref.read(accordUsersControllerProvider(ref.readActiveServerKey() ?? '').notifier).upsert(data);
+        ref
+            .read(
+              accordUsersControllerProvider(
+                ref.readActiveServerKey() ?? '',
+              ).notifier,
+            )
+            .upsert(data);
       }
     }
     setState(() => _loaded = true);
@@ -140,7 +153,8 @@ class _ProfileEditState extends ConsumerState<_ProfileEdit> {
       imageBytes: file!.bytes!,
       aspectRatio: 1,
       circular: true,
-      title: 'Crop avatar',
+      title: UiCopy.cropAvatar(),
+      maxOutputDimension: 512,
     );
     if (cropped == null) return;
     setState(() {
@@ -149,6 +163,36 @@ class _ProfileEditState extends ConsumerState<_ProfileEdit> {
       // An uploaded image hides the colored fallback, so reset the picker to
       // transparent — the chosen color only applies to imageless avatars.
       _accentColor = null;
+    });
+  }
+
+  Future<void> _pickBanner() async {
+    final picked = await FilePicker.platform.pickFiles(
+      type: FileType.image,
+      withData: true,
+    );
+    final file = picked?.files.firstOrNull;
+    if (file?.bytes == null || !mounted) return;
+    final cropped = await showImageCropDialog(
+      context,
+      imageBytes: file!.bytes!,
+      aspectRatio: 16 / 9,
+      title: UiCopy.cropBanner(),
+      maxOutputDimension: 1024,
+    );
+    if (cropped == null || !mounted) return;
+    final encoded = encodeBannerJpeg(cropped);
+    setState(() {
+      _newBannerBytes = encoded;
+      _bannerFilename = looksLikeJpeg(encoded) ? 'banner.jpg' : 'banner.png';
+      _bannerRemoved = false;
+    });
+  }
+
+  void _removeBanner() {
+    setState(() {
+      _newBannerBytes = null;
+      _bannerRemoved = true;
     });
   }
 
@@ -171,13 +215,16 @@ class _ProfileEditState extends ConsumerState<_ProfileEdit> {
         _newAvatarFilename ?? 'avatar.png',
       );
     }
+    if (_newBannerBytes != null) {
+      body['banner'] = AccordCDN.buildDataUri(_newBannerBytes!, _bannerFilename);
+    } else if (_bannerRemoved) {
+      body['banner'] = '';
+    }
     final result = await client.users.updateMe(body);
     if (!mounted) return;
     setState(() => _busy = false);
     if (!result.ok) {
-      setState(
-        () => _error = result.errorOr('Failed to save profile'),
-      );
+      setState(() => _error = result.errorOr(UiCopy.failedToSaveProfile()));
       return;
     }
     final updated = result.data;
@@ -185,7 +232,13 @@ class _ProfileEditState extends ConsumerState<_ProfileEdit> {
     // server — those caches belong to it. A per-server edit of a background
     // connection just persists server-side and takes effect when it's active.
     if (updated is AccordUser && _isActiveServer) {
-      ref.read(accordUsersControllerProvider(ref.readActiveServerKey() ?? '').notifier).upsert(updated);
+      final users = ref.read(
+        accordUsersControllerProvider(
+          ref.readActiveServerKey() ?? '',
+        ).notifier,
+      );
+      evictUserMedia(users.cached(updated.id), updated, ref.readCdnUrl());
+      users.upsert(updated);
       // The member caches hold their own AccordUser per member; propagate the
       // change so message authors and the roster update, not just surfaces that
       // read the global user cache.
@@ -217,7 +270,9 @@ class _ProfileEditState extends ConsumerState<_ProfileEdit> {
         _loadedUser ??
         (_isActiveServer && session != null
             ? ref.watch(
-                accordUsersControllerProvider(ref.readActiveServerKey() ?? '').select((m) => m[session.userId]),
+                accordUsersControllerProvider(
+                  ref.readActiveServerKey() ?? '',
+                ).select((m) => m[session.userId]),
               )
             : null);
     final avatarUrl = me == null
@@ -235,7 +290,8 @@ class _ProfileEditState extends ConsumerState<_ProfileEdit> {
         constraints: dialogConstraints(context, maxWidth: 460, maxHeight: 600),
         child: Padding(
           padding: const EdgeInsets.all(20),
-          child: Column(
+          child: SingleChildScrollView(
+            child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -250,14 +306,17 @@ class _ProfileEditState extends ConsumerState<_ProfileEdit> {
                   Expanded(
                     child: Text(
                       serverName == null
-                          ? 'Edit profile'
-                          : 'Edit profile · $serverName',
+                          ? UiCopy.editProfile(context: context)
+                          : UiCopy.editProfile2(
+                              context: context,
+                              arg0: serverName,
+                            ),
                       style: theme.textTheme.titleMedium,
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
                   IconButton(
-                    tooltip: 'Close',
+                    tooltip: UiCopy.close(context: context),
                     onPressed: () => Navigator.of(context).maybePop(),
                     icon: const Icon(Icons.close, size: 18),
                   ),
@@ -295,7 +354,7 @@ class _ProfileEditState extends ConsumerState<_ProfileEdit> {
                         right: -4,
                         bottom: -4,
                         child: IconButton(
-                          tooltip: 'Change avatar',
+                          tooltip: UiCopy.changeAvatar(context: context),
                           onPressed: _busy ? null : _pickAvatar,
                           icon: const Icon(Icons.camera_alt, size: 18),
                           style: IconButton.styleFrom(
@@ -307,10 +366,22 @@ class _ProfileEditState extends ConsumerState<_ProfileEdit> {
                   ),
                 ),
                 const SizedBox(height: 16),
+                _BannerEditor(
+                  bytes: _bannerRemoved ? null : _newBannerBytes,
+                  url: _bannerRemoved
+                      ? null
+                      : accordUserBannerUrl(me, session?.server.cdnUrl),
+                  enabled: !_busy,
+                  onPick: _pickBanner,
+                  onRemove: _removeBanner,
+                ),
+                const SizedBox(height: 16),
                 TextField(
                   controller: _displayName,
                   enabled: !_busy,
-                  decoration: const InputDecoration(labelText: 'Display name'),
+                  decoration: InputDecoration(
+                    labelText: UiCopy.displayName(context: context),
+                  ),
                 ),
                 const SizedBox(height: 12),
                 TextField(
@@ -318,16 +389,18 @@ class _ProfileEditState extends ConsumerState<_ProfileEdit> {
                   enabled: !_busy,
                   minLines: 3,
                   maxLines: 6,
-                  decoration: const InputDecoration(
-                    labelText: 'Bio',
-                    hintText: 'A short bio shown on your profile',
+                  decoration: InputDecoration(
+                    labelText: UiCopy.bio(context: context),
+                    hintText: UiCopy.aShortBioShownOnYourProfile(
+                      context: context,
+                    ),
                   ),
                 ),
                 const SizedBox(height: 16),
                 Align(
                   alignment: Alignment.centerLeft,
                   child: Text(
-                    'Avatar background',
+                    UiCopy.avatarBackground(context: context),
                     style: theme.textTheme.bodySmall!.copyWith(
                       color: colors.dirtyWhite,
                     ),
@@ -370,7 +443,7 @@ class _ProfileEditState extends ConsumerState<_ProfileEdit> {
                       onPressed: _busy
                           ? null
                           : () => Navigator.of(context).maybePop(),
-                      child: const Text('Cancel'),
+                      child: Text(UiCopy.cancel(context: context)),
                     ),
                     const SizedBox(width: 8),
                     FilledButton(
@@ -381,15 +454,87 @@ class _ProfileEditState extends ConsumerState<_ProfileEdit> {
                               height: 16,
                               child: CircularProgressIndicator(strokeWidth: 2),
                             )
-                          : const Text('Save'),
+                          : Text(UiCopy.save(context: context)),
                     ),
                   ],
                 ),
               ],
             ],
+            ),
           ),
         ),
       ),
+    );
+  }
+}
+
+class _BannerEditor extends StatelessWidget {
+  const _BannerEditor({
+    required this.bytes,
+    required this.url,
+    required this.enabled,
+    required this.onPick,
+    required this.onRemove,
+  });
+
+  final Uint8List? bytes;
+  final String? url;
+  final bool enabled;
+  final VoidCallback onPick;
+  final VoidCallback onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = BonfireThemeExtension.of(context);
+    final theme = Theme.of(context);
+    final hasImage = bytes != null || url != null;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          UiCopy.banner(context: context),
+          style: theme.textTheme.bodySmall!.copyWith(color: colors.dirtyWhite),
+        ),
+        const SizedBox(height: 8),
+        if (hasImage)
+          ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: AspectRatio(
+              aspectRatio: 16 / 9,
+              child: bytes != null
+                  ? Image.memory(bytes!, fit: BoxFit.cover)
+                  : CachedNetworkImage(
+                      imageUrl: url!,
+                      fit: BoxFit.cover,
+                      errorWidget: (_, _, _) => ColoredBox(
+                        color: colors.darkGray,
+                        child: Icon(Icons.broken_image_outlined, color: colors.gray),
+                      ),
+                    ),
+            ),
+          )
+        else
+          OutlinedButton.icon(
+            onPressed: enabled ? onPick : null,
+            icon: const Icon(Icons.add, size: 18),
+            label: Text(UiCopy.upload(context: context)),
+          ),
+        if (hasImage) ...[
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              TextButton(
+                onPressed: enabled ? onPick : null,
+                child: Text(UiCopy.change(context: context)),
+              ),
+              TextButton(
+                onPressed: enabled ? onRemove : null,
+                child: Text(UiCopy.remove(context: context)),
+              ),
+            ],
+          ),
+        ],
+      ],
     );
   }
 }

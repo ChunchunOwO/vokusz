@@ -8,9 +8,12 @@ project(runner LANGUAGES CXX)
 # Any new source files that you add to the application should be added here.
 add_executable(${BINARY_NAME} WIN32
   "flutter_window.cpp"
+  "foreground_app.cpp"
   "main.cpp"
+  "speaker_overlay.cpp"
   "taskbar_badge.cpp"
   "utils.cpp"
+  "window_corners.cpp"
   "win32_window.cpp"
   "${FLUTTER_MANAGED_DIR}/generated_plugin_registrant.cc"
   "Runner.rc"
@@ -20,6 +23,7 @@ add_executable(${BINARY_NAME} WIN32
 # Apply the standard set of build settings. This can be removed for applications
 # that need different build settings.
 apply_standard_settings(${BINARY_NAME})
+target_compile_options(${BINARY_NAME} PRIVATE /utf-8)
 
 # Add preprocessor definitions for the build version.
 target_compile_definitions(${BINARY_NAME} PRIVATE "FLUTTER_VERSION=\"${FLUTTER_VERSION}\"")
@@ -40,7 +44,7 @@ target_link_libraries(${BINARY_NAME} PRIVATE flutter flutter_wrapper_app flutter
 target_link_libraries(${BINARY_NAME} PRIVATE "dwmapi.lib")
 # GDI+ draws the taskbar overlay badge (taskbar_badge.cpp); the ITaskbarList3
 # COM object it feeds comes from the default ole32/uuid libs.
-target_link_libraries(${BINARY_NAME} PRIVATE "gdiplus.lib")
+target_link_libraries(${BINARY_NAME} PRIVATE "gdiplus.lib" "ole32.lib" "shell32.lib" "version.lib")
 target_include_directories(${BINARY_NAME} PRIVATE "${CMAKE_SOURCE_DIR}")
 
 # Run the Flutter tool portions of the build. This must not be removed.

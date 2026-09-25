@@ -1,3 +1,4 @@
+import 'package:bonfire/l10n/app_strings.dart';
 import 'package:bonfire/features/member/utils/member_display.dart';
 import 'package:bonfire/theme/theme.dart';
 import 'package:flutter/material.dart';
@@ -98,6 +99,9 @@ class ColorSwatchChip extends StatelessWidget {
         : GestureDetector(onTap: onTap, child: box);
     final label = this.label;
     if (label == null || label.isEmpty) return swatch;
-    return Tooltip(message: label, child: swatch);
+    return Tooltip(
+      message: AppStrings.label(label, context: context),
+      child: swatch,
+    );
   }
 }

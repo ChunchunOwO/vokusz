@@ -5,9 +5,7 @@ use crate::db;
 use crate::error::AppError;
 use crate::gateway::events::GatewayBroadcast;
 use crate::middleware::auth::AuthUser;
-use crate::middleware::permissions::{
-    require_channel_membership, require_channel_permission, require_dm_access,
-};
+use crate::middleware::permissions::{require_channel_permission, require_dm_access};
 use crate::models::channel::UpdateChannel;
 use crate::models::permission::{PermissionOverwrite, ALL_PERMISSIONS};
 use crate::state::AppState;
@@ -25,7 +23,7 @@ pub async fn get_channel(
     Path(channel_id): Path<String>,
     auth: AuthUser,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    require_channel_membership(&state.db, &channel_id, &auth.user_id).await?;
+    require_channel_permission(&state.db, &channel_id, &auth, "view_channel").await?;
     let channel = db::channels::get_channel_row(&state.db, &channel_id).await?;
     let json = super::spaces::channel_row_to_json_pub(&state.db, &channel).await;
     Ok(Json(serde_json::json!({ "data": json })))
@@ -304,6 +302,7 @@ pub async fn upsert_overwrite(
         deny: input.deny,
     };
     db::permission_overwrites::upsert_overwrite(&state.db, &channel_id, &overwrite).await?;
+    let _ = broadcast_permissions_changed(&state, &channel_id).await?;
 
     Ok(Json(serde_json::json!({ "data": overwrite })))
 }
@@ -353,6 +352,7 @@ pub async fn delete_overwrite(
     };
     validate_existing_overwrite(&state.db, &channel_id, &overwrite_id, &actor_perms).await?;
     db::permission_overwrites::delete_overwrite(&state.db, &channel_id, &overwrite_id).await?;
+    let _ = broadcast_permissions_changed(&state, &channel_id).await?;
     Ok(Json(serde_json::json!({ "data": null })))
 }
 
@@ -497,4 +497,28 @@ pub async fn remove_recipient(
     }
 
     Ok(Json(serde_json::json!({ "data": json })))
+}
+
+async fn broadcast_permissions_changed(
+    state: &AppState,
+    channel_id: &str,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let channel = db::channels::get_channel_row(&state.db, channel_id).await?;
+    let json = super::spaces::channel_row_to_json_pub(&state.db, &channel).await;
+    if let Some(dispatcher) = &*state.gateway_tx.read().await {
+        let _ = dispatcher.send(crate::gateway::events::GatewayBroadcast {
+            space_id: channel.space_id,
+            target_user_ids: None,
+            intent: "channels".into(),
+            required_permission: None,
+            event: serde_json::json!({"op": 0, "type": "channel.update", "data": json}),
+        });
+    }
+    crate::security::reconcile_voice_access(state).await;
+    if !state.test_mode {
+        if let Some(lk) = &state.livekit_client {
+            lk.refresh_channel_permissions(state, channel_id).await;
+        }
+    }
+    Ok(Json(serde_json::json!({"data": json})))
 }

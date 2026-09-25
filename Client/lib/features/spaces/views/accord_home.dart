@@ -1,3 +1,4 @@
+import 'package:bonfire/l10n/ui_copy.dart';
 import 'dart:async';
 
 import 'package:accordkit/accordkit.dart';
@@ -28,14 +29,14 @@ import 'package:bonfire/features/messaging/views/message_pane/message_pane.dart'
 import 'package:bonfire/features/member/utils/permissions.dart';
 import 'package:bonfire/features/server/controllers/connections.dart';
 import 'package:bonfire/features/server/models/accord_server.dart';
-import 'package:bonfire/features/server/views/add_server_dialog.dart';
+import 'package:bonfire/l10n/app_strings.dart';
+import 'package:bonfire/features/spaces/views/create_channel_dialog.dart';
 import 'package:bonfire/features/spaces/controllers/spaces.dart';
 import 'package:bonfire/features/spaces/controllers/role_preview.dart';
 import 'package:bonfire/features/spaces/models/home_layout.dart';
 import 'package:bonfire/features/spaces/models/space_folder.dart';
 import 'package:bonfire/features/spaces/utils/space_display.dart';
 import 'package:bonfire/features/spaces/views/role_preview_banner.dart';
-import 'package:bonfire/features/spaces/views/accord_discovery.dart';
 import 'package:bonfire/features/spaces/views/accord_gates.dart';
 import 'package:bonfire/features/spaces/views/accord_channel_reorder.dart';
 import 'package:bonfire/features/spaces/views/accord_invites.dart';
@@ -197,9 +198,7 @@ class _AccordHomeScreenState extends ConsumerState<AccordHomeScreen> {
       return {'ok': true};
     },
     'open_discovery': (args) async {
-      if (!mounted) return _mcpUnmounted;
-      showAccordDiscovery(context);
-      return {'ok': true};
+      return {'error': UiCopy.publicServersAreDisabled()};
     },
     'open_thread': (args) async {
       if (!mounted) return _mcpUnmounted;
@@ -213,7 +212,7 @@ class _AccordHomeScreenState extends ConsumerState<AccordHomeScreen> {
             ),
           )
           ?.firstWhereOrNull((m) => m.id == messageId);
-      if (root == null) return {'error': 'Message not loaded'};
+      if (root == null) return {'error': UiCopy.messageNotLoaded()};
       showAccordThread(context, channelId: channelId, root: root);
       return {'ok': true};
     },
@@ -225,7 +224,7 @@ class _AccordHomeScreenState extends ConsumerState<AccordHomeScreen> {
       if (!mounted) return _mcpUnmounted;
       final voice = ref.read(voiceControllerProvider);
       if (!voice.isConnected) {
-        return {'error': 'Not connected to a voice channel'};
+        return {'error': UiCopy.notConnectedToAVoiceChannel()};
       }
       await _openChannel(voice.channelId!, spaceId: voice.spaceId!);
       return {'ok': true};
@@ -239,7 +238,7 @@ class _AccordHomeScreenState extends ConsumerState<AccordHomeScreen> {
       if (!mounted) return _mcpUnmounted;
       final spaceId = mcpHomeBridge.state.spaceId;
       if (spaceId == null || spaceId.isEmpty) {
-        return {'error': 'No space selected'};
+        return {'error': UiCopy.noSpaceSelected()};
       }
       await showAccordSearch(context, spaceId: spaceId);
       return {'ok': true};
@@ -372,7 +371,7 @@ class _AccordHomeScreenState extends ConsumerState<AccordHomeScreen> {
       }
       if (!mounted || ref.readActiveServerKey() != serverKey) return;
       if (root == null) {
-        showInfoSnack(context, 'The linked message is unavailable.');
+        showInfoSnack(context, UiCopy.theLinkedMessageIsUnavailable());
         return;
       }
       showAccordThread(
@@ -394,7 +393,7 @@ class _AccordHomeScreenState extends ConsumerState<AccordHomeScreen> {
         _pendingChannelName = null;
         _pendingMessageId = null;
       });
-      showInfoSnack(context, 'The linked channel is unavailable.');
+      showInfoSnack(context, UiCopy.theLinkedChannelIsUnavailable());
     });
   }
 
@@ -592,8 +591,7 @@ class _AccordHomeScreenState extends ConsumerState<AccordHomeScreen> {
       child: _SpaceRail(
         selectedSpaceId: effectiveSpaceId,
         onSelect: _selectSpace,
-        onAddServer: () => showAddServerDialog(context),
-        onSwitchAccount: () => context.push('/switcher'),
+        onAddServer: () => showAddChannelDialog(context, ref),
         onOpenSettings: () => context.push('/settings'),
         onLogout: () async {
           if (!await confirmLogout(context)) return;
@@ -633,7 +631,7 @@ class _AccordHomeScreenState extends ConsumerState<AccordHomeScreen> {
             Expanded(child: _TabStrip(onSelect: _selectTab)),
             if (membersButton)
               IconButton(
-                tooltip: 'Members',
+                tooltip: AppStrings.of(context).members,
                 icon: Icon(Icons.people_alt_outlined, color: colors.dirtyWhite),
                 onPressed: () => _scaffoldKey.currentState?.openEndDrawer(),
               ),
@@ -662,7 +660,14 @@ class _AccordHomeScreenState extends ConsumerState<AccordHomeScreen> {
         ? Drawer(
             width: 260,
             backgroundColor: colors.background,
-            child: SafeArea(child: AccordMemberList(spaceId: effectiveSpaceId)),
+            child: SafeArea(
+              child: AccordMemberList(
+                spaceId: effectiveSpaceId,
+                channel: channels?.firstWhereOrNull(
+                  (c) => c.id == shownChannelId,
+                ),
+              ),
+            ),
           )
         : null;
 
@@ -714,7 +719,12 @@ class _AccordHomeScreenState extends ConsumerState<AccordHomeScreen> {
                   if (layout.showsMemberListInline &&
                       hasMembers &&
                       _memberListVisible)
-                    AccordMemberList(spaceId: effectiveSpaceId),
+                    AccordMemberList(
+                      spaceId: effectiveSpaceId,
+                      channel: channels?.firstWhereOrNull(
+                        (c) => c.id == shownChannelId,
+                      ),
+                    ),
                 ],
               ),
               pip,
@@ -786,7 +796,7 @@ class _AccordHomeScreenState extends ConsumerState<AccordHomeScreen> {
                             OnboardingAnchor(
                               anchor: OnboardingAnchorId.navMenu,
                               child: IconButton(
-                                tooltip: 'Channels',
+                                tooltip: AppStrings.of(context).channels,
                                 icon: Icon(
                                   Icons.menu,
                                   color: colors.dirtyWhite,
@@ -798,7 +808,7 @@ class _AccordHomeScreenState extends ConsumerState<AccordHomeScreen> {
                             Expanded(child: _TabStrip(onSelect: _selectTab)),
                             if (hasMembers)
                               IconButton(
-                                tooltip: 'Members',
+                                tooltip: AppStrings.of(context).members,
                                 icon: Icon(
                                   Icons.people_alt_outlined,
                                   color: colors.dirtyWhite,

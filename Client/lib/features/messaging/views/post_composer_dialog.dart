@@ -1,3 +1,4 @@
+import 'package:bonfire/l10n/ui_copy.dart';
 import 'dart:async';
 import 'package:accordkit/accordkit.dart';
 import 'package:bonfire/features/messaging/utils/send_cooldown.dart';
@@ -86,7 +87,7 @@ class _PostComposerDialogState extends ConsumerState<PostComposerDialog> {
         ? applyEmoticons(rawBody)
         : rawBody;
     if (_hasTitleField && title.isEmpty) {
-      setState(() => _error = 'Title is required');
+      setState(() => _error = UiCopy.titleIsRequired());
       return;
     }
     final client = ref.read(
@@ -142,8 +143,8 @@ class _PostComposerDialogState extends ConsumerState<PostComposerDialog> {
                   controller: _title,
                   autofocus: widget.autofocusTitle,
                   enabled: !_busy,
-                  decoration: const InputDecoration(
-                    labelText: 'Title',
+                  decoration: InputDecoration(
+                    labelText: UiCopy.title(context: context),
                     isDense: true,
                     border: OutlineInputBorder(),
                   ),
@@ -180,7 +181,7 @@ class _PostComposerDialogState extends ConsumerState<PostComposerDialog> {
                     onPressed: _busy
                         ? null
                         : () => Navigator.of(context).maybePop(),
-                    child: const Text('Cancel'),
+                    child: Text(UiCopy.cancel(context: context)),
                   ),
                   const SizedBox(width: 8),
                   FilledButton(

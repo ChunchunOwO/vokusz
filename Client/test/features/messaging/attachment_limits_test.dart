@@ -61,9 +61,9 @@ void main() {
       expect(result.rejections, hasLength(2));
     });
 
-    test('the documented limit is 25 MB', () {
-      expect(kMaxAttachmentBytes, 25 * 1024 * 1024);
-      expect(formatFileSize(kMaxAttachmentBytes), '25 MB');
+    test('the documented limit is 1 GB', () {
+      expect(kMaxAttachmentBytes, 1024 * 1024 * 1024);
+      expect(formatFileSize(kMaxAttachmentBytes), '1.0 GB');
     });
 
     test('the fallback per-message count matches the accordserver default', () {
@@ -132,7 +132,7 @@ void main() {
       final message = oversizeAttachmentMessage('movie.mp4', 30 * 1024 * 1024);
       expect(message, contains('movie.mp4'));
       expect(message, contains('30 MB'));
-      expect(message, contains('25 MB'));
+      expect(message, contains('1.0 GB'));
     });
 
     test('honors an explicit maxBytes, matching screenAttachments wording', () {

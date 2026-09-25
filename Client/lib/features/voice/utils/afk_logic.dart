@@ -4,6 +4,8 @@
 /// tests in `test/features/voice/afk_logic_test.dart` lock the behaviour in.
 library;
 
+import 'package:bonfire/l10n/ui_copy.dart';
+
 /// Idle timeouts offered in Voice & Video settings, in minutes. `0` disables
 /// AFK detection entirely.
 ///
@@ -20,9 +22,9 @@ const int defaultAfkTimeoutMinutes = 10;
 
 /// Human label for an [afkTimeoutOptionsMinutes] entry.
 String afkTimeoutLabel(int minutes) {
-  if (minutes <= 0) return 'Off';
+  if (minutes <= 0) return UiCopy.off();
   if (minutes == 1) return '1 minute';
-  return '$minutes minutes';
+  return UiCopy.minutes(arg0: minutes);
 }
 
 /// The idle timeout to apply, or null when AFK detection is off.
@@ -32,9 +34,8 @@ Duration? effectiveAfkTimeout(int userMinutes) =>
 /// How often the monitor should re-evaluate for a given [timeout]: a quarter of
 /// the timeout, clamped to 1–15s. Short enough that the AFK flip is prompt,
 /// long enough that a 30-minute timeout isn't polling the mic every second.
-Duration afkPollInterval(Duration timeout) => Duration(
-  milliseconds: (timeout.inMilliseconds ~/ 4).clamp(1000, 15000),
-);
+Duration afkPollInterval(Duration timeout) =>
+    Duration(milliseconds: (timeout.inMilliseconds ~/ 4).clamp(1000, 15000));
 
 /// The AFK state machine: a "last activity" timestamp plus the derived AFK
 /// flag. Deliberately clock-injected (every method takes `now`) rather than

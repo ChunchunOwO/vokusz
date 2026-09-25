@@ -4,6 +4,7 @@
 /// (`thread_view.dart`).
 library;
 
+import 'package:bonfire/l10n/ui_copy.dart';
 import 'package:bonfire/features/member/views/remote_origin_badge.dart';
 import 'package:bonfire/shared/components/context_menu.dart';
 import 'package:bonfire/theme/theme.dart';
@@ -150,20 +151,20 @@ List<AccordMenuEntry> buildMessageActionEntries({
   return [
     if (content.isNotEmpty)
       AccordMenuEntry(
-        label: 'Copy text',
+        label: UiCopy.copyText(),
         icon: Icons.copy_outlined,
         onSelected: () => Clipboard.setData(ClipboardData(text: content)),
       ),
     if (canEdit)
       AccordMenuEntry(
-        label: 'Edit',
+        label: UiCopy.edit(),
         icon: Icons.edit_outlined,
         onSelected: onEdit,
       ),
     ...beforeDelete,
     if (canDelete)
       AccordMenuEntry(
-        label: 'Delete',
+        label: UiCopy.delete(),
         icon: Icons.delete_outline,
         destructive: true,
         onSelected: onDelete,

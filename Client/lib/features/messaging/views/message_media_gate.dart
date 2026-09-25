@@ -1,3 +1,4 @@
+import 'package:bonfire/l10n/ui_copy.dart';
 import 'package:bonfire/shared/utils/external_url.dart';
 import 'package:flutter/material.dart';
 
@@ -80,7 +81,7 @@ class _ConsentPrompt extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final label = 'Load external image from $host';
+    final label = UiCopy.loadExternalImageFrom(context: context, arg0: host);
     if (compact) {
       return Tooltip(
         message: label,

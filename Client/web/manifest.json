@@ -1,11 +1,12 @@
 {
     "name": "Vokusz",
+    "lang": "zh-CN",
     "short_name": "Vokusz",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#14161A",
     "theme_color": "#14161A",
-    "description": "Vokusz — community chat with free screen sharing and stable voice.",
+    "description": "Vokusz：免费屏幕共享，流畅稳定的语音与社区聊天。",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

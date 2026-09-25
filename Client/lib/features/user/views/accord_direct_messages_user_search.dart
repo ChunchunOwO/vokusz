@@ -87,7 +87,7 @@ class _UserSearchListState extends ConsumerState<_UserSearchList> {
             const SizedBox(width: 8),
             FilledButton(
               onPressed: widget.busy ? null : _search,
-              child: const Text('Search'),
+              child: Text(UiCopy.search(context: context)),
             ),
           ],
         ),
@@ -100,7 +100,7 @@ class _UserSearchListState extends ConsumerState<_UserSearchList> {
               ? Padding(
                   padding: const EdgeInsets.all(16),
                   child: Text(
-                    'No users found',
+                    UiCopy.noUsersFound2(context: context),
                     style: theme.textTheme.bodySmall,
                   ),
                 )

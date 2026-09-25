@@ -1,3 +1,4 @@
+import 'package:bonfire/l10n/ui_copy.dart';
 import 'package:accordkit/accordkit.dart';
 import 'package:bonfire/features/admin/views/admin_list_scaffold.dart';
 import 'package:bonfire/shared/components/load_more_footer.dart';
@@ -48,11 +49,12 @@ class _AdminUsersTabState extends ConsumerState<AdminUsersTab>
       data is List ? data.cast<AccordUser>() : <AccordUser>[];
 
   @override
-  String loadError(RestResult result) => result.errorOr('Failed to load users');
+  String loadError(RestResult result) =>
+      result.errorOr(UiCopy.failedToLoadUsers());
 
   @override
   String loadMoreError(RestResult result) =>
-      result.errorOr('Failed to load more');
+      result.errorOr(UiCopy.failedToLoadMore());
 
   @override
   void dispose() {
@@ -91,7 +93,7 @@ class _AdminUsersTabState extends ConsumerState<AdminUsersTab>
     });
     if (!mounted) return;
     if (!result.ok) {
-      setState(() => error = result.errorOr('Failed to update user'));
+      setState(() => error = result.errorOr(UiCopy.failedToUpdateUser()));
       return;
     }
     setState(() => user.isAdmin = value);
@@ -99,11 +101,11 @@ class _AdminUsersTabState extends ConsumerState<AdminUsersTab>
 
   Future<void> _setDisabled(AccordUser user, bool disable) async {
     final ok = await _confirm(
-      disable ? 'Disable user' : 'Enable user',
+      disable ? UiCopy.disableUser() : UiCopy.enableUser(),
       disable
-          ? "Disable '${user.username}'? They will be unable to log in."
-          : "Re-enable '${user.username}'? They will be able to log in again.",
-      disable ? 'Disable' : 'Enable',
+          ? UiCopy.disableTheyWillBeUnableToLog(arg0: user.username)
+          : UiCopy.reEnableTheyWillBeAbleTo(arg0: user.username),
+      disable ? UiCopy.disable() : UiCopy.enable(),
       danger: disable,
     );
     if (ok != true) return;
@@ -116,7 +118,7 @@ class _AdminUsersTabState extends ConsumerState<AdminUsersTab>
     if (!mounted) return;
     setState(() => _busy = false);
     if (!result.ok) {
-      setState(() => error = result.errorOr('Failed to update user'));
+      setState(() => error = result.errorOr(UiCopy.failedToUpdateUser()));
       return;
     }
     setState(() => user.disabled = disable);
@@ -137,17 +139,17 @@ class _AdminUsersTabState extends ConsumerState<AdminUsersTab>
     if (!mounted) return;
     setState(() => _busy = false);
     if (!result.ok) {
-      setState(() => error = result.errorOr('Failed to reset password'));
+      setState(() => error = result.errorOr(UiCopy.failedToResetPassword()));
       return;
     }
-    showInfoSnack(context, "Password reset for ${user.username}");
+    showInfoSnack(context, UiCopy.passwordResetFor(arg0: user.username));
   }
 
   Future<void> _delete(AccordUser user) async {
     final ok = await _confirm(
-      'Delete user',
-      "Delete '${user.username}'? This cannot be undone.",
-      'Delete',
+      UiCopy.deleteUser(),
+      UiCopy.deleteThisCannotBeUndone(arg0: user.username),
+      UiCopy.delete(),
       danger: true,
     );
     if (ok != true) return;
@@ -159,7 +161,7 @@ class _AdminUsersTabState extends ConsumerState<AdminUsersTab>
     if (!result.ok) {
       setState(() {
         _busy = false;
-        error = result.errorOr('Failed to delete user');
+        error = result.errorOr(UiCopy.failedToDeleteUser());
       });
       return;
     }
@@ -175,7 +177,7 @@ class _AdminUsersTabState extends ConsumerState<AdminUsersTab>
       error: error,
       loading: loading,
       isEmpty: items.isEmpty,
-      emptyMessage: 'No users found.',
+      emptyMessage: UiCopy.noUsersFound(context: context),
       header: Padding(
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
         child: Row(
@@ -183,10 +185,10 @@ class _AdminUsersTabState extends ConsumerState<AdminUsersTab>
             Expanded(
               child: TextField(
                 controller: _search,
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   isDense: true,
                   prefixIcon: Icon(Icons.search, size: 18),
-                  hintText: 'Search by username',
+                  hintText: UiCopy.searchByUsername(context: context),
                   border: OutlineInputBorder(),
                 ),
                 onSubmitted: (_) => load(),
@@ -195,7 +197,7 @@ class _AdminUsersTabState extends ConsumerState<AdminUsersTab>
             const SizedBox(width: 8),
             FilledButton(
               onPressed: loading ? null : load,
-              child: const Text('Search'),
+              child: Text(UiCopy.search(context: context)),
             ),
           ],
         ),
@@ -262,10 +264,10 @@ class _UserRow extends StatelessWidget {
           ),
           if (user.disabled) ...[
             const SizedBox(width: 6),
-            LabelPill('Disabled', color: colors.gray),
+            LabelPill(UiCopy.disabled(context: context), color: colors.gray),
           ] else if (user.isAdmin) ...[
             const SizedBox(width: 6),
-            LabelPill('Admin', color: colors.primary),
+            LabelPill(UiCopy.admin(context: context), color: colors.primary),
           ],
         ],
       ),
@@ -288,17 +290,31 @@ class _UserRow extends StatelessWidget {
         itemBuilder: (context) => [
           PopupMenuItem(
             value: 'admin',
-            child: Text(user.isAdmin ? 'Remove admin' : 'Make admin'),
+            child: Text(
+              user.isAdmin
+                  ? UiCopy.removeAdmin(context: context)
+                  : UiCopy.makeAdmin(context: context),
+            ),
           ),
           PopupMenuItem(
             value: 'disable',
-            child: Text(user.disabled ? 'Enable account' : 'Disable account'),
+            child: Text(
+              user.disabled
+                  ? UiCopy.enableAccount(context: context)
+                  : UiCopy.disableAccount(context: context),
+            ),
           ),
           if (!user.bot)
-            const PopupMenuItem(value: 'reset', child: Text('Reset password')),
+            PopupMenuItem(
+              value: 'reset',
+              child: Text(UiCopy.resetPassword(context: context)),
+            ),
           PopupMenuItem(
             value: 'delete',
-            child: Text('Delete user', style: TextStyle(color: colors.red)),
+            child: Text(
+              UiCopy.deleteUser(context: context),
+              style: TextStyle(color: colors.red),
+            ),
           ),
         ],
       ),
@@ -331,11 +347,11 @@ class _ResetPasswordDialogState extends State<_ResetPasswordDialog> {
   void _submit() {
     final pw = _password.text;
     if (pw.length < 8) {
-      setState(() => _error = 'Password must be at least 8 characters');
+      setState(() => _error = UiCopy.passwordMustBeAtLeast8Characters());
       return;
     }
     if (pw != _confirm.text) {
-      setState(() => _error = 'Passwords do not match');
+      setState(() => _error = UiCopy.passwordsDoNotMatch());
       return;
     }
     Navigator.of(context).pop(pw);
@@ -345,7 +361,9 @@ class _ResetPasswordDialogState extends State<_ResetPasswordDialog> {
   Widget build(BuildContext context) {
     final colors = BonfireThemeExtension.of(context);
     return AlertDialog(
-      title: Text('Reset password — ${widget.username}'),
+      title: Text(
+        UiCopy.resetPassword2(context: context, arg0: widget.username),
+      ),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -353,8 +371,8 @@ class _ResetPasswordDialogState extends State<_ResetPasswordDialog> {
             controller: _password,
             obscureText: true,
             autofocus: true,
-            decoration: const InputDecoration(
-              labelText: 'New password',
+            decoration: InputDecoration(
+              labelText: UiCopy.newPassword(context: context),
               border: OutlineInputBorder(),
             ),
           ),
@@ -362,8 +380,8 @@ class _ResetPasswordDialogState extends State<_ResetPasswordDialog> {
           TextField(
             controller: _confirm,
             obscureText: true,
-            decoration: const InputDecoration(
-              labelText: 'Confirm password',
+            decoration: InputDecoration(
+              labelText: UiCopy.confirmPassword(context: context),
               border: OutlineInputBorder(),
             ),
             onSubmitted: (_) => _submit(),
@@ -377,9 +395,12 @@ class _ResetPasswordDialogState extends State<_ResetPasswordDialog> {
       actions: [
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
+          child: Text(UiCopy.cancel(context: context)),
         ),
-        FilledButton(onPressed: _submit, child: const Text('Reset')),
+        FilledButton(
+          onPressed: _submit,
+          child: Text(UiCopy.reset(context: context)),
+        ),
       ],
     );
   }

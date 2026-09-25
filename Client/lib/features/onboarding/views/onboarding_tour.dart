@@ -1,3 +1,4 @@
+import 'package:bonfire/l10n/ui_copy.dart';
 import 'dart:async';
 
 import 'package:bonfire/features/authentication/models/accord_auth_state.dart';
@@ -167,20 +168,22 @@ class OnboardingHelpSection extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const SectionHeader('Help & tour'),
+        SectionHeader(UiCopy.helpTour(context: context)),
         ListTile(
           leading: Icon(Icons.explore_outlined, color: colors.primary),
-          title: const Text('Replay the app tour'),
-          subtitle: const Text(
-            'Walk through spaces, channels, messaging and voice again.',
+          title: Text(UiCopy.replayTheAppTour(context: context)),
+          subtitle: Text(
+            UiCopy.walkThroughSpacesChannelsMessagingAndVoice(context: context),
           ),
           trailing: const Icon(Icons.chevron_right),
           onTap: () => replayOnboardingTour(context, ref),
         ),
         ListTile(
           leading: Icon(Icons.help_outline, color: colors.primary),
-          title: const Text('Help & support'),
-          subtitle: const Text('Documentation, issue tracker and the project.'),
+          title: Text(UiCopy.helpSupport(context: context)),
+          subtitle: Text(
+            UiCopy.documentationIssueTrackerAndTheProject(context: context),
+          ),
           trailing: const Icon(Icons.open_in_new, size: 16),
           onTap: () => showOnboardingHelpDialog(context),
         ),

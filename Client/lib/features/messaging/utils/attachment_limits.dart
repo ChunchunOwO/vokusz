@@ -1,8 +1,9 @@
+import 'package:bonfire/l10n/ui_copy.dart';
 import 'package:bonfire/features/messaging/utils/attachment_types.dart';
 
 /// Fallback maximum size of a single attachment, mirroring the limit documented
 /// in `docs/messaging/file-sharing.md` and the accordserver default
-/// (`max_attachment_size`, 26214400).
+/// (`max_attachment_size`, 1073741824).
 ///
 /// This is only the fallback: the live limit comes from the server's
 /// `GET /settings` via `AccordServerLimits`, because it is per-deployment
@@ -10,7 +11,7 @@ import 'package:bonfire/features/messaging/utils/attachment_types.dart';
 /// time with a clear message, rather than being read into memory, assembled
 /// into a multipart body and uploaded in full only to come back as an opaque
 /// server error.
-const int kMaxAttachmentBytes = 25 * 1024 * 1024;
+const int kMaxAttachmentBytes = 1024 * 1024 * 1024;
 
 /// Fallback maximum number of files on one message, matching the accordserver
 /// default (`max_attachments_per_message`, 10). As with [kMaxAttachmentBytes]
@@ -21,12 +22,14 @@ const int kMaxAttachmentsPerMessage = 10;
 String formatFileSize(int bytes) {
   const kb = 1024;
   const mb = kb * 1024;
+  const gb = mb * 1024;
+  if (bytes >= gb) return '${(bytes / gb).toStringAsFixed(1)} GB';
   if (bytes >= mb) {
     final value = bytes / mb;
     return '${value.toStringAsFixed(value >= 10 ? 0 : 1)} MB';
   }
   if (bytes >= kb) return '${(bytes / kb).round()} KB';
-  return '$bytes bytes';
+  return UiCopy.bytes(arg0: bytes);
 }
 
 /// Message for a file that couldn't be read into memory (a cloud- or
@@ -34,7 +37,7 @@ String formatFileSize(int bytes) {
 /// Shared by the picker and drag-and-drop paths so the wording never drifts
 /// between the two.
 String unreadableAttachmentMessage(String name) =>
-    "$name couldn't be read. Copy it to local storage and try again.";
+    UiCopy.couldnTBeReadCopyItTo(arg0: name);
 
 /// Message for a file that exceeds [maxBytes]. Shared by the picker and
 /// drag-and-drop paths so the wording never drifts between the two.
@@ -42,19 +45,24 @@ String oversizeAttachmentMessage(
   String name,
   int size, {
   int maxBytes = kMaxAttachmentBytes,
-}) =>
-    '$name is ${formatFileSize(size)} — the limit is '
-    '${formatFileSize(maxBytes)}.';
+}) => UiCopy.isTheLimitIs(
+  arg0: name,
+  arg1: formatFileSize(size),
+  arg2: formatFileSize(maxBytes),
+);
 
 /// Message for a file dropped past the server's per-message file count.
 String tooManyAttachmentsMessage(String name, int maxCount) =>
-    "$name wasn't attached — you can send at most $maxCount "
-    '${maxCount == 1 ? 'file' : 'files'} per message.';
+    UiCopy.wasnTAttachedYouCanSendAt(
+      arg0: name,
+      arg1: maxCount,
+      arg2: maxCount == 1 ? 'file' : 'files',
+    );
 
 /// The per-message limits as a short phrase for the attach button:
-/// "up to 25 MB each, 10 per message".
+/// "up to 1.0 GB each, 10 per message".
 String attachmentLimitsHint({required int maxBytes, required int maxCount}) =>
-    'up to ${formatFileSize(maxBytes)} each, $maxCount per message';
+    UiCopy.upToEachPerMessage(arg0: formatFileSize(maxBytes), arg1: maxCount);
 
 /// Guidance on the server's per-user upload budgets, shown next to the
 /// per-message limits wherever those are: "Uploads are limited to 6 uploads and
@@ -68,7 +76,7 @@ String? uploadBudgetHint({int? requestsPerMinute, int? bytesPerMinute}) {
     if (bytesPerMinute != null) formatFileSize(bytesPerMinute),
   ];
   if (parts.isEmpty) return null;
-  return 'Uploads are limited to ${parts.join(' and ')} per minute.';
+  return UiCopy.uploadsAreLimitedToPerMinute(arg0: parts.join(' and '));
 }
 
 /// The outcome of screening picked files: the ones that can be attached, plus a

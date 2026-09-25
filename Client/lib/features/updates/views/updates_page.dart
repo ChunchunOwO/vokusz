@@ -1,3 +1,4 @@
+import 'package:bonfire/l10n/ui_copy.dart';
 import 'package:bonfire/features/settings/controllers/settings.dart';
 import 'package:bonfire/shared/components/async_state_views.dart';
 import 'package:bonfire/shared/components/settings_scaffold.dart';
@@ -39,12 +40,12 @@ class UpdatesScreen extends ConsumerWidget {
     final available = update.updateAvailable;
 
     return SettingsScaffold(
-      title: 'Updates',
+      title: UiCopy.updates(context: context),
       body: ListView(
         padding: const EdgeInsets.symmetric(vertical: 8),
         children: [
           ListTile(
-            title: const Text('Current version'),
+            title: Text(UiCopy.currentVersion2(context: context)),
             trailing: Text(
               'v$kAppVersion',
               style: Theme.of(context).textTheme.bodyMedium,
@@ -54,8 +55,10 @@ class UpdatesScreen extends ConsumerWidget {
           // the startup dialog isn't the only chance to read them (#183).
           ListTile(
             leading: const Icon(Icons.auto_awesome),
-            title: const Text("What's new in this version"),
-            subtitle: const Text("Release notes for the build you're running"),
+            title: Text(UiCopy.whatSNewInThisVersion(context: context)),
+            subtitle: Text(
+              UiCopy.releaseNotesForTheBuildYouRe(context: context),
+            ),
             trailing:
                 ref.watch(
                   releaseNotesControllerProvider.select((s) => s.loading),
@@ -75,8 +78,12 @@ class UpdatesScreen extends ConsumerWidget {
               padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
               child: Text(
                 isPackageManagerBuild
-                    ? 'Updates are delivered through your package manager.'
-                    : 'Updates are delivered through the app store.',
+                    ? UiCopy.updatesAreDeliveredThroughYourPackageManager(
+                        context: context,
+                      )
+                    : UiCopy.updatesAreDeliveredThroughTheAppStore(
+                        context: context,
+                      ),
                 style: Theme.of(
                   context,
                 ).textTheme.bodySmall!.copyWith(color: colors.gray),
@@ -84,7 +91,7 @@ class UpdatesScreen extends ConsumerWidget {
             )
           else ...[
             SwitchListTile(
-              title: const Text('Check for updates on startup'),
+              title: Text(UiCopy.checkForUpdatesOnStartup(context: context)),
               value: autoCheck,
               onChanged: settings.setAutoUpdateCheck,
             ),
@@ -105,7 +112,9 @@ class UpdatesScreen extends ConsumerWidget {
                           )
                         : const Icon(Icons.refresh),
                     label: Text(
-                      update.checking ? 'Checking…' : 'Check for updates',
+                      update.checking
+                          ? UiCopy.checking(context: context)
+                          : UiCopy.checkForUpdates(context: context),
                     ),
                   ),
                 ],
@@ -124,7 +133,7 @@ class UpdatesScreen extends ConsumerWidget {
                     Icon(Icons.check_circle, size: 16, color: colors.green),
                     const SizedBox(width: 6),
                     Text(
-                      "You're up to date.",
+                      UiCopy.youReUpToDate(context: context),
                       style: Theme.of(
                         context,
                       ).textTheme.bodySmall!.copyWith(color: colors.green),
@@ -137,7 +146,7 @@ class UpdatesScreen extends ConsumerWidget {
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
                 child: Text(
-                  'Update available: ${release.name}',
+                  UiCopy.updateAvailable(context: context, arg0: release.name),
                   style: Theme.of(
                     context,
                   ).textTheme.titleSmall!.copyWith(color: colors.primary),
@@ -201,7 +210,9 @@ class UpdatesScreen extends ConsumerWidget {
                                 ),
                           icon: const Icon(Icons.download),
                           label: Text(
-                            assetUrl != null ? 'Download' : 'View release',
+                            assetUrl != null
+                                ? UiCopy.download(context: context)
+                                : UiCopy.viewRelease(context: context),
                           ),
                         );
                       },
@@ -213,7 +224,7 @@ class UpdatesScreen extends ConsumerWidget {
                               notifier.skipCurrent();
                               Navigator.of(context).maybePop();
                             },
-                      child: const Text('Skip this version'),
+                      child: Text(UiCopy.skipThisVersion(context: context)),
                     ),
                   ],
                 ),
@@ -233,7 +244,7 @@ class UpdatesScreen extends ConsumerWidget {
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
                   child: Text(
-                    'On the web, refresh the page to load the latest version.',
+                    UiCopy.onTheWebRefreshThePageTo(context: context),
                     style: Theme.of(
                       context,
                     ).textTheme.bodySmall!.copyWith(color: colors.gray),
@@ -253,16 +264,18 @@ String _installLabel(UpdateState update, bool needsAdmin) {
   switch (update.phase) {
     case UpdatePhase.downloading:
       final pct = (update.progress * 100).round();
-      return update.progress > 0 ? 'Downloading… $pct%' : 'Downloading…';
+      return update.progress > 0 ? 'Downloading… $pct%' : UiCopy.downloading();
     case UpdatePhase.verifying:
-      return 'Verifying…';
+      return UiCopy.verifying();
     case UpdatePhase.ready:
-      return needsAdmin ? 'Install (admin)' : 'Restart & install';
+      return needsAdmin ? 'Install (admin)' : UiCopy.restartInstall();
     case UpdatePhase.installing:
-      return 'Installing…';
+      return UiCopy.installing();
     case UpdatePhase.failed:
-      return 'Retry update';
+      return UiCopy.retryUpdate();
     case UpdatePhase.idle:
-      return needsAdmin ? 'Download & install (admin)' : 'Download & install';
+      return needsAdmin
+          ? 'Download & install (admin)'
+          : UiCopy.downloadInstall();
   }
 }

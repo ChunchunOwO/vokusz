@@ -48,7 +48,9 @@ pub async fn list_roles(
     Path(space_id): Path<String>,
     auth: AuthUser,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    require_membership(&state.db, &space_id, &auth.user_id).await?;
+    if !auth.is_admin {
+        require_membership(&state.db, &space_id, &auth.user_id).await?;
+    }
     let rows = db::roles::list_roles(&state.db, &space_id).await?;
     let roles: Vec<serde_json::Value> = rows.iter().map(role_row_to_json).collect();
     Ok(Json(serde_json::json!({ "data": roles })))
@@ -71,7 +73,14 @@ pub async fn create_role(
     if let Some(ref perms) = input.permissions {
         validate_role_permissions(&state.db, &space_id, &auth, perms).await?;
     }
+    let space = db::spaces::get_space_row(&state.db, &space_id).await?;
+    if !auth.is_admin && space.owner_id != auth.user_id {
+        return Err(AppError::Forbidden(
+            "only the domain owner can create permission groups".into(),
+        ));
+    }
     let row = db::roles::create_role(&state.db, &space_id, &input).await?;
+    broadcast_roles_changed(&state, &space_id).await?;
     Ok(Json(serde_json::json!({ "data": role_row_to_json(&row) })))
 }
 
@@ -86,13 +95,25 @@ pub async fn update_role(
     if target_role.space_id != space_id {
         return Err(AppError::NotFound("role not found in this space".into()));
     }
-    require_role_hierarchy(&state.db, &space_id, &auth.user_id, target_role.position).await?;
+    if !auth.is_admin {
+        require_role_hierarchy(&state.db, &space_id, &auth.user_id, target_role.position).await?;
+    }
     if let Some(ref perms) = input.permissions {
         validate_role_permissions(&state.db, &space_id, &auth, perms).await?;
+    }
+    if input
+        .name
+        .as_ref()
+        .is_some_and(|name| name.trim().is_empty() || name.len() > 100)
+    {
+        return Err(AppError::BadRequest(
+            "role name must be between 1 and 100 characters".into(),
+        ));
     }
     // Strip position — must use the dedicated reorder_roles endpoint
     input.position = None;
     let row = db::roles::update_role(&state.db, &role_id, &input, state.db_is_postgres).await?;
+    broadcast_roles_changed(&state, &space_id).await?;
     Ok(Json(serde_json::json!({ "data": role_row_to_json(&row) })))
 }
 
@@ -111,8 +132,11 @@ pub async fn delete_role(
             "cannot delete the @everyone role".into(),
         ));
     }
-    require_role_hierarchy(&state.db, &space_id, &auth.user_id, target_role.position).await?;
+    if !auth.is_admin {
+        require_role_hierarchy(&state.db, &space_id, &auth.user_id, target_role.position).await?;
+    }
     db::roles::delete_role(&state.db, &role_id).await?;
+    broadcast_roles_changed(&state, &space_id).await?;
     Ok(Json(serde_json::json!({ "data": null })))
 }
 
@@ -148,6 +172,7 @@ pub async fn reorder_roles(
 
     let updates: Vec<(String, i64)> = input.into_iter().map(|u| (u.id, u.position)).collect();
     db::roles::reorder_roles(&state.db, &space_id, &updates).await?;
+    broadcast_roles_changed(&state, &space_id).await?;
     let rows = db::roles::list_roles(&state.db, &space_id).await?;
     let roles: Vec<serde_json::Value> = rows.iter().map(role_row_to_json).collect();
     Ok(Json(serde_json::json!({ "data": roles })))
@@ -166,4 +191,20 @@ pub fn role_row_to_json(row: &RoleRow) -> serde_json::Value {
         "managed": row.managed,
         "mentionable": row.mentionable
     })
+}
+
+async fn broadcast_roles_changed(state: &AppState, space_id: &str) -> Result<(), AppError> {
+    crate::security::refresh_domain_voice_permissions(state, space_id).await;
+    let row = db::spaces::get_space_row(&state.db, space_id).await?;
+    let spaces = super::spaces::spaces_with_metadata(state, vec![row]).await?;
+    if let Some(dispatcher) = &*state.gateway_tx.read().await {
+        let _ = dispatcher.send(crate::gateway::events::GatewayBroadcast {
+            space_id: Some(space_id.to_owned()),
+            target_user_ids: None,
+            event: serde_json::json!({"op":0, "type":"space.update", "data":spaces[0]}),
+            intent: "spaces".into(),
+            required_permission: None,
+        });
+    }
+    Ok(())
 }

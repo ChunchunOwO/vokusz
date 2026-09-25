@@ -29,9 +29,9 @@ void main() {
       expect(_ok().errorOr('default'), 'default');
     });
 
-    test('returns error.toString() when error is non-null', () {
+    test('returns the error message without the debug wrapper', () {
       final result = _err('boom');
-      expect(result.errorOr('default'), result.error!.toString());
+      expect(result.errorOr('default'), result.error!.message);
     });
   });
 
@@ -93,7 +93,7 @@ void main() {
       await tester.tap(find.text('trigger'));
       await tester.pump();
 
-      expect(find.text('Failed: ${err.toString()}'), findsOneWidget);
+      expect(find.text('Failed: ${err.message}'), findsOneWidget);
     });
 
     testWidgets('falls back to "unknown error" when error is null',
@@ -114,7 +114,7 @@ void main() {
       await tester.tap(find.text('trigger'));
       await tester.pump();
 
-      expect(find.text('Oops: unknown error'), findsOneWidget);
+      expect(find.text('Oops: Unknown error'), findsOneWidget);
     });
   });
 

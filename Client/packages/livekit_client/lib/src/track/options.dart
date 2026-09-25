@@ -193,9 +193,15 @@ class ScreenShareCaptureOptions extends VideoCaptureOptions {
       if (deviceId != null) {
         constraints['deviceId'] = {'exact': deviceId};
       }
-      if (maxFrameRate != null && maxFrameRate != 0.0) {
-        constraints['mandatory'] = {'frameRate': maxFrameRate};
-      }
+      // Desktop native code forwards only mandatory/optional to the source.
+      // Top-level width/height alone do not constrain desktop capture.
+      constraints['mandatory'] = {
+        'maxWidth': params.dimensions.width,
+        'maxHeight': params.dimensions.height,
+        'frameRate': (maxFrameRate != null && maxFrameRate! > 0)
+            ? maxFrameRate
+            : (params.encoding?.maxFramerate ?? 30).toDouble(),
+      };
     }
     return constraints;
   }

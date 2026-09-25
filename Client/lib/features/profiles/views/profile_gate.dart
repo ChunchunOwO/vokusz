@@ -1,3 +1,4 @@
+import 'package:bonfire/l10n/ui_copy.dart';
 import 'package:bonfire/features/profiles/controllers/profiles_controller.dart';
 import 'package:bonfire/features/profiles/utils/profile_pin_security.dart';
 import 'package:bonfire/theme/theme.dart';
@@ -90,7 +91,7 @@ class _PinLockScreenState extends ConsumerState<_PinLockScreen> {
     if (notifier.verifyPin(id, _controller.text)) {
       ref.read(profileUnlockedProvider.notifier).unlock();
     } else {
-      setState(() => _error = 'Incorrect PIN');
+      setState(() => _error = UiCopy.incorrectPin());
       _controller.clear();
     }
   }
@@ -116,7 +117,7 @@ class _PinLockScreenState extends ConsumerState<_PinLockScreen> {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'Enter your PIN to unlock this profile',
+                  UiCopy.enterYourPinToUnlockThisProfile(context: context),
                   textAlign: TextAlign.center,
                   style: Theme.of(
                     context,
@@ -149,7 +150,7 @@ class _PinLockScreenState extends ConsumerState<_PinLockScreen> {
                   width: double.infinity,
                   child: FilledButton(
                     onPressed: _submit,
-                    child: const Text('Unlock'),
+                    child: Text(UiCopy.unlock(context: context)),
                   ),
                 ),
               ],

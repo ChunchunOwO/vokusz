@@ -278,7 +278,7 @@ async fn classify_broadcast(
     broadcast: &GatewayBroadcast,
     user_id: &str,
     space_ids: &HashSet<String>,
-    muted_channel_ids: &HashSet<String>,
+    _muted_channel_ids: &HashSet<String>,
     intents: &[String],
 ) -> Delivery {
     let event_type = broadcast
@@ -373,18 +373,9 @@ async fn classify_broadcast(
         return Delivery::RefreshMutes;
     }
 
-    // Suppress message/typing events for muted channels
-    if event_type.starts_with("message.") || event_type.starts_with("typing.") {
-        let channel_id = broadcast
-            .event
-            .get("data")
-            .and_then(|d| d.get("channel_id"))
-            .and_then(|c| c.as_str())
-            .unwrap_or("");
-        if !channel_id.is_empty() && muted_channel_ids.contains(channel_id) {
-            return Delivery::Skip;
-        }
-    }
+    // Muted channels still receive message and typing events. The client
+    // keeps the open pane and unread state current, and suppresses the
+    // alert itself. Dropping them here froze a chat that was on screen.
 
     if !intents::has_intent(intents, event_type) {
         return Delivery::Skip;
@@ -843,7 +834,8 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
     let hello = serde_json::json!({
         "op": events::opcode::HELLO,
         "data": {
-            "heartbeat_interval": HEARTBEAT_INTERVAL.as_millis() as u64
+            "heartbeat_interval": HEARTBEAT_INTERVAL.as_millis() as u64,
+            "resumable": true
         }
     });
     if ws_sink
@@ -1240,9 +1232,12 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                                             } else {
                                                 "online"
                                             };
-                                            let activities = match psu.activity {
-                                                Some(a) => vec![a],
-                                                None => vec![],
+                                            let activities = match psu.activities {
+                                                Some(list) => list,
+                                                None => match psu.activity {
+                                                    Some(a) => vec![a],
+                                                    None => vec![],
+                                                },
                                             };
                                             crate::presence::set_presence(&state, &user_id, status, activities.clone());
                                             broadcast_presence(
@@ -1366,7 +1361,7 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                                                             .ok()
                                                             .and_then(|u| u.display_name.or(Some(u.username)))
                                                             .unwrap_or_else(|| user_id.clone());
-                                                        let server_update = match lk.generate_token(&user_id, &display_name, &channel_id) {
+                                                        let server_update = match lk.generate_token(&state.db, &auth_user, &display_name, &channel_id).await {
                                                             Ok(token) => serde_json::json!({
                                                                 "op": events::opcode::EVENT,
                                                                 "type": "voice.server_update",

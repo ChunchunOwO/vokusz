@@ -1,3 +1,5 @@
+import 'package:bonfire/l10n/app_strings.dart';
+import 'package:bonfire/l10n/ui_copy.dart';
 import 'dart:async';
 import 'package:bonfire/features/member/utils/member_display.dart';
 import 'package:bonfire/shared/components/async_state_views.dart';
@@ -92,7 +94,7 @@ class _DiscoveryPanel extends StatelessWidget {
     final colors = BonfireThemeExtension.of(context);
     return Dialog(
       backgroundColor: colors.foreground,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
       child: ConstrainedBox(
         constraints: dialogConstraints(context, maxWidth: 560, maxHeight: 600),
         child: Column(
@@ -106,12 +108,12 @@ class _DiscoveryPanel extends StatelessWidget {
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      'Discover Servers',
+                      UiCopy.discoverServers(context: context),
                       style: theme.textTheme.titleMedium,
                     ),
                   ),
                   IconButton(
-                    tooltip: 'Close',
+                    tooltip: UiCopy.close(context: context),
                     onPressed: () => Navigator.of(context).pop(),
                     icon: Icon(Icons.close, size: 20, color: colors.gray),
                   ),
@@ -244,7 +246,7 @@ class _AccordDiscoveryBodyState extends ConsumerState<AccordDiscoveryBody> {
     } catch (_) {
       if (!mounted || request.generation != _requestGeneration) return;
       setState(() {
-        _error = 'Failed to load directory';
+        _error = UiCopy.failedToLoadDirectory();
         _listings = const [];
       });
       return;
@@ -255,7 +257,7 @@ class _AccordDiscoveryBodyState extends ConsumerState<AccordDiscoveryBody> {
 
     setState(() {
       if (!result.ok) {
-        _error = result.errorOr('Failed to load directory');
+        _error = result.errorOr(UiCopy.failedToLoadDirectory());
         _listings = const [];
         return;
       }
@@ -313,7 +315,7 @@ class _AccordDiscoveryBodyState extends ConsumerState<AccordDiscoveryBody> {
     final spaceId =
         listing['space_id']?.toString() ?? listing['id']?.toString() ?? '';
     if (rawServerUrl.isEmpty || spaceId.isEmpty) {
-      setState(() => _error = 'This listing is missing its server details');
+      setState(() => _error = UiCopy.thisListingIsMissingItsServerDetails());
       return;
     }
     if (_joining.contains(spaceId)) return;
@@ -357,7 +359,7 @@ class _AccordDiscoveryBodyState extends ConsumerState<AccordDiscoveryBody> {
       auth.setActiveServer(existingKey);
       if (mounted) Navigator.of(context).maybePop();
     } catch (error) {
-      if (mounted) setState(() => _error = 'Could not join: $error');
+      if (mounted) setState(() => _error = UiCopy.couldNotJoin(arg0: error));
     } finally {
       if (mounted) setState(() => _joining.remove(spaceId));
     }
@@ -376,10 +378,10 @@ class _AccordDiscoveryBodyState extends ConsumerState<AccordDiscoveryBody> {
           child: TextField(
             controller: _query,
             onChanged: _onChanged,
-            decoration: const InputDecoration(
+            decoration: InputDecoration(
               isDense: true,
               prefixIcon: Icon(Icons.search, size: 18),
-              hintText: 'Search servers...',
+              hintText: UiCopy.searchServers(context: context),
               border: OutlineInputBorder(),
             ),
           ),
@@ -392,7 +394,7 @@ class _AccordDiscoveryBodyState extends ConsumerState<AccordDiscoveryBody> {
               runSpacing: 6,
               children: [
                 _TagChip(
-                  label: 'All',
+                  label: UiCopy.all(context: context),
                   selected: _activeTag == null,
                   onTap: () => _selectTag(null),
                 ),
@@ -428,7 +430,7 @@ class _AccordDiscoveryBodyState extends ConsumerState<AccordDiscoveryBody> {
                       Padding(
                         padding: const EdgeInsets.symmetric(vertical: 16),
                         child: Text(
-                          'No servers found',
+                          UiCopy.noServersFound(context: context),
                           textAlign: TextAlign.center,
                           style: theme.textTheme.bodyMedium,
                         ),
@@ -513,7 +515,7 @@ class _SparseDirectoryNote extends StatelessWidget {
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: colors.background,
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(4),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -524,7 +526,7 @@ class _SparseDirectoryNote extends StatelessWidget {
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  'This list is short on purpose',
+                  UiCopy.thisListIsShortOnPurpose(context: context),
                   style: theme.textTheme.titleSmall?.copyWith(
                     fontWeight: FontWeight.w700,
                   ),
@@ -534,10 +536,9 @@ class _SparseDirectoryNote extends StatelessWidget {
           ),
           const SizedBox(height: 6),
           Text(
-            'Only communities that choose to advertise themselves appear in the '
-            'public directory. Most Accord communities are private or '
-            'self-hosted, so you usually reach them from an invite link, or by '
-            'connecting straight to the server they run.',
+            UiCopy.onlyCommunitiesThatChooseToAdvertiseThemselves(
+              context: context,
+            ),
             style: theme.textTheme.bodySmall?.copyWith(color: colors.gray),
           ),
         ],
@@ -568,7 +569,7 @@ class _ConnectFooter extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Text(
-            'Not listed here? Any Accord server works.',
+            UiCopy.notListedHereAnyAccordServerWorks(context: context),
             style: theme.textTheme.bodySmall?.copyWith(color: colors.gray),
           ),
           const SizedBox(height: 8),
@@ -579,13 +580,13 @@ class _ConnectFooter extends StatelessWidget {
               FilledButton.icon(
                 onPressed: onManualConnect,
                 icon: const Icon(Icons.link, size: 18),
-                label: const Text('Connect to a server by URL'),
+                label: Text(UiCopy.connectToAServerByUrl(context: context)),
               ),
               TextButton.icon(
                 onPressed: () =>
                     showSelfHostingDialog(context, onConnect: onManualConnect),
                 icon: const Icon(Icons.home_work_outlined, size: 18),
-                label: const Text('Host your own'),
+                label: Text(UiCopy.hostYourOwn(context: context)),
               ),
             ],
           ),
@@ -659,7 +660,8 @@ class _DiscoveryCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final name = listing['name']?.toString() ?? 'Unknown Space';
+    final name =
+        listing['name']?.toString() ?? AppStrings.label('Unknown Space');
     final description = listing['description']?.toString() ?? '';
     final memberCount = (listing['member_count'] as num?)?.toInt() ?? 0;
     final presenceCount = (listing['presence_count'] as num?)?.toInt() ?? 0;
@@ -669,8 +671,11 @@ class _DiscoveryCard extends StatelessWidget {
     ].where((t) => t.isNotEmpty).toList();
     final iconUrl = _iconUrl;
 
-    final memberLine = StringBuffer('$memberCount members');
-    if (presenceCount > 0) memberLine.write(' · $presenceCount online');
+    final memberLine = StringBuffer(
+      UiCopy.members(context: context, arg0: memberCount),
+    );
+    if (presenceCount > 0)
+      memberLine.write(UiCopy.online2(context: context, arg0: presenceCount));
 
     return Card(
       child: Padding(
@@ -730,7 +735,7 @@ class _DiscoveryCard extends StatelessWidget {
                             ),
                             decoration: BoxDecoration(
                               color: colors.darkGray,
-                              borderRadius: BorderRadius.circular(10),
+                              borderRadius: BorderRadius.circular(4),
                             ),
                             child: Text(
                               tag,
@@ -754,7 +759,7 @@ class _DiscoveryCard extends StatelessWidget {
                       height: 16,
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
-                  : const Text('Join'),
+                  : Text(UiCopy.join(context: context)),
             ),
           ],
         ),

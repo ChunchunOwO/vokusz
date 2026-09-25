@@ -1,3 +1,4 @@
+import 'package:bonfire/l10n/ui_copy.dart';
 import 'package:bonfire/features/authentication/repositories/accord_auth.dart';
 import 'package:bonfire/features/server/models/accord_server.dart';
 import 'package:bonfire/shared/utils/external_url.dart';
@@ -90,12 +91,12 @@ Future<void> openTos(BuildContext context, {String? url, String? text}) async {
   await showDialog<void>(
     context: context,
     builder: (context) => AlertDialog(
-      title: const Text('Terms of Service'),
+      title: Text(UiCopy.termsOfService(context: context)),
       content: SingleChildScrollView(child: Text(tosText)),
       actions: [
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Close'),
+          child: Text(UiCopy.close(context: context)),
         ),
       ],
     ),

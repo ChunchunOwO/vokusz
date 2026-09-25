@@ -1,3 +1,5 @@
+import 'package:bonfire/l10n/app_strings.dart';
+import 'package:bonfire/l10n/ui_copy.dart';
 import 'package:bonfire/features/onboarding/models/onboarding_step.dart';
 import 'package:bonfire/features/onboarding/views/onboarding_anchors.dart';
 import 'package:bonfire/features/onboarding/views/onboarding_help.dart';
@@ -31,7 +33,8 @@ Offset onboardingCalloutOffset({
   double gap = kOnboardingCalloutGap,
   double margin = kOnboardingCalloutMargin,
 }) {
-  double clampX(double x) => _clamp(x, margin, overlay.width - card.width - margin);
+  double clampX(double x) =>
+      _clamp(x, margin, overlay.width - card.width - margin);
   double clampY(double y) =>
       _clamp(y, margin, overlay.height - card.height - margin);
 
@@ -204,7 +207,11 @@ class OnboardingOverlayState extends State<OnboardingOverlay>
 
     return Semantics(
       container: true,
-      label: 'Vokusz tour, step ${_index + 1} of ${widget.steps.length}',
+      label: UiCopy.vokuszTourStepOf(
+        context: context,
+        arg0: _index + 1,
+        arg1: widget.steps.length,
+      ),
       child: Material(
         type: MaterialType.transparency,
         child: Stack(
@@ -366,7 +373,7 @@ class _OnboardingCard extends StatelessWidget {
                     child: Padding(
                       padding: const EdgeInsets.only(top: 2),
                       child: Text(
-                        step.title,
+                        AppStrings.label(step.title, context: context),
                         style: theme.textTheme.titleMedium?.copyWith(
                           color: colors.dirtyWhite,
                           fontWeight: FontWeight.w600,
@@ -375,7 +382,7 @@ class _OnboardingCard extends StatelessWidget {
                     ),
                   ),
                   IconButton(
-                    tooltip: 'Help & support',
+                    tooltip: UiCopy.helpSupport(context: context),
                     visualDensity: VisualDensity.compact,
                     icon: Icon(Icons.help_outline, color: colors.gray),
                     onPressed: onHelp,
@@ -386,7 +393,7 @@ class _OnboardingCard extends StatelessWidget {
               Padding(
                 padding: const EdgeInsets.only(right: 8),
                 child: Text(
-                  step.body,
+                  AppStrings.label(step.body, context: context),
                   style: theme.textTheme.bodyMedium?.copyWith(
                     color: colors.gray,
                     height: 1.35,
@@ -408,7 +415,7 @@ class _OnboardingCard extends StatelessWidget {
                     TextButton(
                       onPressed: onSkip,
                       child: Text(
-                        'Skip',
+                        UiCopy.skip(context: context),
                         style: TextStyle(color: colors.gray),
                       ),
                     ),
@@ -416,13 +423,17 @@ class _OnboardingCard extends StatelessWidget {
                     TextButton(
                       onPressed: onBack,
                       child: Text(
-                        'Back',
+                        UiCopy.back(context: context),
                         style: TextStyle(color: colors.dirtyWhite),
                       ),
                     ),
                   FilledButton(
                     onPressed: onNext,
-                    child: Text(isLast ? 'Done' : 'Next'),
+                    child: Text(
+                      isLast
+                          ? UiCopy.done(context: context)
+                          : UiCopy.next(context: context),
+                    ),
                   ),
                 ],
               ),
@@ -444,7 +455,7 @@ class _StepDots extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = BonfireThemeExtension.of(context);
     return Semantics(
-      label: 'Step ${index + 1} of $total',
+      label: UiCopy.stepOf(context: context, arg0: index + 1, arg1: total),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [

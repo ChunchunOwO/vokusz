@@ -1,3 +1,4 @@
+import 'package:bonfire/l10n/ui_copy.dart';
 import 'dart:async';
 import 'dart:math' as math;
 
@@ -39,7 +40,7 @@ class ReleaseNotesDialog extends StatelessWidget {
     final size = MediaQuery.sizeOf(context);
     return AlertDialog(
       icon: Icon(Icons.auto_awesome, color: colors.primary),
-      title: Text("What's new in v${release.version}"),
+      title: Text(UiCopy.whatSNewInV(context: context, arg0: release.version)),
       // AlertDialog gives its content bounded height, so the scroll view keeps
       // a long changelog from pushing the actions off-screen.
       content: SizedBox(
@@ -55,11 +56,11 @@ class ReleaseNotesDialog extends StatelessWidget {
               Uri.parse(release.url),
               mode: LaunchMode.externalApplication,
             ),
-            child: const Text('View on GitHub'),
+            child: Text(UiCopy.viewOnGithub(context: context)),
           ),
         FilledButton(
           onPressed: () => Navigator.of(context).maybePop(),
-          child: const Text('Got it'),
+          child: Text(UiCopy.gotIt(context: context)),
         ),
       ],
     );
@@ -124,7 +125,10 @@ Future<void> openCurrentReleaseNotes(
   final release = await notifier.loadNotesForCurrentVersion();
   if (!context.mounted) return;
   if (release == null || release.notes.trim().isEmpty) {
-    showInfoSnack(context, 'No release notes published for v$kAppVersion.');
+    showInfoSnack(
+      context,
+      UiCopy.noReleaseNotesPublishedForV(context: context, arg0: kAppVersion),
+    );
     return;
   }
   await showReleaseNotesDialog(context, release);

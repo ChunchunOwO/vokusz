@@ -1,3 +1,4 @@
+import 'package:bonfire/l10n/ui_copy.dart';
 import 'package:bonfire/features/spaces/controllers/role_preview.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -27,8 +28,10 @@ class RolePreviewBanner extends ConsumerWidget {
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  'Previewing as “${preview.roleName}” — permissions shown are '
-                  'this role’s.',
+                  UiCopy.previewingAsPermissionsShownAreThisRole(
+                    context: context,
+                    arg0: preview.roleName,
+                  ),
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(color: Colors.white, fontSize: 13),
                 ),
@@ -41,7 +44,7 @@ class RolePreviewBanner extends ConsumerWidget {
                   padding: const EdgeInsets.symmetric(horizontal: 8),
                   minimumSize: const Size(0, 28),
                 ),
-                child: const Text('Exit preview'),
+                child: Text(UiCopy.exitPreview(context: context)),
               ),
             ],
           ),

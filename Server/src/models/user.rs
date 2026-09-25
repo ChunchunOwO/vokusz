@@ -28,6 +28,8 @@ pub struct User {
 /// Omits sensitive fields: `is_admin`, `mfa_enabled`, `disabled`, `flags`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PublicUser {
+    #[serde(default)]
+    pub community_admin: bool,
     pub id: String,
     pub username: String,
     pub display_name: Option<String>,
@@ -46,6 +48,7 @@ pub struct PublicUser {
 impl From<User> for PublicUser {
     fn from(u: User) -> Self {
         PublicUser {
+            community_admin: u.is_admin && u.origin.is_none(),
             id: u.id,
             username: u.username,
             display_name: u.display_name,

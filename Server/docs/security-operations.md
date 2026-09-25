@@ -4,7 +4,7 @@
 
 Public registration never grants instance administration, including on empty databases. Existing administrators retain access. The server prints a warning when there is no administrator.
 
-Create the operator account locally before exposing a new server. Choose a new username; provisioning refuses to overwrite or promote an existing account. Passwords must be 16–128 characters.
+Create the operator account locally before exposing a new server. Choose a new username; provisioning refuses to overwrite or promote an existing account. Passwords must be 8–128 characters.
 
 ```bash
 read -r -s -p 'Admin password: ' ACCORD_BOOTSTRAP_PASSWORD

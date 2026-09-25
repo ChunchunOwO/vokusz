@@ -1,3 +1,4 @@
+import 'package:bonfire/l10n/ui_copy.dart';
 import 'package:accordkit/accordkit.dart';
 import 'package:bonfire/shared/utils/confirm_dialog.dart';
 import 'package:bonfire/shared/utils/rest_result_ext.dart';
@@ -117,15 +118,21 @@ Future<ExternalUrlOpenResult> openExternalUrl(
 }) async {
   final uri = tryParseExternalWebUrl(value);
   if (uri == null) {
-    showInfoSnack(context, 'Only valid HTTP and HTTPS links can be opened.');
+    showInfoSnack(
+      context,
+      UiCopy.onlyValidHttpAndHttpsLinksCan(context: context),
+    );
     return ExternalUrlOpenResult.blocked;
   }
 
   final confirmed = await showConfirmDialog(
     context,
-    title: 'Open external link?',
-    message: 'This link will open in your browser.\n\nDestination: ${uri.host}',
-    confirmLabel: 'Open link',
+    title: UiCopy.openExternalLink(context: context),
+    message: UiCopy.thisLinkWillOpenInYourBrowser(
+      context: context,
+      arg0: uri.host,
+    ),
+    confirmLabel: UiCopy.openLink(context: context),
   );
   if (confirmed != true || !context.mounted) {
     return ExternalUrlOpenResult.cancelled;
@@ -139,7 +146,10 @@ Future<ExternalUrlOpenResult> openExternalUrl(
   }
 
   if (context.mounted) {
-    showInfoSnack(context, "Couldn't open the link to ${uri.host}.");
+    showInfoSnack(
+      context,
+      UiCopy.couldnTOpenTheLinkTo(context: context, arg0: uri.host),
+    );
   }
   return ExternalUrlOpenResult.failed;
 }

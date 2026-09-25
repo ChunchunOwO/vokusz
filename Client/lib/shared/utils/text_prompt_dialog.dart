@@ -1,3 +1,4 @@
+import 'package:bonfire/l10n/app_strings.dart';
 import 'package:flutter/material.dart';
 
 /// Shows an [AlertDialog] with a single [TextField] and resolves to the
@@ -42,7 +43,7 @@ Future<String?> showTextPromptDialog(
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(),
-            child: Text(cancelLabel),
+            child: Text(AppStrings.label(cancelLabel, context: context)),
           ),
           if (resetLabel != null)
             TextButton(
@@ -51,7 +52,7 @@ Future<String?> showTextPromptDialog(
             ),
           FilledButton(
             onPressed: () => Navigator.of(ctx).pop(controller.text),
-            child: Text(confirmLabel),
+            child: Text(AppStrings.label(confirmLabel, context: context)),
           ),
         ],
       ),

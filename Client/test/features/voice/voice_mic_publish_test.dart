@@ -14,10 +14,48 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+import 'package:livekit_client/livekit_client.dart';
 
 /// A [VoiceSession] stand-in that never touches LiveKit: `connect` just
 /// records the call and reports whatever mic outcome the test configured, and
 /// `setMicEnabled` answers an unmute with [unmuteError].
+/// Uses [VoiceSession.noteFastConnectMic] — the same helper [connect] uses
+/// after LiveKit's join handler — and does not replace [micError].
+class _PublishFailSession extends VoiceSession {
+  @override
+  Future<LocalAudioTrack?> captureMic(String? deviceId) async => null;
+
+  @override
+  Future<void> releaseMic(LocalAudioTrack? track) async {}
+
+  @override
+  Future<void> connect(
+    String url,
+    String token, {
+    bool selfMute = false,
+    bool selfDeaf = false,
+    String? audioInputDeviceId,
+    String? audioOutputDeviceId,
+    int outputVolume = 100,
+    int inputVolume = 100,
+    bool relayOnly = false,
+    LocalAudioTrack? preparedMic,
+  }) async {
+    noteFastConnectMic(
+      offeredMic: true,
+      published: false,
+      publishError: Exception('publishAudioTrack failed'),
+    );
+    onStateChanged?.call(VoiceSessionState.connected);
+  }
+
+  @override
+  Future<void> disconnect() async {}
+
+  @override
+  Future<void> dispose() async {}
+}
+
 class _FakeSession extends VoiceSession {
   String? micErrorOnConnect;
   String? unmuteError;
@@ -40,6 +78,7 @@ class _FakeSession extends VoiceSession {
     int outputVolume = 100,
     int inputVolume = 100,
     bool relayOnly = false,
+    LocalAudioTrack? preparedMic,
   }) async {
     connects++;
     connectedMuted = selfMute;
@@ -47,10 +86,16 @@ class _FakeSession extends VoiceSession {
   }
 
   @override
+  Future<LocalAudioTrack?> captureMic(String? deviceId) async => null;
+
+  @override
+  Future<void> releaseMic(LocalAudioTrack? track) async {}
+
+  @override
   Future<void> disconnect() async {}
 
   @override
-  Future<String?> setMicEnabled(bool enabled) async {
+  Future<String?> setMicEnabled(bool enabled, {String? deviceId}) async {
     micToggles.add(enabled);
     return enabled ? unmuteError : null;
   }
@@ -193,6 +238,29 @@ void main() {
       expect(state.isConnected, isTrue, reason: 'still in the channel');
       expect(state.selfMute, isTrue, reason: 'no live mic, so shown muted');
       expect(state.error, micPermissionDeniedMessage);
+    });
+
+    test('a failed fast-connect publish mutes through the real session error', () async {
+      final client = _client();
+      addTearDown(client.dispose);
+      final session = _PublishFailSession();
+      final container = ProviderContainer(
+        overrides: [
+          accordAuthProvider.overrideWith(() => _FakeAccordAuth(client)),
+          connectionsControllerProvider.overrideWith(_ActiveConnections.new),
+          settingsControllerProvider.overrideWith(_FixedSettingsController.new),
+        ],
+      );
+      addTearDown(container.dispose);
+      container.read(voiceControllerProvider.notifier).debugSession = session;
+
+      await container.read(voiceControllerProvider.notifier).join('c1', 's1');
+
+      final state = container.read(voiceControllerProvider);
+      expect(state.isConnected, isTrue);
+      expect(session.micError, isNotNull);
+      expect(state.selfMute, isTrue);
+      expect(state.error, session.micError);
     });
 
     test('a published microphone joins live with no error', () async {

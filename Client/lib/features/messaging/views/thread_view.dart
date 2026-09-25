@@ -1,3 +1,4 @@
+import 'package:bonfire/l10n/ui_copy.dart';
 import 'dart:async';
 import 'package:accordkit/accordkit.dart';
 import 'package:bonfire/features/messaging/utils/send_cooldown.dart';
@@ -216,7 +217,7 @@ class _AccordThreadPaneState extends ConsumerState<AccordThreadPane> {
     // A rejected delete used to close nothing and say nothing, so the post
     // looked like it had simply refused to go (#306).
     if (!result.ok) {
-      showErrorSnack(context, result, prefix: 'Failed to delete post');
+      showErrorSnack(context, result, prefix: UiCopy.failedToDeletePost());
       return;
     }
     widget.onClose(const ThreadResult.deleted());
@@ -225,7 +226,7 @@ class _AccordThreadPaneState extends ConsumerState<AccordThreadPane> {
   String _title() {
     final title = _root.title;
     if (title is String && title.isNotEmpty) return title;
-    return 'Thread';
+    return UiCopy.thread();
   }
 
   /// Offers a `vokusz://` share link for this post, plus the public `/s/...`
@@ -236,12 +237,12 @@ class _AccordThreadPaneState extends ConsumerState<AccordThreadPane> {
 
     final entries = <AccordMenuEntry>[
       AccordMenuEntry(
-        label: 'Share Vokusz link',
+        label: UiCopy.shareVokuszLink(),
         icon: Icons.rocket_launch_outlined,
         onSelected: () => _copyShareLink(
           'vokusz://navigate/$spaceId/'
-              '${widget.channelId}?msg=${_root.id}',
-          'Vokusz link copied to clipboard',
+          '${widget.channelId}?msg=${_root.id}',
+          UiCopy.vokuszLinkCopiedToClipboard(),
         ),
       ),
     ];
@@ -285,10 +286,10 @@ class _AccordThreadPaneState extends ConsumerState<AccordThreadPane> {
           '/${Uri.encodeComponent(_root.id)}';
       entries.add(
         AccordMenuEntry(
-          label: 'Share with the internet',
+          label: UiCopy.shareWithTheInternet(),
           icon: Icons.public,
           onSelected: () =>
-              _copyShareLink(webLink, 'Public link copied to clipboard'),
+              _copyShareLink(webLink, UiCopy.publicLinkCopiedToClipboard()),
         ),
       );
     }
@@ -297,7 +298,7 @@ class _AccordThreadPaneState extends ConsumerState<AccordThreadPane> {
       context,
       entries: entries,
       globalPosition: position,
-      title: 'Share post',
+      title: UiCopy.sharePost(),
     );
   }
 
@@ -390,7 +391,10 @@ class _AccordThreadPaneState extends ConsumerState<AccordThreadPane> {
           return Padding(
             padding: const EdgeInsets.all(16),
             child: Center(
-              child: Text('No replies yet', style: theme.textTheme.bodySmall),
+              child: Text(
+                UiCopy.noRepliesYet(context: context),
+                style: theme.textTheme.bodySmall,
+              ),
             ),
           );
         }
@@ -421,7 +425,9 @@ class _AccordThreadPaneState extends ConsumerState<AccordThreadPane> {
           child: Row(
             children: [
               IconButton(
-                tooltip: dialog ? 'Close' : 'Back',
+                tooltip: dialog
+                    ? UiCopy.close(context: context)
+                    : UiCopy.back(context: context),
                 onPressed: _close,
                 icon: Icon(dialog ? Icons.close : Icons.arrow_back, size: 18),
               ),
@@ -437,7 +443,7 @@ class _AccordThreadPaneState extends ConsumerState<AccordThreadPane> {
               ),
               if (widget.spaceId != null)
                 IconButton(
-                  tooltip: 'Share',
+                  tooltip: UiCopy.share(context: context),
                   onPressed: _showShareMenu,
                   icon: Icon(
                     Icons.ios_share,
@@ -468,9 +474,9 @@ class _AccordThreadPaneState extends ConsumerState<AccordThreadPane> {
                   // TextInputAction.newline, so Enter only inserts a line break
                   // and never reaches onSubmitted. Matches the main composer.
                   textInputAction: TextInputAction.send,
-                  decoration: const InputDecoration(
+                  decoration: InputDecoration(
                     isDense: true,
-                    hintText: 'Reply to thread',
+                    hintText: UiCopy.replyToThread(context: context),
                     border: OutlineInputBorder(),
                   ),
                   onSubmitted: (_) {
@@ -487,7 +493,7 @@ class _AccordThreadPaneState extends ConsumerState<AccordThreadPane> {
               IconButton(
                 tooltip: _waiting
                     ? sendCooldownLabel(_cooldown!, DateTime.now())
-                    : 'Send reply',
+                    : UiCopy.sendReply(context: context),
                 onPressed: _sending || _waiting ? null : _send,
                 icon: Icon(Icons.send, size: 20, color: colors.dirtyWhite),
               ),
@@ -634,7 +640,7 @@ class _MessageLineState extends ConsumerState<_MessageLine> {
       // message surface is left without the action (#290).
       if (!widget.isOwn)
         AccordMenuEntry(
-          label: 'Report',
+          label: UiCopy.report(),
           icon: Icons.flag_outlined,
           onSelected: () => showReportDialog(
             context,
@@ -756,6 +762,7 @@ class _MessageLineState extends ConsumerState<_MessageLine> {
                   children: [
                     MessageAuthorHeader(
                       name: name,
+                      nameColor: communityNameColor(user),
                       ellipsizeName: true,
                       onNameTap: userActionsEnabled && widget.onUserTap != null
                           ? openUser
@@ -787,7 +794,7 @@ class _MessageLineState extends ConsumerState<_MessageLine> {
                 Opacity(
                   opacity: _hovered ? 1 : 0,
                   child: IconButton(
-                    tooltip: 'Actions',
+                    tooltip: UiCopy.actions(context: context),
                     onPressed: _busy ? null : () => _showMenu(message),
                     icon: Icon(Icons.more_horiz, size: 18, color: colors.gray),
                   ),
@@ -806,9 +813,9 @@ Future<bool?> confirmDeletePost(BuildContext context, {required bool isPost}) {
   final what = isPost ? 'post' : 'reply';
   return showConfirmDialog(
     context,
-    title: 'Delete $what',
-    message: 'This $what will be permanently deleted.',
-    confirmLabel: 'Delete',
+    title: UiCopy.delete2(context: context, arg0: what),
+    message: UiCopy.thisWillBePermanentlyDeleted(context: context, arg0: what),
+    confirmLabel: UiCopy.delete(context: context),
     danger: true,
   );
 }
@@ -826,9 +833,13 @@ Future<AccordMessage?> showPostEditor(
   return showDialog<AccordMessage>(
     context: context,
     builder: (dialogContext) => PostComposerDialog(
-      title: withTitle ? 'Edit post' : 'Edit reply',
-      submitLabel: 'Save',
-      bodyLabel: withTitle ? 'Body' : 'Message',
+      title: withTitle
+          ? UiCopy.editPost(context: context)
+          : UiCopy.editReply(context: context),
+      submitLabel: UiCopy.save(context: context),
+      bodyLabel: withTitle
+          ? UiCopy.body(context: context)
+          : UiCopy.message(context: context),
       initialTitle: withTitle
           ? (post.title is String ? post.title as String : '')
           : null,
@@ -844,7 +855,7 @@ Future<AccordMessage?> showPostEditor(
           Navigator.of(dialogContext).pop(message);
           return null;
         }
-        return 'Failed to save changes';
+        return UiCopy.failedToSaveChanges(context: context);
       },
     ),
   );

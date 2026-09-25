@@ -1,3 +1,4 @@
+import 'package:bonfire/l10n/ui_copy.dart';
 import 'dart:convert';
 import 'package:accordkit/accordkit.dart';
 import 'package:flutter/material.dart';
@@ -16,7 +17,7 @@ Future<String?> blockAttachmentsAndDelete({
   var blocked = 0;
   for (final id in attachmentIds) {
     if (stillActive != null && !stillActive()) {
-      return 'Account changed; the operation stopped.';
+      return UiCopy.accountChangedTheOperationStopped();
     }
     final result = await client.automod.blockAttachment(scope, id, reason);
     if (!result.ok) {
@@ -24,14 +25,16 @@ Future<String?> blockAttachmentsAndDelete({
     }
     blocked++;
   }
-  if (blocked == 0) return 'Select at least one attachment.';
+  if (blocked == 0) return UiCopy.selectAtLeastOneAttachment();
   if (stillActive != null && !stillActive()) {
-    return 'Files are blocked. Account changed before message deletion.';
+    return UiCopy.filesAreBlockedAccountChangedBeforeMessage();
   }
   final deleted = await client.messages.delete(channelId, messageId);
   return deleted.ok
       ? null
-      : 'Files are blocked, but the message could not be deleted. ${deleted.error?.message ?? 'Try deleting it again.'}';
+      : UiCopy.filesAreBlockedButTheMessageCould(
+          arg0: deleted.error?.message ?? 'Try deleting it again.',
+        );
 }
 
 Future<bool?> showBlockAttachmentDialog(
@@ -91,9 +94,7 @@ class _BlockDialogState extends State<_BlockDialog> {
     if (_reason.text.trim().isEmpty ||
         utf8.encode(_reason.text.trim()).length > 2000 ||
         _ids.isEmpty) {
-      setState(
-        () => _error = 'Select a file and enter a reason (1–2000 characters).',
-      );
+      setState(() => _error = UiCopy.selectAFileAndEnterAReason());
       return;
     }
     setState(() {
@@ -122,15 +123,17 @@ class _BlockDialogState extends State<_BlockDialog> {
 
   @override
   Widget build(BuildContext context) => AlertDialog(
-    title: const Text('Block files and delete message'),
+    title: Text(UiCopy.blockFilesAndDeleteMessage(context: context)),
     content: SizedBox(
       width: 460,
       child: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Text(
-              'Block identical re-uploads before deleting this message. Modified copies may have different hashes.',
+            Text(
+              UiCopy.blockIdenticalReUploadsBeforeDeletingThis(
+                context: context,
+              ),
             ),
             if (widget.isAdmin && widget.message.spaceId != null)
               DropdownButtonFormField<String>(
@@ -138,11 +141,13 @@ class _BlockDialogState extends State<_BlockDialog> {
                 items: [
                   DropdownMenuItem(
                     value: widget.message.spaceId!,
-                    child: const Text('This space'),
+                    child: Text(UiCopy.thisSpace(context: context)),
                   ),
-                  const DropdownMenuItem(
+                  DropdownMenuItem(
                     value: '*',
-                    child: Text('Entire server, including DMs'),
+                    child: Text(
+                      UiCopy.entireServerIncludingDms(context: context),
+                    ),
                   ),
                 ],
                 onChanged: _busy ? null : (v) => setState(() => _scope = v!),
@@ -166,7 +171,9 @@ class _BlockDialogState extends State<_BlockDialog> {
               controller: _reason,
               enabled: !_busy,
               maxLength: 2000,
-              decoration: const InputDecoration(labelText: 'Reason'),
+              decoration: InputDecoration(
+                labelText: UiCopy.reason(context: context),
+              ),
             ),
             if (_error != null)
               Text(
@@ -181,11 +188,11 @@ class _BlockDialogState extends State<_BlockDialog> {
     actions: [
       TextButton(
         onPressed: _busy ? null : () => Navigator.pop(context),
-        child: const Text('Cancel'),
+        child: Text(UiCopy.cancel(context: context)),
       ),
       FilledButton(
         onPressed: _busy ? null : _submit,
-        child: const Text('Block and delete'),
+        child: Text(UiCopy.blockAndDelete(context: context)),
       ),
     ],
   );

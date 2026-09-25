@@ -41,7 +41,7 @@ class _CreateGroupDialogState extends ConsumerState<_CreateGroupDialog> {
     } else {
       setState(() {
         _busy = false;
-        _error = 'Failed to create group';
+        _error = UiCopy.failedToCreateGroup();
       });
     }
   }
@@ -58,21 +58,24 @@ class _CreateGroupDialogState extends ConsumerState<_CreateGroupDialog> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text('New group', style: theme.textTheme.titleMedium),
+              Text(
+                UiCopy.newGroup(context: context),
+                style: theme.textTheme.titleMedium,
+              ),
               const SizedBox(height: 12),
               TextField(
                 controller: _name,
                 enabled: !_busy,
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   isDense: true,
-                  labelText: 'Group name (optional)',
+                  labelText: UiCopy.groupNameOptional(context: context),
                   border: OutlineInputBorder(),
                 ),
               ),
               const SizedBox(height: 8),
               Flexible(
                 child: _UserSearchList(
-                  hintText: 'Search users to add',
+                  hintText: UiCopy.searchUsersToAdd(context: context),
                   busy: _busy,
                   onBusyChanged: (busy) => setState(() {
                     _busy = busy;
@@ -128,12 +131,18 @@ class _CreateGroupDialogState extends ConsumerState<_CreateGroupDialog> {
                 children: [
                   TextButton(
                     onPressed: _busy ? null : () => Navigator.of(context).pop(),
-                    child: const Text('Cancel'),
+                    child: Text(UiCopy.cancel(context: context)),
                   ),
                   const SizedBox(width: 8),
                   FilledButton(
                     onPressed: _busy || _selected.isEmpty ? null : _create,
-                    child: Text('Create (${_selected.length})'),
+                    child: Text(
+                      AppStrings.choose(
+                        'Create (${_selected.length})',
+                        '创建（${_selected.length}）',
+                        context: context,
+                      ),
+                    ),
                   ),
                 ],
               ),
@@ -176,7 +185,7 @@ class _PickUserDialogState extends ConsumerState<_PickUserDialog> {
               const SizedBox(height: 12),
               Flexible(
                 child: _UserSearchList(
-                  hintText: 'Search by username',
+                  hintText: UiCopy.searchByUsername(context: context),
                   busy: _busy,
                   onBusyChanged: (busy) => setState(() => _busy = busy),
                   excludeIds: widget.excludeIds,
@@ -197,7 +206,7 @@ class _PickUserDialogState extends ConsumerState<_PickUserDialog> {
                 alignment: Alignment.centerRight,
                 child: TextButton(
                   onPressed: () => Navigator.of(context).pop(),
-                  child: const Text('Cancel'),
+                  child: Text(UiCopy.cancel(context: context)),
                 ),
               ),
             ],
@@ -243,7 +252,7 @@ class _GroupMembersDialog extends ConsumerWidget {
                     ? Padding(
                         padding: const EdgeInsets.all(16),
                         child: Text(
-                          'No other members',
+                          UiCopy.noOtherMembers(context: context),
                           style: theme.textTheme.bodySmall,
                         ),
                       )
@@ -267,7 +276,9 @@ class _GroupMembersDialog extends ConsumerWidget {
                                     ? [
                                         const AccordMenuEntry.divider(),
                                         AccordMenuEntry(
-                                          label: 'Remove from group',
+                                          label: UiCopy.removeFromGroup(
+                                            context: context,
+                                          ),
                                           icon: Icons.person_remove_outlined,
                                           destructive: true,
                                           onSelected: () => onRemove(user),
@@ -291,7 +302,9 @@ class _GroupMembersDialog extends ConsumerWidget {
                                 ),
                                 trailing: canRemove
                                     ? IconButton(
-                                        tooltip: 'Remove',
+                                        tooltip: UiCopy.remove(
+                                          context: context,
+                                        ),
                                         onPressed: () => onRemove(user),
                                         icon: Icon(
                                           Icons.person_remove,
@@ -310,7 +323,7 @@ class _GroupMembersDialog extends ConsumerWidget {
                 alignment: Alignment.centerRight,
                 child: TextButton(
                   onPressed: () => Navigator.of(context).pop(),
-                  child: const Text('Close'),
+                  child: Text(UiCopy.close(context: context)),
                 ),
               ),
             ],

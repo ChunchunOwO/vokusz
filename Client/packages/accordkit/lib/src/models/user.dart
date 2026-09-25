@@ -14,6 +14,7 @@ class AccordUser {
   int flags;
   int publicFlags;
   bool isAdmin;
+  bool communityAdmin;
   bool mfaEnabled;
   bool disabled;
   bool isGuest;
@@ -37,6 +38,7 @@ class AccordUser {
     this.flags = 0,
     this.publicFlags = 0,
     this.isAdmin = false,
+    this.communityAdmin = false,
     this.mfaEnabled = false,
     this.disabled = false,
     this.isGuest = false,
@@ -58,6 +60,7 @@ class AccordUser {
       flags: asInt(d['flags']),
       publicFlags: asInt(d['public_flags']),
       isAdmin: asBool(d['is_admin']),
+      communityAdmin: asBool(d['community_admin']),
       mfaEnabled: asBool(d['mfa_enabled']),
       disabled: asBool(d['disabled']),
       isGuest: asBool(d['is_guest']),
@@ -75,6 +78,7 @@ class AccordUser {
       'flags': flags,
       'public_flags': publicFlags,
       'is_admin': isAdmin,
+      'community_admin': communityAdmin,
       'mfa_enabled': mfaEnabled,
       'disabled': disabled,
       'is_guest': isGuest,

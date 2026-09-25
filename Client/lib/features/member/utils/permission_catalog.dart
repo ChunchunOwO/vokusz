@@ -1,3 +1,5 @@
+import 'package:bonfire/l10n/app_strings.dart';
+import 'package:bonfire/l10n/ui_copy.dart';
 import 'package:accordkit/accordkit.dart';
 import 'package:bonfire/shared/utils/string_ext.dart';
 
@@ -77,6 +79,6 @@ const accordPermissionGroups = <({String label, List<String> permissions})>[
 
 /// Human-facing permission names shared by both editors.
 String accordPermissionLabel(String permission) => switch (permission) {
-  AccordPermission.mentionEveryone => 'Mention @everyone, @here, and all roles',
-  _ => titleCaseFromToken(permission),
+  AccordPermission.mentionEveryone => UiCopy.mentionEveryoneHereAndAllRoles(),
+  _ => AppStrings.label(titleCaseFromToken(permission)),
 };

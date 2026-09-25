@@ -3,7 +3,12 @@
 #include <optional>
 
 #include "flutter/generated_plugin_registrant.h"
+#include "foreground_app.h"
+#include "speaker_overlay.h"
 #include "taskbar_badge.h"
+#include "window_corners.h"
+
+extern "C" __declspec(dllimport) void VokuszStopObsCapture();
 
 FlutterWindow::FlutterWindow(const flutter::DartProject& project)
     : project_(project) {}
@@ -29,6 +34,9 @@ bool FlutterWindow::OnCreate() {
   // Unread taskbar overlay icon (see taskbar_badge.cpp) — registered here
   // because it needs both the engine and this window's HWND.
   TaskbarBadgeRegister(flutter_controller_->engine(), GetHandle());
+  WindowCornersRegister(flutter_controller_->engine(), GetHandle());
+  SpeakerOverlayRegister(flutter_controller_->engine());
+  ForegroundAppRegister(flutter_controller_->engine());
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
 
   flutter_controller_->engine()->SetNextFrameCallback([&]() {
@@ -44,6 +52,8 @@ bool FlutterWindow::OnCreate() {
 }
 
 void FlutterWindow::OnDestroy() {
+  SpeakerOverlayDestroy();
+  VokuszStopObsCapture();
   if (flutter_controller_) {
     flutter_controller_ = nullptr;
   }
@@ -72,11 +82,16 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
     TaskbarBadgeReapply();
   }
 
-  switch (message) {
-    case WM_FONTCHANGE:
-      flutter_controller_->engine()->ReloadSystemFonts();
-      break;
+  if (message == WM_FONTCHANGE) {
+    flutter_controller_->engine()->ReloadSystemFonts();
   }
 
-  return Win32Window::MessageHandler(hwnd, message, wparam, lparam);
+  // Size the Flutter view first. The rounded region is applied after that,
+  // otherwise the view keeps the previous square until the next resize.
+  const LRESULT result =
+      Win32Window::MessageHandler(hwnd, message, wparam, lparam);
+  if (message == WM_SIZE || message == WM_DPICHANGED) {
+    WindowCornersOnSize();
+  }
+  return result;
 }

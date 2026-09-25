@@ -16,7 +16,7 @@ import 'package:go_router/go_router.dart';
 //   than the full incoming location, so every signed-in sub-route was bounced
 //   home. Only `state.uri.path` reflects where the user actually navigated.
 // * The nesting that made that possible: `/spaces`, `/settings`, `/admin`, and
-//   `/switcher` used to be children of `/`, which both subjected them to the
+//   other destinations used to be children of `/`, which both subjected them to the
 //   sign-in route's redirect and left the sign-in screen sitting in the
 //   navigator stack underneath the whole app.
 //
@@ -44,10 +44,6 @@ GoRouter _buildTestRouter() => GoRouter(
               path: '/register',
               redirect: redirectLoggedInToHome,
               builder: (context, state) => const Text('register'),
-            ),
-            GoRoute(
-              path: '/switcher',
-              builder: (context, state) => const Text('switcher'),
             ),
             GoRoute(
               path: '/spaces',
@@ -97,7 +93,7 @@ Future<GoRouter> _pumpAt(
 
 void main() {
   group('redirectLoggedInToHome', () {
-    for (final path in ['/settings', '/admin', '/switcher']) {
+    for (final path in ['/settings', '/admin']) {
       testWidgets('does not bounce $path home while logged in', (tester) async {
         await _pumpAt(tester, path, auth: _loggedIn());
 
@@ -155,7 +151,7 @@ void main() {
       expect(find.text('settings'), findsNothing);
     });
 
-    for (final path in ['/switcher', '/admin']) {
+    for (final path in ['/admin']) {
       testWidgets('pushing $path from home pops back to it', (tester) async {
         final router = await _pumpAt(tester, '/spaces', auth: _loggedIn());
 

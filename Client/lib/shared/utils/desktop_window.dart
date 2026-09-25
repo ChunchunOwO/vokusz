@@ -16,11 +16,28 @@ const String _key = 'bounds';
 /// Default window size used on first launch (matches the Linux runner default).
 const Size _defaultSize = Size(1280, 720);
 
-bool get _isDesktop =>
-    !UniversalPlatform.isWeb &&
-    (UniversalPlatform.isWindows ||
-        UniversalPlatform.isLinux ||
-        UniversalPlatform.isMacOS);
+/// Frameless window chrome is desktop-only. Web and mobile keep the platform
+/// surface; optional flags let tests pin each case without a device.
+bool desktopChromeEnabled({
+  bool? web,
+  bool? windows,
+  bool? linux,
+  bool? macos,
+}) {
+  final isWeb = web ?? UniversalPlatform.isWeb;
+  final isWindows = windows ?? UniversalPlatform.isWindows;
+  final isLinux = linux ?? UniversalPlatform.isLinux;
+  final isMacOS = macos ?? UniversalPlatform.isMacOS;
+  return !isWeb && (isWindows || isLinux || isMacOS);
+}
+
+bool get _isDesktop => desktopChromeEnabled();
+
+/// While a temporary window shape is on screen (the compact voice bar), the
+/// persister must not overwrite the user's normal bounds with that shape.
+bool suppressWindowGeometryPersistence = false;
+
+Future<void> flushWindowGeometry() => _writeWindowGeometry(force: true);
 
 /// Restores the saved window geometry and starts persisting future changes.
 /// Call once during startup, after `setupHive()` (so the box is open) and
@@ -48,24 +65,54 @@ Future<void> setupDesktopWindow() async {
 
   // Center on first launch (no saved position); otherwise restore the exact
   // spot. waitUntilReadyToShow avoids a flash at the default geometry.
-  final options = WindowOptions(size: size, center: position == null);
+  final options = WindowOptions(
+    size: size,
+    center: position == null,
+    titleBarStyle: TitleBarStyle.hidden,
+    windowButtonVisibility: false,
+    backgroundColor: const Color(0xFF27292C),
+    title: 'Vokusz',
+  );
   await windowManager.waitUntilReadyToShow(options, () async {
+    // Hidden style still leaves the Windows caption inset. Frameless drops
+    // that frame so the Flutter view is the whole window.
+    await windowManager.setAsFrameless();
     if (position != null) await windowManager.setPosition(position);
     if (maximized) await windowManager.maximize();
     await windowManager.show();
     await windowManager.focus();
   });
 
-  windowManager.addListener(_WindowStatePersister(box));
+  windowManager.addListener(_WindowStatePersister());
+}
+
+Future<void> _writeWindowGeometry({required bool force}) async {
+  if (!_isDesktop) return;
+  if (!force && suppressWindowGeometryPersistence) return;
+  try {
+    final box = Hive.box(windowStateBoxName);
+    final maximized = await windowManager.isMaximized();
+    final record = <String, dynamic>{
+      ...?(box.get(_key) as Map?)?.cast<String, dynamic>(),
+      'maximized': maximized,
+    };
+    if (!maximized) {
+      final bounds = await windowManager.getBounds();
+      record['x'] = bounds.left;
+      record['y'] = bounds.top;
+      record['width'] = bounds.width;
+      record['height'] = bounds.height;
+    }
+    await box.put(_key, record);
+  } catch (_) {
+    // Geometry is best-effort; never let a persistence hiccup surface.
+  }
 }
 
 /// Saves window geometry on move/resize/(un)maximize, debounced so a drag
 /// doesn't write to Hive on every frame. While maximized, only the flag is
 /// updated — the last normal bounds are preserved for un-maximize restore.
 class _WindowStatePersister extends WindowListener {
-  _WindowStatePersister(this._box);
-
-  final Box _box;
   Timer? _debounce;
 
   void _scheduleSave() {
@@ -73,25 +120,7 @@ class _WindowStatePersister extends WindowListener {
     _debounce = Timer(const Duration(milliseconds: 400), _save);
   }
 
-  Future<void> _save() async {
-    try {
-      final maximized = await windowManager.isMaximized();
-      final record = <String, dynamic>{
-        ...?(_box.get(_key) as Map?)?.cast<String, dynamic>(),
-        'maximized': maximized,
-      };
-      if (!maximized) {
-        final bounds = await windowManager.getBounds();
-        record['x'] = bounds.left;
-        record['y'] = bounds.top;
-        record['width'] = bounds.width;
-        record['height'] = bounds.height;
-      }
-      await _box.put(_key, record);
-    } catch (_) {
-      // Geometry is best-effort; never let a persistence hiccup surface.
-    }
-  }
+  Future<void> _save() => _writeWindowGeometry(force: false);
 
   @override
   void onWindowResized() => _scheduleSave();

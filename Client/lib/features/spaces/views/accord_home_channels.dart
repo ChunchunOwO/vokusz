@@ -1,5 +1,12 @@
 part of 'accord_home.dart';
 
+/// Prefix shown in the sidebar chip. The full id is still copied on tap.
+String _compactDomainId(String id) {
+  const visible = 6;
+  if (id.length <= visible) return id;
+  return '${id.substring(0, visible)}…';
+}
+
 class _ChannelList extends ConsumerStatefulWidget {
   const _ChannelList({
     required this.spaceId,
@@ -33,8 +40,8 @@ class _ChannelListState extends ConsumerState<_ChannelList> {
     if (spaceId != null &&
         ref.watch(channelsLoadFailedProvider(serverKey, spaceId))) {
       return ServerUnreachable(
-        title: "Couldn't load channels",
-        message: 'Something went wrong fetching this space’s channels.',
+        title: UiCopy.couldnTLoadChannels(context: context),
+        message: UiCopy.somethingWentWrongFetchingThisSpaceS(context: context),
         onRetry: () {
           ref
               .read(channelsLoadFailedProvider(serverKey, spaceId).notifier)
@@ -46,8 +53,8 @@ class _ChannelListState extends ConsumerState<_ChannelList> {
 
     if (ref.watch(spacesLoadFailedProvider(serverKey))) {
       return ServerUnreachable(
-        title: "Couldn't load your spaces",
-        message: 'Something went wrong fetching this server’s space list.',
+        title: UiCopy.couldnTLoadYourSpaces(context: context),
+        message: UiCopy.somethingWentWrongFetchingThisServerS(context: context),
         onRetry: () {
           final auth = ref.read(accordAuthProvider);
           if (auth is! AccordAuthLoggedIn) return;
@@ -117,7 +124,16 @@ class _ChannelListState extends ConsumerState<_ChannelList> {
         ? const <String>{}
         : ref.watch(
             settingsControllerProvider.select(
-              (s) => s.collapsedCategories[id]?.toSet() ?? const <String>{},
+              (s) => {
+                for (final channel in channels ?? const <AccordChannel>[])
+                  if (channel.type == 'category' &&
+                      s.isCategoryCollapsed(
+                        ref.readActiveServerKey() ?? '',
+                        id,
+                        channel.id,
+                      ))
+                    channel.id,
+              },
             ),
           );
 
@@ -152,7 +168,7 @@ class _ChannelListState extends ConsumerState<_ChannelList> {
               errorWidget: (_, _, _) => const SizedBox.shrink(),
             ),
           Container(
-            height: 48,
+            height: id == null ? 48 : 78,
             alignment: Alignment.centerLeft,
             padding: const EdgeInsets.only(left: 16, right: 4),
             decoration: BoxDecoration(
@@ -163,10 +179,64 @@ class _ChannelListState extends ConsumerState<_ChannelList> {
             child: Row(
               children: [
                 Expanded(
-                  child: Text(
-                    spaceName ?? 'Select a space',
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.titleSmall,
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        spaceName ?? AppStrings.of(context).pickChannel,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.titleSmall,
+                      ),
+                      if (id != null) ...[
+                        const SizedBox(height: 5),
+                        Tooltip(
+                          message: AppStrings.choose(
+                            'Copy domain ID',
+                            '复制域 ID',
+                            context: context,
+                          ),
+                          child: InkWell(
+                            onTap: () async {
+                              await Clipboard.setData(ClipboardData(text: id));
+                              if (context.mounted) {
+                                showInfoSnack(
+                                  context,
+                                  AppStrings.choose(
+                                    'Domain ID copied',
+                                    '已复制域 ID',
+                                    context: context,
+                                  ),
+                                );
+                              }
+                            },
+                            child: Container(
+                              key: const ValueKey('domain-id-badge'),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                                vertical: 2,
+                              ),
+                              decoration: BoxDecoration(
+                                border: Border.all(color: colors.darkGray),
+                              ),
+                              child: Text(
+                                AppStrings.choose(
+                                  'ID: ${_compactDomainId(id)}',
+                                  '域 ID：${_compactDomainId(id)}',
+                                  context: context,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .labelSmall
+                                    ?.copyWith(fontSize: 10),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
                 ),
                 if (space?.origin != null) ...[
@@ -175,7 +245,7 @@ class _ChannelListState extends ConsumerState<_ChannelList> {
                 ],
                 if (id != null)
                   _HeaderAction(
-                    tooltip: 'Search',
+                    tooltip: AppStrings.of(context).search,
                     icon: Icons.search,
                     color: colors.dirtyWhite,
                     onPressed: () async {
@@ -188,7 +258,7 @@ class _ChannelListState extends ConsumerState<_ChannelList> {
                   ),
                 if (id != null && (canInvite || canManageChannels || canManage))
                   PopupMenuButton<_HeaderAction>(
-                    tooltip: 'Space actions',
+                    tooltip: AppStrings.of(context).channelMenu,
                     icon: Icon(
                       Icons.more_vert,
                       size: 18,
@@ -199,7 +269,7 @@ class _ChannelListState extends ConsumerState<_ChannelList> {
                         <_HeaderAction>[
                               if (canInvite)
                                 _HeaderAction(
-                                  tooltip: 'Invite people',
+                                  tooltip: AppStrings.of(context).invite,
                                   icon: Icons.person_add,
                                   color: colors.dirtyWhite,
                                   onPressed: () =>
@@ -207,7 +277,7 @@ class _ChannelListState extends ConsumerState<_ChannelList> {
                                 ),
                               if (canManageChannels)
                                 _HeaderAction(
-                                  tooltip: 'Create channel',
+                                  tooltip: AppStrings.of(context).newRoom,
                                   icon: Icons.add,
                                   color: colors.dirtyWhite,
                                   onPressed: () => showCreateChannelDialog(
@@ -217,7 +287,7 @@ class _ChannelListState extends ConsumerState<_ChannelList> {
                                 ),
                               if (canManageChannels && channels != null)
                                 _HeaderAction(
-                                  tooltip: 'Reorder channels',
+                                  tooltip: AppStrings.of(context).reorderRooms,
                                   icon: Icons.reorder,
                                   color: colors.dirtyWhite,
                                   onPressed: () => showAccordChannelReorder(
@@ -228,7 +298,9 @@ class _ChannelListState extends ConsumerState<_ChannelList> {
                                 ),
                               if (canManage)
                                 _HeaderAction(
-                                  tooltip: 'Space settings',
+                                  tooltip: AppStrings.of(
+                                    context,
+                                  ).channelSettings,
                                   icon: Icons.settings,
                                   color: colors.dirtyWhite,
                                   onPressed: () => showAccordSpaceSettings(
@@ -267,7 +339,7 @@ class _ChannelListState extends ConsumerState<_ChannelList> {
                     onToggleCollapsed: _toggleCollapsed,
                   )
                 : ListView(
-                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    padding: const EdgeInsets.only(bottom: 8),
                     children: _buildChannelEntries(
                       context,
                       spaceId: id,
@@ -584,8 +656,11 @@ class _ChannelTileState extends ConsumerState<_ChannelTile> {
 
   bool get _isVoice => widget.channel.type == 'voice';
 
-  bool get _connectedHere =>
-      ref.read(voiceControllerProvider).channelId == widget.channel.id;
+  bool get _connectedHere {
+    final voice = ref.read(voiceControllerProvider);
+    return voice.serverKey == ref.readActiveServerKey() &&
+        voice.channelId == widget.channel.id;
+  }
 
   /// Explicitly connects to this voice channel. Selecting the channel never
   /// does this any more (#202) — only the row's hover button, its double-click,
@@ -624,13 +699,13 @@ class _ChannelTileState extends ConsumerState<_ChannelTile> {
       leadingEntries: [
         if (_isVoice && !connected)
           AccordMenuEntry(
-            label: 'Join Voice',
+            label: AppStrings.of(context).joinVoice,
             icon: Icons.call,
             onSelected: _joinVoice,
           ),
         if (_isVoice && connected)
           AccordMenuEntry(
-            label: 'Disconnect',
+            label: AppStrings.of(context).disconnect,
             icon: Icons.call_end,
             destructive: true,
             onSelected: () =>
@@ -658,6 +733,35 @@ class _ChannelTileState extends ConsumerState<_ChannelTile> {
   Widget build(BuildContext context) {
     final colors = BonfireThemeExtension.of(context);
     final channel = widget.channel;
+    VoidCallback? onEdit = widget.onEdit;
+    if (widget.spaceId != null) {
+      final space = ref
+          .watch(spacesControllerProvider)
+          ?.firstWhereOrNull((s) => s.id == widget.spaceId);
+      final userId = ref.watchUserId() ?? '';
+      final member = ref.watch(
+        accordMembersControllerProvider(
+          ref.readActiveServerKey() ?? '',
+          widget.spaceId!,
+        ),
+      )?[userId];
+      final permissions = accordEffectiveChannelPermissions(
+        permissions: ref.watchAccordPermissions(space, widget.spaceId!),
+        channel: channel,
+        everyoneRoleId:
+            space?.roles.firstWhereOrNull((r) => r.position == 0)?.id ?? '',
+        memberRoleIds: member?.roles.toSet() ?? {},
+        currentUserId: userId,
+      );
+      onEdit = accordHasPermission(permissions, AccordPermission.manageChannels)
+          ? () => showEditChannelDialog(
+              context,
+              spaceId: widget.spaceId!,
+              channel: channel,
+            )
+          : null;
+    }
+
     final isVoice = channel.type == 'voice';
     final enabled =
         isVoice ||
@@ -689,7 +793,9 @@ class _ChannelTileState extends ConsumerState<_ChannelTile> {
     final connectedHere =
         isVoice &&
         ref.watch(
-          voiceControllerProvider.select((v) => v.channelId == channel.id),
+          voiceControllerProvider.select(
+            (v) => v.serverKey == activeKey && v.channelId == channel.id,
+          ),
         );
     final voiceCount = isVoice
         ? ref.watch(
@@ -709,9 +815,9 @@ class _ChannelTileState extends ConsumerState<_ChannelTile> {
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 1),
         child: Material(
           color: widget.selected ? colors.darkGray : Colors.transparent,
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(4),
           child: InkWell(
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: BorderRadius.circular(4),
             onTap: enabled ? _handleTap : null,
             onLongPress: () => _showMenu(null),
             onSecondaryTapUp: (d) => _showMenu(d.globalPosition),
@@ -763,17 +869,17 @@ class _ChannelTileState extends ConsumerState<_ChannelTile> {
                       widget.spaceId != null) ...[
                     const SizedBox(width: 4),
                     Tooltip(
-                      message: 'Join Voice',
+                      message: AppStrings.of(context).joinVoice,
                       child: InkWell(
                         onTap: _joinVoice,
                         child: Icon(Icons.call, size: 14, color: colors.green),
                       ),
                     ),
                   ],
-                  if (widget.onEdit != null && _hovered) ...[
+                  if (onEdit != null && _hovered) ...[
                     const SizedBox(width: 4),
                     InkWell(
-                      onTap: widget.onEdit,
+                      onTap: onEdit,
                       child: Icon(Icons.settings, size: 14, color: colors.gray),
                     ),
                   ],
@@ -791,7 +897,11 @@ class _ChannelTileState extends ConsumerState<_ChannelTile> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          tileRow,
+          VoiceMemberDropTarget(
+            channel: channel,
+            spaceId: widget.spaceId,
+            child: tileRow,
+          ),
           VoiceParticipantList(channelId: channel.id, spaceId: widget.spaceId),
         ],
       ),
@@ -813,7 +923,7 @@ class _MentionBadge extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       decoration: BoxDecoration(
         color: const Color(0xFFED4245),
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(4),
       ),
       child: Text(
         text,

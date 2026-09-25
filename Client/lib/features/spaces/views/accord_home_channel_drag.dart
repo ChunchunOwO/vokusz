@@ -66,48 +66,59 @@ class _ChannelDragListState extends ConsumerState<_ChannelDragList> {
       .where((e) => e.isCategory || !widget.collapsed.contains(e.parentId))
       .toList();
 
-  void _recomputeParents(ChannelReorderEntry moved) {
-    if (moved.isCategory) return;
-    String? newParent;
-    for (final e in _items) {
-      if (e.isCategory) {
-        newParent = e.channel.id;
-      } else if (identical(e, moved)) {
-        moved.parentId = newParent;
-        return;
-      }
-    }
-    moved.parentId = null;
-  }
-
-  void _onReorder(int oldIndex, int newIndex) {
-    final visible = _visible;
-    final moved = visible[oldIndex];
-    final newVisible = [...visible]..removeAt(oldIndex);
-    final ChannelReorderEntry? before = newIndex < newVisible.length
-        ? newVisible[newIndex]
-        : null;
-
-    // A dragged category carries its contiguous children with it.
-    final List<ChannelReorderEntry> block;
-    if (moved.isCategory) {
-      final start = _items.indexOf(moved);
-      var end = start + 1;
-      while (end < _items.length && !_items[end].isCategory) {
-        end++;
-      }
-      block = _items.sublist(start, end);
-    } else {
-      block = [moved];
-    }
-
+  void _drop(
+    ChannelReorderEntry moved,
+    String? parentId, {
+    ChannelReorderEntry? before,
+  }) {
+    if (_persisting || identical(moved, before)) return;
     setState(() {
+      final block = moved.isCategory
+          ? _items
+                .where(
+                  (e) => identical(e, moved) || e.parentId == moved.channel.id,
+                )
+                .toList()
+          : [moved];
       _items.removeWhere(block.contains);
-      final insertAt = before == null ? _items.length : _items.indexOf(before);
-      _items.insertAll(insertAt < 0 ? _items.length : insertAt, block);
-      _recomputeParents(moved);
+      if (!moved.isCategory) moved.parentId = parentId;
+      var index = before == null ? -1 : _items.indexOf(before);
+      if (index < 0) {
+        if (parentId == null && !moved.isCategory) {
+          index = _items.indexWhere((e) => e.isCategory);
+        } else if (parentId != null) {
+          index =
+              _items.lastIndexWhere(
+                (e) => e.channel.id == parentId || e.parentId == parentId,
+              ) +
+              1;
+        }
+      }
+      _items.insertAll(index < 0 ? _items.length : index, block);
     });
     _schedulePersist();
+  }
+
+  Widget _target(
+    Widget child,
+    String? parentId, {
+    ChannelReorderEntry? before,
+    bool categories = false,
+  }) {
+    return DragTarget<ChannelReorderEntry>(
+      onWillAcceptWithDetails: (details) =>
+          !_persisting &&
+          (categories || !details.data.isCategory) &&
+          !identical(details.data, before),
+      onAcceptWithDetails: (details) =>
+          _drop(details.data, parentId, before: before),
+      builder: (context, candidates, rejected) => Container(
+        color: candidates.isEmpty
+            ? null
+            : Theme.of(context).colorScheme.primary.withValues(alpha: 0.2),
+        child: child,
+      ),
+    );
   }
 
   void _schedulePersist() {
@@ -129,7 +140,10 @@ class _ChannelDragListState extends ConsumerState<_ChannelDragList> {
     );
     if (client == null) return;
     final notifier = ref.read(
-      accordChannelsControllerProvider(ref.readActiveServerKey() ?? '', widget.spaceId).notifier,
+      accordChannelsControllerProvider(
+        ref.readActiveServerKey() ?? '',
+        widget.spaceId,
+      ).notifier,
     );
 
     final updates = diffChannelPositions(_items);
@@ -139,7 +153,26 @@ class _ChannelDragListState extends ConsumerState<_ChannelDragList> {
     _persisting = true;
     try {
       for (final u in updates) {
-        await notifier.updateChannel(client, u.channelId, u.toBody());
+        final saved = await notifier.updateChannel(
+          client,
+          u.channelId,
+          u.toBody(),
+        );
+        if (!saved) {
+          if (mounted)
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(
+                  AppStrings.choose(
+                    'Could not move channel',
+                    '移动频道失败',
+                    context: context,
+                  ),
+                ),
+              ),
+            );
+          break;
+        }
       }
     } finally {
       _persisting = false;
@@ -178,19 +211,38 @@ class _ChannelDragListState extends ConsumerState<_ChannelDragList> {
   @override
   Widget build(BuildContext context) {
     final visible = _visible;
-    return ReorderableListView.builder(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      buildDefaultDragHandles: false,
-      itemCount: visible.length,
-      onReorderItem: _onReorder,
-      itemBuilder: (context, index) {
-        final entry = visible[index];
-        return ReorderableDelayedDragStartListener(
-          key: ValueKey(entry.channel.id),
-          index: index,
-          child: _buildItem(context, entry),
-        );
-      },
+    return ListView(
+      padding: const EdgeInsets.only(bottom: 8),
+      children: [
+        for (final entry in visible) ...[
+          _target(
+            const SizedBox(height: 8),
+            entry.isCategory ? null : entry.parentId,
+            before: entry,
+            categories: entry.isCategory,
+          ),
+          Draggable<ChannelReorderEntry>(
+            key: ValueKey(entry.channel.id),
+            data: entry,
+            maxSimultaneousDrags: _persisting ? 0 : 1,
+            feedback: Material(
+              elevation: 6,
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Text(entry.channel.name ?? entry.channel.id),
+              ),
+            ),
+            childWhenDragging: Opacity(
+              opacity: 0.35,
+              child: _buildItem(context, entry),
+            ),
+            child: entry.isCategory
+                ? _target(_buildItem(context, entry), entry.channel.id)
+                : _buildItem(context, entry),
+          ),
+        ],
+        _target(const SizedBox(height: 24), null, categories: true),
+      ],
     );
   }
 }

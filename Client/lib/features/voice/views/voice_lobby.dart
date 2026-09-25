@@ -7,6 +7,7 @@ import 'package:bonfire/features/voice/controllers/voice.dart';
 import 'package:bonfire/features/voice/controllers/voice_states.dart';
 import 'package:bonfire/features/voice/utils/participant_display.dart';
 import 'package:bonfire/features/voice/views/voice_settings_screen.dart';
+import 'package:bonfire/l10n/app_strings.dart';
 import 'package:bonfire/shared/utils/client_access.dart';
 import 'package:bonfire/theme/theme.dart';
 import 'package:collection/collection.dart' show IterableExtension;
@@ -42,14 +43,21 @@ class VoiceLobbyBody extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final colors = BonfireThemeExtension.of(context);
     final states = ref.watch(
-      voiceStatesControllerProvider(ref.readActiveServerKey() ?? '').select(
-        (cache) => voiceStatesFor(cache, channelId),
-      ),
+      voiceStatesControllerProvider(
+        ref.readActiveServerKey() ?? '',
+      ).select((cache) => voiceStatesFor(cache, channelId)),
     );
     final members = spaceId == null
         ? null
-        : ref.watch(accordMembersControllerProvider(ref.readActiveServerKey() ?? '', spaceId!));
-    final users = ref.watch(accordUsersControllerProvider(ref.readActiveServerKey() ?? ''));
+        : ref.watch(
+            accordMembersControllerProvider(
+              ref.readActiveServerKey() ?? '',
+              spaceId!,
+            ),
+          );
+    final users = ref.watch(
+      accordUsersControllerProvider(ref.readActiveServerKey() ?? ''),
+    );
     final cdnUrl = ref.watchCdnUrl();
 
     // Viewing a lobby while a call is running elsewhere is a normal state now
@@ -62,7 +70,10 @@ class VoiceLobbyBody extends ConsumerWidget {
     String? activeName;
     if (elsewhere && activeSpaceId != null) {
       activeName = ref.watch(
-        accordChannelsControllerProvider(ref.readActiveServerKey() ?? '', activeSpaceId).select(
+        accordChannelsControllerProvider(
+          ref.readActiveServerKey() ?? '',
+          activeSpaceId,
+        ).select(
           (channels) =>
               channels?.firstWhereOrNull((c) => c.id == activeChannelId)?.name,
         ),
@@ -98,24 +109,31 @@ class VoiceLobbyBody extends ConsumerWidget {
       voiceControllerProvider.select((v) => v.selfMute),
     );
 
-    final joinButton = FilledButton.icon(
-      style: FilledButton.styleFrom(backgroundColor: colors.green),
+    final text = AppStrings.of(context);
+    final joinButton = OutlinedButton.icon(
+      style: OutlinedButton.styleFrom(
+        elevation: 0,
+        backgroundColor: colors.background,
+        foregroundColor: colors.dirtyWhite,
+        side: BorderSide(color: colors.green),
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.all(Radius.circular(4)),
+        ),
+      ),
       onPressed: spaceId == null
           ? null
           : () => ref
                 .read(voiceControllerProvider.notifier)
                 .join(channelId, spaceId!),
       icon: const Icon(Icons.call),
-      label: const Text('Join Voice'),
+      label: Text(text.joinVoiceButton),
     );
 
     final note = elsewhere
         ? Padding(
             padding: const EdgeInsets.only(top: 8),
             child: Text(
-              activeName == null
-                  ? "You're connected to another voice channel — joining moves you."
-                  : "You're connected to #$activeName — joining moves you.",
+              text.voiceMoveNote(activeName),
               textAlign: TextAlign.center,
               style: Theme.of(
                 context,
@@ -139,7 +157,7 @@ class VoiceLobbyBody extends ConsumerWidget {
             Expanded(
               child: Text(
                 channelName == null || channelName!.isEmpty
-                    ? 'Voice channel'
+                    ? text.voiceChannel
                     : channelName!,
                 overflow: TextOverflow.ellipsis,
                 style:
@@ -153,11 +171,7 @@ class VoiceLobbyBody extends ConsumerWidget {
         ),
         const SizedBox(height: 4),
         Text(
-          switch (states.length) {
-            0 => "No one is here yet — you'd be the first.",
-            1 => '1 person is in this channel.',
-            _ => '${states.length} people are in this channel.',
-          },
+          text.voiceOccupancy(states.length),
           style:
               (compact ? theme.textTheme.bodySmall : theme.textTheme.bodyMedium)
                   ?.copyWith(color: colors.gray),
@@ -188,26 +202,19 @@ class VoiceLobbyBody extends ConsumerWidget {
           children: [
             _PreJoinChip(
               icon: selfMute ? Icons.mic_off : Icons.mic,
-              label: selfMute ? 'Joining muted' : 'Microphone will be live',
+              label: selfMute ? text.joiningMuted : text.micWillBeLive,
             ),
-            const _PreJoinChip(
-              icon: Icons.videocam_off,
-              label: 'Camera starts off',
-            ),
+            _PreJoinChip(icon: Icons.videocam_off, label: text.cameraStartsOff),
             if (!kIsWeb)
-              const _PreJoinChip(
+              _PreJoinChip(
                 icon: Icons.screen_share_outlined,
-                label: 'Screen share available',
+                label: text.screenShareAvailable,
               ),
           ],
         ),
         SizedBox(height: compact ? 10 : 16),
         Text(
-          compact
-              ? 'Turn your camera on or share a screen once you are in.'
-              : 'Joining connects you to the call. Once in, you can mute, turn '
-                    'your camera on, share a screen, and chat alongside the '
-                    'call — and you stay until you disconnect.',
+          compact ? text.joinVoiceHintCompact : text.joinVoiceHint,
           style: theme.textTheme.bodySmall?.copyWith(color: colors.gray),
         ),
         SizedBox(height: compact ? 12 : 20),
@@ -220,7 +227,7 @@ class VoiceLobbyBody extends ConsumerWidget {
             child: TextButton.icon(
               onPressed: () => showVoiceSettings(context),
               icon: const Icon(Icons.settings, size: 18),
-              label: const Text('Voice settings'),
+              label: Text(text.voiceSettings),
             ),
           ),
         ],
@@ -251,7 +258,7 @@ class VoiceLobbyBody extends ConsumerWidget {
             padding: const EdgeInsets.fromLTRB(24, 22, 24, 22),
             decoration: BoxDecoration(
               color: colors.foreground,
-              borderRadius: BorderRadius.circular(14),
+              borderRadius: BorderRadius.circular(4),
             ),
             child: card,
           ),
@@ -277,7 +284,7 @@ class _PreJoinChip extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
         color: colors.background,
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(4),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,

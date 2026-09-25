@@ -116,6 +116,10 @@ bool get isBackgroundConnectionAvailable =>
 /// the Flutter client's own repository. See [kGithubLatestReleaseUrl].
 const String kGithubRepo = 'ChunchunOwO/vokusz';
 
+/// The Accord server this build opens on. Plain HTTP on the server port until
+/// the hostname has a certificate.
+const String kDefaultAccordServerUrl = 'https://vokusz.shiinasuki.com';
+
 /// In-app support links. Docs live in this repo; there is no product website.
 const String kVokuszHelpUrl =
     'https://github.com/$kGithubRepo/blob/main/Client/docs/index.md';

@@ -5,6 +5,9 @@
 /// than in a live call.
 library;
 
+import 'dart:math' as math;
+
+import 'package:bonfire/l10n/ui_copy.dart';
 import 'package:bonfire/features/voice/services/voice_session.dart'
     show VoiceSessionState;
 
@@ -13,6 +16,20 @@ import 'package:bonfire/features/voice/services/voice_session.dart'
 /// applied via `Helper.setVolume`; 100% is unity.
 double voiceGain(num volumePercent) =>
     (volumePercent / 100).clamp(0.0, 2.0).toDouble();
+
+/// Whether the local microphone track should be capturing right now.
+///
+/// Push-to-talk keeps the user's mute toggle ([selfMute]) and only opens the
+/// mic while the bound key is held. A hard mute wins over the key.
+bool microphoneLive({
+  required bool selfMute,
+  required bool pushToTalk,
+  required bool pushToTalkHeld,
+}) {
+  if (selfMute) return false;
+  if (pushToTalk) return pushToTalkHeld;
+  return true;
+}
 
 /// Normalises a selected audio/video device id: a null or empty id means
 /// "system default" and is represented as null (what the capture options
@@ -23,12 +40,12 @@ String? normalizeDeviceId(String? deviceId) =>
 /// Frame rate used for a screen share when the caller doesn't pass one (the
 /// settings-derived value normally does). Matches
 /// `AccordSettings.defaultScreenShareFps`: an unspecified rate means "the
-/// motion-friendly default", never LiveKit's 15 fps slideshow preset.
-const int defaultScreenShareFps = 60;
+/// resource-friendly default", never LiveKit's 15 fps slideshow preset.
+const int defaultScreenShareFps = 30;
 
 /// Send-bitrate ceiling used for a screen share when the caller doesn't pass
-/// one. Matches `AccordSettings.screenShareBitrate` at its 720p60 default.
-const int defaultScreenShareBitrate = 3000000;
+/// one. Matches `AccordSettings.screenShareBitrate` at its 720p30 default.
+const int defaultScreenShareBitrate = 2100000;
 
 /// Whether a `RoomDisconnected` should be treated as an *unintentional* drop
 /// (so the controller proactively reconnects), versus an intentional teardown
@@ -65,6 +82,64 @@ bool needsReconnect(VoiceSessionState state) =>
     state == VoiceSessionState.disconnected ||
     state == VoiceSessionState.failed ||
     state == VoiceSessionState.reconnecting;
+
+/// A 0–1 level from one WebRTC stats sample.
+///
+/// [reported] is the `audioLevel` field when the report has one. Otherwise the
+/// level is the RMS of the energy added since the previous sample. The first
+/// energy sample has nothing to subtract, so it returns null and the caller
+/// keeps the previous indicator for that one tick.
+double? liveAudioLevel({
+  double? reported,
+  double? energy,
+  double? duration,
+  double? previousEnergy,
+  double? previousDuration,
+}) {
+  final rms = _energyRms(
+    energy: energy,
+    duration: duration,
+    previousEnergy: previousEnergy,
+    previousDuration: previousDuration,
+  );
+  if (reported != null && !reported.isNaN && reported > 0) {
+    return reported.clamp(0.0, 1.0);
+  }
+  if (rms != null) return rms;
+  if (reported != null) return reported.isNaN ? 0 : reported.clamp(0.0, 1.0);
+  return null;
+}
+
+double? _energyRms({
+  required double? energy,
+  required double? duration,
+  required double? previousEnergy,
+  required double? previousDuration,
+}) {
+  if (energy == null ||
+      duration == null ||
+      previousEnergy == null ||
+      previousDuration == null) {
+    return null;
+  }
+  final span = duration - previousDuration;
+  final added = energy - previousEnergy;
+  if (span <= 0.0001 || added <= 0) return 0;
+  final rms = math.sqrt(added / span);
+  if (rms.isNaN || rms.isInfinite) return 0;
+  return rms.clamp(0.0, 1.0);
+}
+
+/// Whether [level] counts as talking.
+///
+/// A measured level wins over [serverSpeaking]. LiveKit's speaking flag trails
+/// the audio by a noticeable gap; it is only the fallback before the first
+/// local sample arrives.
+bool levelSaysSpeaking({
+  required double? level,
+  required double threshold,
+  required bool serverSpeaking,
+}) => level == null ? serverSpeaking : level >= threshold;
 
 /// How long after a click on a voice channel row a second click still counts as
 /// a double-click (fast path: double-click joins). Deliberately a
@@ -114,6 +189,26 @@ String describeMicFailure(Object error) {
   if (isMicPermissionError(error)) return micPermissionDeniedMessage;
   final reason = '$error'.replaceFirst('Unable to getUserMedia: ', '').trim();
   return reason.isEmpty
-      ? 'Microphone unavailable'
-      : 'Microphone unavailable: $reason';
+      ? UiCopy.microphoneUnavailable()
+      : UiCopy.microphoneUnavailable2(arg0: reason);
+}
+
+/// Result of publishing the microphone during fast-connect.
+///
+/// LiveKit publishes that track from the join-response handler, which is not
+/// awaited by [Room.connect]. [publishError] is the handler's failure;
+/// [published] is whether a microphone publication exists once connect returns.
+/// A miss must become a user-visible mute, not a bar that still says the mic
+/// is live.
+String? fastConnectMicFailure({
+  required bool offeredMic,
+  required bool published,
+  Object? publishError,
+}) {
+  if (!offeredMic) return null;
+  if (publishError != null) return describeMicFailure(publishError);
+  if (!published) {
+    return describeMicFailure('microphone track was not published');
+  }
+  return null;
 }

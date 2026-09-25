@@ -78,7 +78,9 @@ class _FolderTileState extends ConsumerState<_FolderTile> {
               final highlight = candidate.isNotEmpty;
               return RailDraggable<_RailDrag>(
                 data: _FolderDrag(folder.id),
-                tooltip: folder.name.isEmpty ? 'Folder' : folder.name,
+                tooltip: folder.name.isEmpty
+                    ? UiCopy.folder(context: context)
+                    : folder.name,
                 feedback: Material(
                   color: Colors.transparent,
                   child: folderIcon,
@@ -90,7 +92,7 @@ class _FolderTileState extends ConsumerState<_FolderTile> {
                       ctl.setFolderCollapsed(folder.id, !folder.collapsed),
                   child: Container(
                     decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(16),
+                      borderRadius: BorderRadius.circular(4),
                       border: highlight
                           ? Border.all(color: colors.primary, width: 2)
                           : null,
@@ -145,7 +147,7 @@ class _FolderTileState extends ConsumerState<_FolderTile> {
         widget.connOf[railSpace.key]?.serverKey ?? '',
       ),
       AccordMenuEntry(
-        label: 'Remove "${space.name}" from folder',
+        label: UiCopy.removeFromFolder2(context: context, arg0: space.name),
         icon: Icons.folder_off_outlined,
         onSelected: () => ctl.moveSpaceToFolder(
           ServerEntityKey.tryDecode(railSpace.key)!,
@@ -169,24 +171,26 @@ class _FolderTileState extends ConsumerState<_FolderTile> {
     final ctl = ref.read(settingsControllerProvider.notifier);
     final entries = <AccordMenuEntry>[
       AccordMenuEntry(
-        label: folder.collapsed ? 'Expand' : 'Collapse',
+        label: folder.collapsed
+            ? UiCopy.expand(context: context)
+            : UiCopy.collapse(context: context),
         icon: folder.collapsed ? Icons.unfold_more : Icons.unfold_less,
         onSelected: () => ctl.setFolderCollapsed(folder.id, !folder.collapsed),
       ),
       AccordMenuEntry(
-        label: 'Rename',
+        label: UiCopy.rename(context: context),
         icon: Icons.edit_outlined,
         onSelected: () async {
           final name = await showTextPromptDialog(
             context,
-            title: 'Folder name',
+            title: UiCopy.folderName(context: context),
             initial: folder.name,
           );
           if (name != null) ctl.renameFolder(folder.id, name);
         },
       ),
       AccordMenuEntry(
-        label: 'Recolor',
+        label: UiCopy.recolor(context: context),
         icon: Icons.palette_outlined,
         onSelected: () async {
           final color = await _pickColor(context);
@@ -196,7 +200,7 @@ class _FolderTileState extends ConsumerState<_FolderTile> {
         },
       ),
       AccordMenuEntry(
-        label: 'Delete folder',
+        label: UiCopy.deleteFolder(context: context),
         icon: Icons.folder_delete_outlined,
         destructive: true,
         onSelected: () => ctl.deleteFolder(folder.id),
@@ -206,7 +210,9 @@ class _FolderTileState extends ConsumerState<_FolderTile> {
       context,
       entries: entries,
       globalPosition: position,
-      title: folder.name.isEmpty ? 'Folder' : folder.name,
+      title: folder.name.isEmpty
+          ? UiCopy.folder(context: context)
+          : folder.name,
     );
   }
 
@@ -224,7 +230,7 @@ class _FolderTileState extends ConsumerState<_FolderTile> {
     return showDialog<int>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Folder color'),
+        title: Text(UiCopy.folderColor(context: context)),
         content: Wrap(
           spacing: 10,
           runSpacing: 10,
@@ -272,7 +278,7 @@ class SpaceFolderIcon extends StatelessWidget {
       height: 48,
       decoration: BoxDecoration(
         color: folderColor.withValues(alpha: 0.5),
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(4),
       ),
       alignment: Alignment.center,
       child: !folder.collapsed || members.isEmpty
@@ -293,7 +299,7 @@ class SpaceFolderIcon extends StatelessWidget {
                           if (column > 0) const SizedBox(width: 2),
                           if (row * 2 + column < members.length)
                             ClipRRect(
-                              borderRadius: BorderRadius.circular(5),
+                              borderRadius: BorderRadius.circular(4),
                               child: ColoredBox(
                                 color: colors.darkGray,
                                 child: _SpaceIconImage(

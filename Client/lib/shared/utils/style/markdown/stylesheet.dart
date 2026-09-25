@@ -13,7 +13,7 @@ MarkdownStyle getMarkdownStyleSheet(BuildContext context) {
     codeBlock: const TextStyle(fontFamily: 'monospace', fontSize: 14),
     codeblockDecoration: BoxDecoration(
       color: BonfireThemeExtension.of(context).foreground,
-      borderRadius: BorderRadius.circular(8),
+      borderRadius: BorderRadius.circular(4),
     ),
     codeSpan: TextStyle(
       fontFamily: 'monospace',

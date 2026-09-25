@@ -1,3 +1,4 @@
+import 'package:bonfire/l10n/ui_copy.dart';
 import 'package:bonfire/features/authentication/models/accord_session.dart';
 import 'package:bonfire/features/authentication/repositories/accord_auth.dart';
 import 'package:bonfire/features/authentication/utils/credential_validation.dart';
@@ -8,7 +9,6 @@ import 'package:bonfire/features/server/models/accord_server.dart';
 import 'package:bonfire/features/server/services/deep_link_navigation.dart';
 import 'package:bonfire/features/server/utils/server_uri.dart';
 import 'package:bonfire/features/server/services/federation_join.dart';
-import 'package:bonfire/features/spaces/views/accord_discovery.dart';
 import 'package:bonfire/theme/theme.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -60,7 +60,7 @@ class _AddServerDialog extends ConsumerStatefulWidget {
 
 class _AddServerDialogState extends ConsumerState<_AddServerDialog>
     with SingleTickerProviderStateMixin {
-  late final TabController _tabs = TabController(length: 3, vsync: this);
+  late final TabController _tabs = TabController(length: 2, vsync: this);
 
   final _urlCtrl = TextEditingController();
   final _userCtrl = TextEditingController();
@@ -147,7 +147,7 @@ class _AddServerDialogState extends ConsumerState<_AddServerDialog>
         connectionKey ??
         (server == null ? null : _auth.keyForBaseUrl(server.baseUrl));
     if (key == null) {
-      _fail('Connection unavailable');
+      _fail(UiCopy.connectionUnavailable());
       return;
     }
     final auth = _auth;
@@ -181,7 +181,7 @@ class _AddServerDialogState extends ConsumerState<_AddServerDialog>
     final parsed = ServerUri.parseServerUrl(_urlCtrl.text);
     final server = parsed?.server;
     if (parsed == null || server == null) {
-      _fail('Enter a valid server URL');
+      _fail(UiCopy.enterAValidServerUrl());
       return;
     }
     // A pasted invite URL carries its code here too.
@@ -207,7 +207,7 @@ class _AddServerDialogState extends ConsumerState<_AddServerDialog>
         return;
       }
     } catch (error) {
-      if (mounted) _fail('Could not use the saved account: $error');
+      if (mounted) _fail(UiCopy.couldNotUseTheSavedAccount(arg0: error));
       return;
     }
 
@@ -304,7 +304,9 @@ class _AddServerDialogState extends ConsumerState<_AddServerDialog>
     if (!mounted) return;
     await _handleAuthOutcome(
       outcome,
-      fallbackError: isRegister ? 'Registration failed' : 'Login failed',
+      fallbackError: isRegister
+          ? UiCopy.registrationFailed()
+          : UiCopy.loginFailed(),
     );
   }
 
@@ -346,7 +348,10 @@ class _AddServerDialogState extends ConsumerState<_AddServerDialog>
       _mfaCtrl.text.trim(),
     );
     if (!mounted) return;
-    await _handleAuthOutcome(outcome, fallbackError: 'Invalid two-factor code');
+    await _handleAuthOutcome(
+      outcome,
+      fallbackError: UiCopy.invalidTwoFactorCode(),
+    );
   }
 
   Future<void> _submitPasswordChange() async {
@@ -373,7 +378,10 @@ class _AddServerDialogState extends ConsumerState<_AddServerDialog>
       newPassword: newPassword,
     );
     if (!mounted) return;
-    await _handleAuthOutcome(outcome, fallbackError: 'Password change failed');
+    await _handleAuthOutcome(
+      outcome,
+      fallbackError: UiCopy.passwordChangeFailed(),
+    );
   }
 
   void _cancelPasswordReset() => setState(() {
@@ -406,12 +414,12 @@ class _AddServerDialogState extends ConsumerState<_AddServerDialog>
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      'Add a Server',
+                      UiCopy.addAServer(context: context),
                       style: theme.textTheme.titleMedium,
                     ),
                   ),
                   IconButton(
-                    tooltip: 'Close',
+                    tooltip: UiCopy.close(context: context),
                     onPressed: () => Navigator.of(context).pop(),
                     icon: Icon(Icons.close, size: 20, color: colors.gray),
                   ),
@@ -420,10 +428,9 @@ class _AddServerDialogState extends ConsumerState<_AddServerDialog>
             ),
             TabBar(
               controller: _tabs,
-              tabs: const [
-                Tab(text: 'Enter URL'),
-                Tab(text: 'Browse'),
-                Tab(text: 'Federated'),
+              tabs: [
+                Tab(text: UiCopy.enterUrl(context: context)),
+                Tab(text: UiCopy.federated(context: context)),
               ],
             ),
             Flexible(
@@ -431,25 +438,6 @@ class _AddServerDialogState extends ConsumerState<_AddServerDialog>
                 controller: _tabs,
                 children: [
                   _urlTab(theme, colors),
-                  AccordDiscoveryBody(
-                    // Connect-by-URL is the tab next door, not another dialog.
-                    onManualConnect: () => _tabs.animateTo(0),
-                    onJoinRequiresAuth: (serverUrl, spaceId) {
-                      // Stay in this dialog: pre-fill the URL tab for the
-                      // listing's instance and join that space once signed in.
-                      setState(() {
-                        _urlCtrl.text = serverUrl;
-                        _pendingJoinSpaceId = spaceId;
-                        _step = _UrlStep.url;
-                        _server = null;
-                        _mfaTicket = null;
-                        _passwordResetSession = null;
-                        _error = null;
-                        _busy = false;
-                      });
-                      _tabs.animateTo(0);
-                    },
-                  ),
                   _federatedTab(theme, colors),
                 ],
               ),
@@ -467,7 +455,7 @@ class _AddServerDialogState extends ConsumerState<_AddServerDialog>
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           if (_step == _UrlStep.url) ...[
-            Text('Server URL', style: theme.textTheme.labelLarge),
+            Text(UiCopy.serverUrl(), style: theme.textTheme.labelLarge),
             const SizedBox(height: 6),
             TextField(
               controller: _urlCtrl,
@@ -482,7 +470,9 @@ class _AddServerDialogState extends ConsumerState<_AddServerDialog>
             ),
           ] else ...[
             Text(
-              'Connect to ${_server?.name ?? _server?.baseUrl ?? 'server'}',
+              UiCopy.connectTo(
+                arg0: _server?.name ?? _server?.baseUrl ?? 'server',
+              ),
               style: theme.textTheme.labelLarge,
             ),
             const SizedBox(height: 12),
@@ -507,9 +497,9 @@ class _AddServerDialogState extends ConsumerState<_AddServerDialog>
                 enabled: !_busy,
                 autofocus: true,
                 keyboardType: TextInputType.number,
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   isDense: true,
-                  labelText: 'Two-factor code',
+                  labelText: UiCopy.twoFactorCode(),
                   border: OutlineInputBorder(),
                 ),
                 onSubmitted: (_) => _busy ? null : _submitMfa(),
@@ -546,7 +536,7 @@ class _AddServerDialogState extends ConsumerState<_AddServerDialog>
                       _step = _UrlStep.url;
                       _error = null;
                     }),
-                    child: const Text('Back'),
+                    child: Text(UiCopy.back()),
                   ),
                 const SizedBox(width: 8),
                 FilledButton(
@@ -570,13 +560,15 @@ class _AddServerDialogState extends ConsumerState<_AddServerDialog>
   String get _primaryLabel {
     switch (_step) {
       case _UrlStep.url:
-        return 'Connect';
+        return UiCopy.connect();
       case _UrlStep.credentials:
-        return _credMode == AuthMode.register ? 'Register' : 'Sign in';
+        return _credMode == AuthMode.register
+            ? UiCopy.register()
+            : UiCopy.signIn();
       case _UrlStep.mfa:
-        return 'Verify';
+        return UiCopy.verify();
       case _UrlStep.passwordReset:
-        return 'Change Password';
+        return UiCopy.changePassword();
     }
   }
 
@@ -608,11 +600,10 @@ class _AddServerDialogState extends ConsumerState<_AddServerDialog>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text('Join a federated space', style: theme.textTheme.labelLarge),
+          Text(UiCopy.joinAFederatedSpace(), style: theme.textTheme.labelLarge),
           const SizedBox(height: 6),
           Text(
-            'Enter a space hosted on another Vokusz server. Your current '
-            'server connects to it on your behalf.',
+            UiCopy.enterASpaceHostedOnAnotherVokusz(),
             style: theme.textTheme.bodySmall?.copyWith(color: colors.gray),
           ),
           const SizedBox(height: 12),
@@ -620,9 +611,9 @@ class _AddServerDialogState extends ConsumerState<_AddServerDialog>
             controller: _fedCtrl,
             enabled: connected && !_fedBusy,
             autofocus: true,
-            decoration: const InputDecoration(
+            decoration: InputDecoration(
               isDense: true,
-              labelText: 'Space address',
+              labelText: UiCopy.spaceAddress(),
               hintText: 'spaceId@server.example',
               border: OutlineInputBorder(),
             ),
@@ -632,7 +623,7 @@ class _AddServerDialogState extends ConsumerState<_AddServerDialog>
           if (!connected) ...[
             const SizedBox(height: 12),
             Text(
-              'Connect to a server first, then join a federated space from it.',
+              UiCopy.connectToAServerFirstThenJoin(),
               style: theme.textTheme.bodySmall?.copyWith(color: colors.gray),
             ),
           ],
@@ -657,7 +648,7 @@ class _AddServerDialogState extends ConsumerState<_AddServerDialog>
                         height: 16,
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
-                    : const Text('Join'),
+                    : Text(UiCopy.join()),
               ),
             ],
           ),
@@ -671,7 +662,7 @@ class _AddServerDialogState extends ConsumerState<_AddServerDialog>
     if (client == null) return;
     final addr = parseFederatedAddress(_fedCtrl.text);
     if (addr == null) {
-      setState(() => _fedError = 'Enter a space as spaceId@server.example');
+      setState(() => _fedError = UiCopy.enterASpaceAsSpaceidServerExample());
       return;
     }
     setState(() {

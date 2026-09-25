@@ -33,7 +33,7 @@ impl Default for ServerSettings {
             max_attachment_size: storage::MAX_ATTACHMENT_SIZE as i64,
             max_attachments_per_message: 10,
             upload_requests_per_minute: 6,
-            upload_bytes_per_minute: 50 * 1024 * 1024,
+            upload_bytes_per_minute: 2 * storage::MAX_ATTACHMENT_SIZE as i64,
             server_name: "Accord Server".to_string(),
             registration_policy: "open".to_string(),
             max_spaces: 0,

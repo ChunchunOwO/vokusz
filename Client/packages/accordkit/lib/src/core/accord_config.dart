@@ -32,7 +32,7 @@ class AccordConfig {
   /// with attachment size and the caller's connection speed rather than
   /// server response latency, so the ordinary request budget would abort a
   /// large or slow-link attachment upload that was still making progress.
-  static const Duration defaultUploadTimeout = Duration(minutes: 5);
+  static const Duration defaultUploadTimeout = Duration(minutes: 60);
 
   /// Lower bound applied to the server-advertised `heartbeat_interval`.
   ///

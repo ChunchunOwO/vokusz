@@ -1,8 +1,11 @@
+import 'package:bonfire/l10n/app_strings.dart';
+import 'package:bonfire/l10n/ui_copy.dart';
 import 'package:bonfire/features/settings/controllers/settings.dart';
 import 'package:bonfire/shared/components/settings_scaffold.dart';
 import 'package:bonfire/shared/components/section_header.dart';
 import 'package:bonfire/features/settings/models/accord_settings.dart';
 import 'package:bonfire/features/voice/controllers/voice.dart';
+import 'package:bonfire/features/voice/views/key_bind_tile.dart';
 import 'package:bonfire/features/voice/utils/afk_logic.dart';
 import 'package:bonfire/features/voice/utils/audio_output_support.dart';
 import 'package:bonfire/features/voice/views/mic_level_meter.dart';
@@ -68,34 +71,32 @@ class _VoiceSettingsScreenState extends ConsumerState<VoiceSettingsScreen> {
     );
 
     return SettingsScaffold(
-      title: 'Voice & Video',
+      title: UiCopy.voiceVideo(context: context),
       body: ListView(
         padding: const EdgeInsets.symmetric(vertical: 8),
         children: [
           SwitchListTile(
-            title: const Text('Relay-only voice'),
-            subtitle: const Text(
-              'Route voice, video and screen sharing through '
-              'a TURN relay. Requires server support and may increase latency. '
-              'Applies on your next connection; leave and rejoin to apply now.',
+            title: Text(UiCopy.relayOnlyVoice(context: context)),
+            subtitle: Text(
+              UiCopy.routeVoiceVideoAndScreenSharingThrough(context: context),
             ),
             value: settings.voiceRelayOnly,
             onChanged: controller.setVoiceRelayOnly,
           ),
-          SectionHeader('Input device'),
+          SectionHeader(UiCopy.inputDevice(context: context)),
           _DeviceDropdown(
             devices: _audioInputs,
             loading: _loadingDevices,
             selectedId: settings.audioInputDeviceId,
-            fallbackLabel: 'Microphone',
+            fallbackLabel: UiCopy.microphone(context: context),
             onChanged: controller.setAudioInputDevice,
           ),
           _PercentSlider(
-            label: 'Input volume',
+            label: UiCopy.inputVolume(context: context),
             value: settings.inputVolume,
             onChanged: controller.setInputVolume,
           ),
-          SectionHeader('Mic test'),
+          SectionHeader(UiCopy.micTest(context: context)),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
             child: Column(
@@ -108,9 +109,8 @@ class _VoiceSettingsScreenState extends ConsumerState<VoiceSettingsScreen> {
                 const SizedBox(height: 6),
                 Text(
                   connected
-                      ? 'Speak — the bar lights up green when you cross the '
-                            'threshold (yellow marker).'
-                      : 'Join a voice channel to test your microphone.',
+                      ? UiCopy.speakTheBarLightsUpGreenWhen(context: context)
+                      : UiCopy.joinAVoiceChannelToTestYour(context: context),
                   style: Theme.of(
                     context,
                   ).textTheme.bodySmall!.copyWith(color: colors.gray),
@@ -119,35 +119,38 @@ class _VoiceSettingsScreenState extends ConsumerState<VoiceSettingsScreen> {
             ),
           ),
           _PercentSlider(
-            label: 'Input sensitivity',
+            label: UiCopy.inputSensitivity(context: context),
             value: settings.inputSensitivity,
             max: 100,
             onChanged: controller.setInputSensitivity,
           ),
           const Divider(height: 24),
           if (canPickAudioOutputDevice) ...[
-            SectionHeader('Output device'),
+            SectionHeader(UiCopy.outputDevice(context: context)),
             _DeviceDropdown(
               key: const Key('audio-output-dropdown'),
               devices: _audioOutputs,
               loading: _loadingDevices,
               selectedId: settings.audioOutputDeviceId,
-              fallbackLabel: 'Speaker',
+              fallbackLabel: UiCopy.speaker(context: context),
               onChanged: controller.setAudioOutputDevice,
             ),
           ],
           _PercentSlider(
-            label: 'Output volume',
+            label: UiCopy.outputVolume(context: context),
             value: settings.outputVolume,
             onChanged: controller.setOutputVolume,
           ),
           const Divider(height: 24),
-          SectionHeader('Away'),
+          const _TalkModeSection(),
+          const Divider(height: 24),
+          const _SpeakerOverlaySection(),
+          const Divider(height: 24),
+          SectionHeader(UiCopy.away(context: context)),
           ListTile(
-            title: const Text('Mark me away after'),
+            title: Text(UiCopy.markMeAwayAfter(context: context)),
             subtitle: Text(
-              'While in a voice channel, with no input, mic activity or window '
-              'focus. Shown to other members as an idle status.',
+              UiCopy.whileInAVoiceChannelWithNo(context: context),
               style: theme.textTheme.bodySmall!.copyWith(color: colors.gray),
             ),
             trailing: DropdownButton<int>(
@@ -175,10 +178,9 @@ class _VoiceSettingsScreenState extends ConsumerState<VoiceSettingsScreen> {
           ),
           SwitchListTile(
             key: const Key('afk-auto-move-switch'),
-            title: const Text('Move me to the AFK channel'),
+            title: Text(UiCopy.moveMeToTheAfkChannel(context: context)),
             subtitle: Text(
-              "When the space has one set. You'll be moved back by rejoining "
-              'the channel you want.',
+              UiCopy.whenTheSpaceHasOneSetYou(context: context),
               style: theme.textTheme.bodySmall!.copyWith(color: colors.gray),
             ),
             value: settings.voiceAfkAutoMove,
@@ -187,11 +189,11 @@ class _VoiceSettingsScreenState extends ConsumerState<VoiceSettingsScreen> {
                 : null,
           ),
           const Divider(height: 24),
-          SectionHeader('Camera'),
+          SectionHeader(UiCopy.camera(context: context)),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 6),
             child: Text(
-              'Quality of your webcam when you turn on video.',
+              UiCopy.qualityOfYourWebcamWhenYouTurn(context: context),
               style: theme.textTheme.bodySmall!.copyWith(color: colors.gray),
             ),
           ),
@@ -199,12 +201,12 @@ class _VoiceSettingsScreenState extends ConsumerState<VoiceSettingsScreen> {
             devices: _videoInputs,
             loading: _loadingDevices,
             selectedId: settings.videoInputDeviceId,
-            fallbackLabel: 'Camera',
+            fallbackLabel: UiCopy.camera(context: context),
             onChanged: controller.setVideoInputDevice,
           ),
           ListTile(
             key: const Key('camera-resolution-dropdown'),
-            title: const Text('Camera resolution'),
+            title: Text(UiCopy.cameraResolution(context: context)),
             trailing: DropdownButton<int>(
               value: settings.videoResolution,
               underline: const SizedBox.shrink(),
@@ -226,7 +228,7 @@ class _VoiceSettingsScreenState extends ConsumerState<VoiceSettingsScreen> {
           ),
           ListTile(
             key: const Key('camera-fps-dropdown'),
-            title: const Text('Camera frame rate'),
+            title: Text(UiCopy.cameraFrameRate(context: context)),
             trailing: DropdownButton<int>(
               value: settings.videoFps,
               underline: const SizedBox.shrink(),
@@ -235,25 +237,27 @@ class _VoiceSettingsScreenState extends ConsumerState<VoiceSettingsScreen> {
               },
               items: [
                 for (final fps in AccordSettings.videoFpsOptions)
-                  DropdownMenuItem(value: fps, child: Text('$fps fps')),
+                  DropdownMenuItem(
+                    value: fps,
+                    child: Text(UiCopy.fps(context: context, arg0: fps)),
+                  ),
               ],
             ),
           ),
           const Divider(height: 24),
-          SectionHeader('Screen share'),
+          SectionHeader(UiCopy.screenShare(context: context)),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 6),
             child: Text(
-              'Separate from the camera settings above — these apply when you '
-              'share a screen or window.',
+              UiCopy.separateFromTheCameraSettingsAboveThese(context: context),
               style: theme.textTheme.bodySmall!.copyWith(color: colors.gray),
             ),
           ),
           ListTile(
             key: const Key('screen-share-resolution-dropdown'),
-            title: const Text('Screen share resolution'),
+            title: Text(UiCopy.screenShareResolution(context: context)),
             subtitle: Text(
-              'Higher resolutions need more upload and CPU.',
+              UiCopy.higherResolutionsNeedMoreUploadAndCpu(context: context),
               style: theme.textTheme.bodySmall!.copyWith(color: colors.gray),
             ),
             trailing: DropdownButton<int>(
@@ -277,9 +281,9 @@ class _VoiceSettingsScreenState extends ConsumerState<VoiceSettingsScreen> {
           ),
           ListTile(
             key: const Key('screen-share-fps-dropdown'),
-            title: const Text('Screen share frame rate'),
+            title: Text(UiCopy.screenShareFrameRate(context: context)),
             subtitle: Text(
-              '60 fps for games and video; 30 or 15 is plenty for slides.',
+              UiCopy.message60FpsForGamesAndVideo30(context: context),
               style: theme.textTheme.bodySmall!.copyWith(color: colors.gray),
             ),
             trailing: DropdownButton<int>(
@@ -290,16 +294,18 @@ class _VoiceSettingsScreenState extends ConsumerState<VoiceSettingsScreen> {
               },
               items: [
                 for (final fps in AccordSettings.screenShareFpsOptions)
-                  DropdownMenuItem(value: fps, child: Text('$fps fps')),
+                  DropdownMenuItem(
+                    value: fps,
+                    child: Text(UiCopy.fps(context: context, arg0: fps)),
+                  ),
               ],
             ),
           ),
           SwitchListTile(
             key: const Key('screen-share-motion-switch'),
-            title: const Text('Prioritise smooth motion'),
+            title: Text(UiCopy.prioritiseSmoothMotion(context: context)),
             subtitle: Text(
-              'Keeps the frame rate up on a slow connection by softening the '
-              'picture. Turn off to keep text sharp instead.',
+              UiCopy.keepsTheFrameRateUpOnA(context: context),
               style: theme.textTheme.bodySmall!.copyWith(color: colors.gray),
             ),
             value: settings.screenShareMotionPriority,
@@ -342,7 +348,10 @@ class _DeviceDropdown extends StatelessWidget {
         isExpanded: true,
         onChanged: loading ? null : (v) => onChanged(v ?? ''),
         items: [
-          const DropdownMenuItem(value: '', child: Text('System default')),
+          DropdownMenuItem(
+            value: '',
+            child: Text(UiCopy.systemDefault(context: context)),
+          ),
           for (var i = 0; i < devices.length; i++)
             DropdownMenuItem(
               value: devices[i].deviceId,
@@ -386,6 +395,120 @@ class _PercentSlider extends StatelessWidget {
         divisions: max,
         onChanged: (v) => onChanged(v.round()),
       ),
+    );
+  }
+}
+
+class _TalkModeSection extends ConsumerWidget {
+  const _TalkModeSection();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final colors = BonfireThemeExtension.of(context);
+    final settings = ref.watch(settingsControllerProvider);
+    final controller = ref.read(settingsControllerProvider.notifier);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SectionHeader(AppStrings.choose('Talk mode', '说话方式', context: context)),
+        SwitchListTile(
+          title: Text(AppStrings.choose('Push to talk', '按键说话', context: context)),
+          subtitle: Text(
+            AppStrings.choose(
+              'The microphone opens only while the key is held.',
+              '只有按住按键时才会说话。',
+              context: context,
+            ),
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: colors.gray,
+            ),
+          ),
+          value: settings.voicePushToTalk,
+          onChanged: controller.setVoicePushToTalk,
+        ),
+        KeyBindTile(
+          title: AppStrings.choose('Push-to-talk key', '按键说话快捷键', context: context),
+          virtualKey: settings.voicePushToTalkKey,
+          onChanged: controller.setVoicePushToTalkKey,
+        ),
+      ],
+    );
+  }
+}
+
+class _SpeakerOverlaySection extends ConsumerWidget {
+  const _SpeakerOverlaySection();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final colors = BonfireThemeExtension.of(context);
+    final theme = Theme.of(context);
+    final settings = ref.watch(settingsControllerProvider);
+    final controller = ref.read(settingsControllerProvider.notifier);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SectionHeader(
+          AppStrings.choose('Screen overlay', '屏幕覆盖', context: context),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+          child: Text(
+            AppStrings.choose(
+              'Appears above other windows after you join a voice channel.',
+              '加入语音频道后，才会显示在屏幕最上方。',
+              context: context,
+            ),
+            style: theme.textTheme.bodySmall?.copyWith(color: colors.gray),
+          ),
+        ),
+        SwitchListTile(
+          title: Text(
+            AppStrings.choose('Overlay switch', '屏幕覆盖开关', context: context),
+          ),
+          value: settings.voiceOverlayEnabled,
+          onChanged: controller.setVoiceOverlayEnabled,
+        ),
+        KeyBindTile(
+          title: AppStrings.choose('Overlay shortcut', '覆盖快捷键', context: context),
+          virtualKey: settings.voiceOverlayHotkey,
+          onChanged: controller.setVoiceOverlayHotkey,
+        ),
+        SwitchListTile(
+          title: Text(AppStrings.choose('Edit mode', '编辑模式', context: context)),
+          subtitle: Text(
+            AppStrings.choose(
+              'Drag the overlay to move it.',
+              '拖动覆盖窗口即可移动位置。',
+              context: context,
+            ),
+            style: theme.textTheme.bodySmall?.copyWith(color: colors.gray),
+          ),
+          value: settings.voiceOverlayEdit,
+          onChanged: settings.voiceOverlayEnabled
+              ? controller.setVoiceOverlayEdit
+              : null,
+        ),
+        SwitchListTile(
+          title: Text(
+            AppStrings.choose(
+              'Speaking users only',
+              '只显示正在说话的用户',
+              context: context,
+            ),
+          ),
+          subtitle: Text(
+            AppStrings.choose(
+              'When on, only people who are speaking are shown.',
+              '开启后，只显示正在说话的人。',
+              context: context,
+            ),
+            style: theme.textTheme.bodySmall?.copyWith(color: colors.gray),
+          ),
+          value: settings.voiceOverlaySpeakersOnly,
+          onChanged: controller.setVoiceOverlaySpeakersOnly,
+        ),
+      ],
     );
   }
 }

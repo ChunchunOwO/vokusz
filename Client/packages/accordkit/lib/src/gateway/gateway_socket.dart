@@ -67,6 +67,16 @@ class GatewaySocket {
   bool _resumeSupported = false;
   DateTime? _sessionStartedAt;
 
+  /// True only after READY or RESUMED. A presence update before that is either
+  /// dropped or read by the handshake and closes the socket.
+  bool _sessionLive = false;
+
+  /// The latest presence update that arrived before the session could accept it.
+  Map<String, dynamic>? _pendingPresence;
+
+  /// The latest voice-state update held for the same reason.
+  Map<String, dynamic>? _pendingVoice;
+
   GatewaySocket({
     GatewayConnectionFactory? connectionFactory,
     Future<void> Function(Duration)? sleep,
@@ -302,6 +312,9 @@ class GatewaySocket {
   /// Current resumable session ID (empty when none).
   String get sessionId => _sessionId;
 
+  /// Whether PRESENCE_UPDATE will be applied. False during IDENTIFY/RESUME.
+  bool get sessionLive => _sessionLive;
+
   /// Whether the connected server has advertised RESUME (op 3) support.
   ///
   /// Off until a HELLO or READY says otherwise: accordserver's pre-identify
@@ -409,11 +422,28 @@ class GatewaySocket {
   }
 
   /// Sends a presence update.
-  void updatePresence(String status,
-      {Map<String, dynamic> activity = const {}}) {
+  ///
+  /// [activity] is the single slot older servers store. [activities] is the
+  /// full list (custom status and rich presence together) for servers that
+  /// read it.
+  void updatePresence(
+    String status, {
+    Map<String, dynamic> activity = const {},
+    List<Map<String, dynamic>> activities = const [],
+  }) {
     final data = <String, dynamic>{'status': status};
     if (activity.isNotEmpty) data['activity'] = activity;
-    _send({'op': GatewayOpcodes.presenceUpdate, 'data': data});
+    if (activities.isNotEmpty) data['activities'] = activities;
+    final payload = <String, dynamic>{
+      'op': GatewayOpcodes.presenceUpdate,
+      'data': data,
+    };
+    if (!_sessionLive) {
+      _pendingPresence = payload;
+      return;
+    }
+    _pendingPresence = null;
+    _send(payload);
   }
 
   /// Sends a voice state update. [channelId] may be null to disconnect.
@@ -430,7 +460,7 @@ class GatewaySocket {
     bool selfVideo = false,
     bool selfStream = false,
   }) {
-    _send({
+    final payload = <String, dynamic>{
       'op': GatewayOpcodes.voiceStateUpdate,
       'data': {
         'space_id': spaceId,
@@ -440,7 +470,13 @@ class GatewaySocket {
         'self_video': selfVideo,
         'self_stream': selfStream,
       },
-    });
+    };
+    if (!_sessionLive) {
+      _pendingVoice = payload;
+      return;
+    }
+    _pendingVoice = null;
+    _send(payload);
   }
 
   /// Closes all event streams and tears down the connection. The socket cannot
@@ -464,6 +500,7 @@ class GatewaySocket {
 
   void _openConnection(GatewayState initialState) {
     _teardownConnection();
+    _sessionLive = false;
     _state = initialState;
     final conn = _factory(_gatewayUrl);
     _conn = conn;
@@ -538,6 +575,7 @@ class GatewaySocket {
       _sequence = 0;
       _resumePending = false;
     }
+    _sessionLive = false;
     _stopHeartbeat();
     final wasDisconnected = _state == GatewayState.disconnected;
     _state = GatewayState.disconnected;
@@ -596,6 +634,16 @@ class GatewaySocket {
 
   void _send(Map<String, dynamic> payload) {
     _conn?.sendText(jsonEncode(payload));
+  }
+
+  void _markSessionLive() {
+    _sessionLive = true;
+    final presence = _pendingPresence;
+    _pendingPresence = null;
+    if (presence != null) _send(presence);
+    final voice = _pendingVoice;
+    _pendingVoice = null;
+    if (voice != null) _send(voice);
   }
 
   void _sendIdentify() {
@@ -701,6 +749,7 @@ class GatewaySocket {
   }
 
   Future<void> _handleInvalidSession(Object? data) async {
+    _sessionLive = false;
     final resumable = data is bool ? data : false;
     if (!resumable) {
       _sessionId = '';
@@ -729,11 +778,13 @@ class GatewaySocket {
         // proven it can stay up (see [_creditStableSession]) — not here.
         _sessionStartedAt = _now();
         _resumePending = false;
+        _markSessionLive();
         _readyReceived.add(data);
         break;
       case 'resumed':
         _sessionStartedAt = _now();
         _resumePending = false;
+        _markSessionLive();
         _resumed.add(null);
         break;
       case 'space.create':

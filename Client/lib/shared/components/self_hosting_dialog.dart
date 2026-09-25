@@ -1,3 +1,4 @@
+import 'package:bonfire/l10n/ui_copy.dart';
 import 'package:bonfire/features/onboarding/views/onboarding_help.dart'
     show openOnboardingHelpUrl;
 import 'package:bonfire/shared/app_info.dart' show kGithubRepo;
@@ -30,7 +31,7 @@ Future<void> showSelfHostingDialog(
       final colors = BonfireThemeExtension.of(dialogContext);
       return AlertDialog(
         icon: Icon(Icons.home_work_outlined, color: colors.primary),
-        title: const Text('Run your own server'),
+        title: Text(UiCopy.runYourOwnServer(context: context)),
         content: SizedBox(
           width: 420,
           child: SingleChildScrollView(
@@ -39,34 +40,28 @@ Future<void> showSelfHostingDialog(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Vokusz talks to Accord servers, and anyone can run one. '
-                  'Your community keeps its own accounts, messages, uploads '
-                  'and voice traffic — this app never proxies them.',
+                  UiCopy.vokuszTalksToAccordServersAndAnyone(context: context),
                   style: theme.textTheme.bodyMedium?.copyWith(
                     color: colors.gray,
                   ),
                 ),
                 const SizedBox(height: 16),
-                const _HostingOption(
+                _HostingOption(
                   icon: Icons.desktop_windows_outlined,
-                  title: 'The Accord desktop app',
-                  body:
-                      'A tray app for Windows, macOS and Linux that bundles '
-                      'the server and voice server and configures itself on '
-                      'first launch. Best for friends and small communities.',
+                  title: UiCopy.theAccordDesktopApp(context: context),
+                  body: UiCopy.aTrayAppForWindowsMacosAnd(context: context),
                 ),
                 const SizedBox(height: 12),
-                const _HostingOption(
+                _HostingOption(
                   icon: Icons.dns_outlined,
-                  title: 'A server deployment',
-                  body:
-                      'Run accordserver with Docker on a Linux machine or VPS '
-                      'for an always-on community, with your own domain name '
-                      'and HTTPS.',
+                  title: UiCopy.aServerDeployment(context: context),
+                  body: UiCopy.runAccordserverWithDockerOnALinux(
+                    context: context,
+                  ),
                 ),
                 const SizedBox(height: 16),
                 Text(
-                  'Once it is running, come back here and connect with its URL.',
+                  UiCopy.onceItIsRunningComeBackHere(context: context),
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: colors.gray,
                   ),
@@ -78,7 +73,7 @@ Future<void> showSelfHostingDialog(
         actions: [
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(),
-            child: const Text('Close'),
+            child: Text(UiCopy.close(context: context)),
           ),
           if (onConnect != null)
             TextButton(
@@ -86,11 +81,11 @@ Future<void> showSelfHostingDialog(
                 Navigator.of(dialogContext).pop();
                 onConnect();
               },
-              child: const Text('Connect by URL'),
+              child: Text(UiCopy.connectByUrl(context: context)),
             ),
           FilledButton(
             onPressed: () => openOnboardingHelpUrl(kVokuszSelfHostingUrl),
-            child: const Text('Read the guide'),
+            child: Text(UiCopy.readTheGuide(context: context)),
           ),
         ],
       );

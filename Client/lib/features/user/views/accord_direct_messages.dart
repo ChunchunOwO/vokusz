@@ -1,5 +1,10 @@
+import 'dart:async';
+
+import 'package:bonfire/l10n/app_strings.dart';
+import 'package:bonfire/l10n/ui_copy.dart';
 import 'package:accordkit/accordkit.dart';
 import 'package:bonfire/features/member/utils/member_display.dart';
+import 'package:bonfire/features/member/views/user_banner.dart';
 import 'package:bonfire/features/channels/controllers/read_state.dart';
 import 'package:bonfire/features/channels/utils/mark_channel_read.dart';
 import 'package:bonfire/features/messaging/controllers/accord_messages.dart';
@@ -17,6 +22,7 @@ import 'package:bonfire/features/channels/controllers/dm_channels.dart';
 import 'package:bonfire/features/member/views/remote_origin_badge.dart';
 import 'package:bonfire/features/user/controllers/accord_users.dart';
 import 'package:bonfire/features/user/controllers/blocked_users.dart';
+import 'package:bonfire/features/user/controllers/relationship_epoch.dart';
 import 'package:bonfire/features/voice/controllers/call.dart';
 import 'package:bonfire/features/voice/controllers/missed_calls.dart';
 import 'package:bonfire/features/voice/controllers/voice.dart';
@@ -45,7 +51,7 @@ class _Rel {
 /// Best display name for a user, falling back to the raw id rather than
 /// "Unknown" so an unhydrated recipient stays identifiable (and reportable).
 String _userName(AccordUser? user) =>
-    user == null ? 'Unknown' : accordUserName(user, fallback: user.id);
+    user == null ? UiCopy.unknown() : accordUserName(user, fallback: user.id);
 
 /// The recipients of [channel] excluding the current user.
 List<AccordUser> _others(AccordChannel channel, String? selfId) =>
@@ -71,7 +77,7 @@ bool _isGroup(AccordChannel channel, String? selfId) =>
 /// Title for a DM/group channel: a group's custom name, else the joined
 /// recipient names.
 String _channelTitle(AccordChannel channel, String? selfId) =>
-    dmChannelTitle(channel, selfId, fallback: 'Direct message');
+    dmChannelTitle(channel, selfId, fallback: UiCopy.directMessage2());
 
 /// Opens the direct-messages & friends panel: a tabbed dialog with the user's DM
 /// conversations and their friends list (with requests). The Accord analogue of
@@ -114,7 +120,7 @@ Future<void> openAccordDirectMessage(
     // failure, so a rejected cross-server open is actionable.
     showInfoSnack(
       context,
-      result.errorMessageOr('Failed to open direct message'),
+      result.errorMessageOr(UiCopy.failedToOpenDirectMessage(context: context)),
     );
   }
 }
@@ -132,23 +138,78 @@ Future<void> showAccordUserProfile(
   AccordUser user, {
   String? cdnUrl,
 }) {
-  final name = _userName(user);
-  final origin = accordUserOrigin(user);
   return showDialog<void>(
     context: context,
-    builder: (dialogContext) => Consumer(
-      builder: (context, ref, _) {
-        final colors = BonfireThemeExtension.of(context);
-        final isSelf = user.id == ref.watchUserId();
-        return AlertDialog(
-          content: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 340),
-            child: Row(
+    builder: (dialogContext) => _UserProfileDialog(
+      user: user,
+      cdnUrl: cdnUrl,
+      onClose: () => Navigator.of(dialogContext).pop(),
+    ),
+  );
+}
+
+/// Account profile card. Loads the live user so a banner set after this
+/// conversation was opened still shows. The copy passed in is often stale.
+class _UserProfileDialog extends ConsumerStatefulWidget {
+  const _UserProfileDialog({
+    required this.user,
+    required this.cdnUrl,
+    required this.onClose,
+  });
+
+  final AccordUser user;
+  final String? cdnUrl;
+  final VoidCallback onClose;
+
+  @override
+  ConsumerState<_UserProfileDialog> createState() => _UserProfileDialogState();
+}
+
+class _UserProfileDialogState extends ConsumerState<_UserProfileDialog> {
+  late AccordUser _user = widget.user;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_refresh());
+  }
+
+  Future<void> _refresh() async {
+    final client = ref.accordClient;
+    if (client == null) return;
+    final result = await client.users.fetch(widget.user.id);
+    if (!mounted) return;
+    final user = result.data;
+    if (user is! AccordUser) return;
+    final serverKey = ref.readActiveServerKey() ?? '';
+    final users = ref.read(accordUsersControllerProvider(serverKey).notifier);
+    evictUserMedia(users.cached(user.id), user, widget.cdnUrl);
+    users.upsert(user);
+    setState(() => _user = user);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = BonfireThemeExtension.of(context);
+    final user = _user;
+    final name = _userName(user);
+    final origin = accordUserOrigin(user);
+    final bannerUrl = accordUserBannerUrl(user, widget.cdnUrl);
+    final bio = user.bio?.trim();
+    final isSelf = user.id == ref.watchUserId();
+    return AlertDialog(
+      content: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 340),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 UserAvatar(
                   name,
-                  imageUrl: accordAvatarUrl(user, cdnUrl),
+                  imageUrl: accordAvatarUrl(user, widget.cdnUrl),
                   radius: 30,
                 ),
                 const SizedBox(width: 16),
@@ -173,35 +234,43 @@ Future<void> showAccordUserProfile(
                 ),
               ],
             ),
-          ),
-          actions: [
-            if (!isSelf) ...[
-              TextButton(
-                onPressed: () => showReportDialog(
-                  context,
-                  targetType: 'user',
-                  targetId: user.id,
-                  reportedUserId: user.id,
-                  reportedName: name,
-                ),
-                style: TextButton.styleFrom(foregroundColor: colors.red),
-                child: const Text('Report user'),
-              ),
-              TextButton(
-                onPressed: () => _blockDmUser(context, ref, user),
-                style: TextButton.styleFrom(foregroundColor: colors.red),
-                child: const Text('Block'),
-              ),
+            if (bannerUrl != null) ...[
+              const SizedBox(height: 12),
+              UserBannerImage(url: bannerUrl),
             ],
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(),
-              child: const Text('Close'),
-            ),
+            if (bio != null && bio.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              Text(bio, style: Theme.of(context).textTheme.bodyMedium),
+            ],
           ],
-        );
-      },
-    ),
-  );
+        ),
+      ),
+      actions: [
+        if (!isSelf) ...[
+          TextButton(
+            onPressed: () => showReportDialog(
+              context,
+              targetType: 'user',
+              targetId: user.id,
+              reportedUserId: user.id,
+              reportedName: name,
+            ),
+            style: TextButton.styleFrom(foregroundColor: colors.red),
+            child: Text(UiCopy.reportUser(context: context)),
+          ),
+          TextButton(
+            onPressed: () => _blockDmUser(context, ref, user),
+            style: TextButton.styleFrom(foregroundColor: colors.red),
+            child: Text(UiCopy.block(context: context)),
+          ),
+        ],
+        TextButton(
+          onPressed: widget.onClose,
+          child: Text(UiCopy.close(context: context)),
+        ),
+      ],
+    );
+  }
 }
 
 /// Responsive right-click/long-press menu for users shown in DMs. Relationship
@@ -235,25 +304,25 @@ Future<void> showAccordDmUserContextMenu(
   final rel = relationship;
   final entries = <AccordMenuEntry>[
     AccordMenuEntry(
-      label: 'View profile',
+      label: UiCopy.viewProfile2(context: context),
       icon: Icons.account_circle_outlined,
       onSelected: () =>
           showAccordUserProfile(context, user, cdnUrl: ref.readCdnUrl()),
     ),
     if (user.id != selfId && user.id != currentDmUserId)
       AccordMenuEntry(
-        label: 'Direct message',
+        label: UiCopy.directMessage2(context: context),
         icon: Icons.chat_bubble_outline,
         onSelected: () => openAccordDirectMessage(context, ref, user.id),
       ),
     if (user.id != selfId) ...[
       AccordMenuEntry(
         label: switch (rel?.type) {
-          _Rel.friend => 'Remove friend',
-          _Rel.blocked => 'Unblock',
-          _Rel.pendingIn => 'Accept friend request',
-          _Rel.pendingOut => 'Cancel friend request',
-          _ => 'Add friend',
+          _Rel.friend => UiCopy.removeFriend(context: context),
+          _Rel.blocked => UiCopy.unblock(context: context),
+          _Rel.pendingIn => UiCopy.acceptFriendRequest(context: context),
+          _Rel.pendingOut => UiCopy.cancelFriendRequest(context: context),
+          _ => UiCopy.addFriend(context: context),
         },
         icon: switch (rel?.type) {
           _Rel.friend => Icons.person_remove_outlined,
@@ -266,7 +335,7 @@ Future<void> showAccordDmUserContextMenu(
         onSelected: () => _changeDmRelationship(context, ref, user, rel?.type),
       ),
       AccordMenuEntry(
-        label: 'Report user',
+        label: UiCopy.reportUser(context: context),
         icon: Icons.flag_outlined,
         destructive: true,
         onSelected: () => showReportDialog(
@@ -279,7 +348,7 @@ Future<void> showAccordDmUserContextMenu(
       ),
       if (rel?.type != _Rel.blocked)
         AccordMenuEntry(
-          label: 'Block',
+          label: UiCopy.block(context: context),
           icon: Icons.block,
           destructive: true,
           onSelected: () => _blockDmUser(context, ref, user),
@@ -287,13 +356,13 @@ Future<void> showAccordDmUserContextMenu(
     ],
     const AccordMenuEntry.divider(),
     AccordMenuEntry(
-      label: 'Copy user ID',
+      label: UiCopy.copyUserId2(context: context),
       icon: Icons.copy_outlined,
       onSelected: () => Clipboard.setData(ClipboardData(text: user.id)),
     ),
     if (user.username.isNotEmpty)
       AccordMenuEntry(
-        label: 'Copy username',
+        label: UiCopy.copyUsername2(context: context),
         icon: Icons.alternate_email,
         onSelected: () => Clipboard.setData(ClipboardData(text: user.username)),
       ),
@@ -333,13 +402,13 @@ Future<void> _changeDmRelationship(
     context,
     result.ok
         ? switch (currentType) {
-            _Rel.friend => 'Friend removed',
-            _Rel.blocked => 'User unblocked',
-            _Rel.pendingIn => 'Friend request accepted',
-            _Rel.pendingOut => 'Friend request cancelled',
-            _ => 'Friend request sent',
+            _Rel.friend => UiCopy.friendRemoved(context: context),
+            _Rel.blocked => UiCopy.userUnblocked(context: context),
+            _Rel.pendingIn => UiCopy.friendRequestAccepted(context: context),
+            _Rel.pendingOut => UiCopy.friendRequestCancelled(context: context),
+            _ => UiCopy.friendRequestSent(context: context),
           }
-        : 'Failed to update relationship',
+        : UiCopy.failedToUpdateRelationship(context: context),
   );
 }
 
@@ -350,9 +419,9 @@ Future<void> _blockDmUser(
 ) async {
   final confirmed = await showConfirmDialog(
     context,
-    title: 'Block user',
-    message: 'Blocked users cannot DM you and their messages are hidden.',
-    confirmLabel: 'Block',
+    title: UiCopy.blockUser(context: context),
+    message: UiCopy.blockedUsersCannotDmYouAndTheir(context: context),
+    confirmLabel: UiCopy.block(context: context),
     danger: true,
   );
   if (confirmed != true || !context.mounted) return;
@@ -363,7 +432,9 @@ Future<void> _blockDmUser(
   if (!context.mounted) return;
   showInfoSnack(
     context,
-    result?.ok == true ? 'User blocked' : 'Failed to block user',
+    result?.ok == true
+        ? UiCopy.userBlocked(context: context)
+        : UiCopy.failedToBlockUser(context: context),
   );
 }
 
@@ -424,12 +495,12 @@ class _DirectMessagesDialogState extends ConsumerState<_DirectMessagesDialog>
                       children: [
                         Expanded(
                           child: Text(
-                            'Direct messages',
+                            UiCopy.directMessages(context: context),
                             style: theme.textTheme.titleMedium,
                           ),
                         ),
                         IconButton(
-                          tooltip: 'Close',
+                          tooltip: UiCopy.close(context: context),
                           onPressed: () => Navigator.of(context).pop(),
                           icon: Icon(Icons.close, size: 20, color: colors.gray),
                         ),
@@ -438,9 +509,9 @@ class _DirectMessagesDialogState extends ConsumerState<_DirectMessagesDialog>
                   ),
                   TabBar(
                     controller: _tabs,
-                    tabs: const [
-                      Tab(text: 'Messages'),
-                      Tab(text: 'Friends'),
+                    tabs: [
+                      Tab(text: UiCopy.messages(context: context)),
+                      Tab(text: UiCopy.friends(context: context)),
                     ],
                   ),
                   Expanded(

@@ -1,3 +1,5 @@
+import 'package:bonfire/l10n/app_strings.dart';
+import 'package:bonfire/l10n/ui_copy.dart';
 import 'package:accordkit/accordkit.dart';
 import 'package:bonfire/features/automod/utils/automod_policy.dart';
 import 'package:flutter/material.dart';
@@ -137,18 +139,24 @@ class _RuleEditorState extends State<_RuleEditor> {
         !automodActions.containsKey(_action) ||
         !['all', 'non_nsfw', 'channels'].contains(_scope)) {
       return AlertDialog(
-        title: const Text('Update required'),
-        content: const Text('This rule uses options this client cannot edit.'),
+        title: Text(UiCopy.updateRequired(context: context)),
+        content: Text(
+          UiCopy.thisRuleUsesOptionsThisClientCannot(context: context),
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Close'),
+            child: Text(UiCopy.close(context: context)),
           ),
         ],
       );
     }
     return AlertDialog(
-      title: Text(widget.rule == null ? 'Add rule' : 'Edit rule'),
+      title: Text(
+        widget.rule == null
+            ? UiCopy.addRule(context: context)
+            : UiCopy.editRule(context: context),
+      ),
       content: SizedBox(
         width: 520,
         child: SingleChildScrollView(
@@ -160,17 +168,27 @@ class _RuleEditorState extends State<_RuleEditor> {
               children: [
                 TextFormField(
                   controller: _id,
-                  decoration: const InputDecoration(labelText: 'Rule name'),
-                  validator: (v) =>
-                      v == null || v.trim().isEmpty ? 'Enter a name.' : null,
+                  decoration: InputDecoration(
+                    labelText: UiCopy.ruleName(context: context),
+                  ),
+                  validator: (v) => v == null || v.trim().isEmpty
+                      ? UiCopy.enterAName(context: context)
+                      : null,
                 ),
                 DropdownButtonFormField<String>(
                   initialValue: _trigger,
                   isExpanded: true,
-                  decoration: const InputDecoration(labelText: 'When'),
+                  decoration: InputDecoration(
+                    labelText: UiCopy.when(context: context),
+                  ),
                   items: [
                     for (final e in automodTriggers.entries)
-                      DropdownMenuItem(value: e.key, child: Text(e.value)),
+                      DropdownMenuItem(
+                        value: e.key,
+                        child: Text(
+                          AppStrings.label(e.value, context: context),
+                        ),
+                      ),
                   ],
                   onChanged: (v) => setState(() {
                     _trigger = v!;
@@ -183,10 +201,12 @@ class _RuleEditorState extends State<_RuleEditor> {
                   TextFormField(
                     controller: _categories,
                     maxLines: 3,
-                    decoration: const InputDecoration(
-                      labelText: 'Detector categories',
+                    decoration: InputDecoration(
+                      labelText: UiCopy.detectorCategories(context: context),
                       helperText:
-                          'Comma-separated category names supported by the server detector.',
+                          UiCopy.commaSeparatedCategoryNamesSupportedByThe(
+                            context: context,
+                          ),
                     ),
                   ),
                   TextFormField(
@@ -194,30 +214,28 @@ class _RuleEditorState extends State<_RuleEditor> {
                     keyboardType: const TextInputType.numberWithOptions(
                       decimal: true,
                     ),
-                    decoration: const InputDecoration(
-                      labelText: 'Threshold (0–1)',
+                    decoration: InputDecoration(
+                      labelText: UiCopy.threshold01(context: context),
                     ),
                   ),
-                  const Text(
-                    'Videos sample five frames at 10%, 30%, 50%, 70% and 90%. Content between samples can be missed.',
-                  ),
+                  Text(UiCopy.videosSampleFiveFramesAt1030(context: context)),
                 ],
                 if (_trigger == 'low_trust') ...[
                   _number(
                     _accountAge,
-                    'Minimum account age (hours)',
+                    UiCopy.minimumAccountAgeHours(context: context),
                     0,
                     4294967295,
                   ),
                   _number(
                     _spaceAge,
-                    'Minimum membership age (hours)',
+                    UiCopy.minimumMembershipAgeHours(context: context),
                     0,
                     4294967295,
                   ),
                   SwitchListTile(
                     contentPadding: EdgeInsets.zero,
-                    title: const Text('Require an assigned role'),
+                    title: Text(UiCopy.requireAnAssignedRole(context: context)),
                     value: _requireRole,
                     onChanged: (v) => setState(() => _requireRole = v),
                   ),
@@ -225,25 +243,28 @@ class _RuleEditorState extends State<_RuleEditor> {
                 DropdownButtonFormField<String>(
                   initialValue: _scope,
                   isExpanded: true,
-                  decoration: const InputDecoration(labelText: 'Channels'),
-                  items: const [
-                    DropdownMenuItem(value: 'all', child: Text('All channels')),
+                  decoration: InputDecoration(
+                    labelText: UiCopy.channels(context: context),
+                  ),
+                  items: [
+                    DropdownMenuItem(
+                      value: 'all',
+                      child: Text(UiCopy.allChannels(context: context)),
+                    ),
                     DropdownMenuItem(
                       value: 'non_nsfw',
-                      child: Text('Outside NSFW channels'),
+                      child: Text(UiCopy.outsideNsfwChannels(context: context)),
                     ),
                     DropdownMenuItem(
                       value: 'channels',
-                      child: Text('Selected channels'),
+                      child: Text(UiCopy.selectedChannels(context: context)),
                     ),
                   ],
                   onChanged: (v) => setState(() => _scope = v!),
                 ),
                 if (_scope == 'channels') ...[
                   if (widget.channels.isEmpty)
-                    const Text(
-                      'Open a space to load its channels before adding a channel-specific rule.',
-                    ),
+                    Text(UiCopy.openASpaceToLoadItsChannels(context: context)),
                   Wrap(
                     spacing: 6,
                     children: [
@@ -265,7 +286,13 @@ class _RuleEditorState extends State<_RuleEditor> {
                     (id) => !widget.channels.any((c) => c.id == id),
                   ))
                     InputChip(
-                      label: Text('Channel $id'),
+                      label: Text(
+                        AppStrings.choose(
+                          'Channel $id',
+                          '频道 $id',
+                          context: context,
+                        ),
+                      ),
                       onDeleted: () => setState(() => _channelIds.remove(id)),
                     ),
                 ],
@@ -273,11 +300,18 @@ class _RuleEditorState extends State<_RuleEditor> {
                   key: ValueKey('action-$_trigger-$_action'),
                   initialValue: _action,
                   isExpanded: true,
-                  decoration: const InputDecoration(labelText: 'Action'),
+                  decoration: InputDecoration(
+                    labelText: UiCopy.action(context: context),
+                  ),
                   items: [
                     for (final e in automodActions.entries)
                       if (e.key != 'timeout' || automodAllowsTimeout(_trigger))
-                        DropdownMenuItem(value: e.key, child: Text(e.value)),
+                        DropdownMenuItem(
+                          value: e.key,
+                          child: Text(
+                            AppStrings.label(e.value, context: context),
+                          ),
+                        ),
                   ],
                   onChanged: (v) => setState(() => _action = v!),
                 ),
@@ -298,9 +332,12 @@ class _RuleEditorState extends State<_RuleEditor> {
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context),
-          child: const Text('Cancel'),
+          child: Text(UiCopy.cancel(context: context)),
         ),
-        FilledButton(onPressed: _save, child: const Text('Use rule')),
+        FilledButton(
+          onPressed: _save,
+          child: Text(UiCopy.useRule(context: context)),
+        ),
       ],
     );
   }

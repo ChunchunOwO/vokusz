@@ -1,3 +1,5 @@
+import 'package:bonfire/l10n/app_strings.dart';
+import 'package:bonfire/l10n/ui_copy.dart';
 import 'dart:typed_data';
 
 import 'package:bonfire/features/automod/views/automod_panel.dart';
@@ -99,6 +101,37 @@ class _SpaceSettingsState extends ConsumerState<_SpaceSettings> {
   bool _bannerRemoved = false;
   bool _iconRemoved = false;
   bool _formInitialized = false;
+  Object? _savedValues;
+
+  Object get _formValues => (
+    _name.text.trim(),
+    _description.text.trim(),
+    _verification,
+    _notifications,
+    _nsfw,
+    _contentFilter,
+    _public,
+    _guestAccess,
+    _rulesChannelId,
+    _systemChannelId,
+  );
+
+  bool get _hasChanges =>
+      _formInitialized &&
+      (_formValues != _savedValues ||
+          _pendingIconBytes != null ||
+          _iconRemoved ||
+          _pendingBannerBytes != null ||
+          _bannerRemoved);
+
+  void _draftChanged() => setState(() {});
+
+  Future<void> _saveAndLeave() async {
+    if (_busy || !await _saveSettings() || !mounted) return;
+    // Let PopScope see the successfully saved draft before trying to leave.
+    await WidgetsBinding.instance.endOfFrame;
+    if (mounted) Navigator.of(context).maybePop();
+  }
 
   @override
   void dispose() {
@@ -123,6 +156,9 @@ class _SpaceSettingsState extends ConsumerState<_SpaceSettings> {
     _guestAccess = space.allowGuestAccess;
     _rulesChannelId = space.rulesChannelId;
     _systemChannelId = space.systemChannelId;
+    _savedValues = _formValues;
+    _name.addListener(_draftChanged);
+    _description.addListener(_draftChanged);
   }
 
   AccordClient? get _client => ref.accordClient;
@@ -190,7 +226,7 @@ class _SpaceSettingsState extends ConsumerState<_SpaceSettings> {
       context,
       imageBytes: file!.bytes!,
       aspectRatio: 16 / 9,
-      title: 'Crop banner',
+      title: UiCopy.cropBanner(),
       maxOutputDimension: 1024,
     );
     if (cropped == null || !mounted) return;
@@ -200,7 +236,7 @@ class _SpaceSettingsState extends ConsumerState<_SpaceSettings> {
     });
     if (await _update({
           'banner': AccordCDN.buildDataUri(cropped, 'banner.png'),
-        }, 'Failed to update banner') &&
+        }, UiCopy.failedToUpdateBanner()) &&
         mounted) {
       setState(() => _pendingBannerBytes = null);
     }
@@ -211,7 +247,8 @@ class _SpaceSettingsState extends ConsumerState<_SpaceSettings> {
       _pendingBannerBytes = null;
       _bannerRemoved = true;
     });
-    if (await _update({'banner': null}, 'Failed to remove banner') && mounted) {
+    if (await _update({'banner': null}, UiCopy.failedToRemoveBanner()) &&
+        mounted) {
       setState(() => _bannerRemoved = false);
     }
   }
@@ -228,7 +265,7 @@ class _SpaceSettingsState extends ConsumerState<_SpaceSettings> {
       imageBytes: file!.bytes!,
       aspectRatio: 1,
       circular: true,
-      title: 'Crop icon',
+      title: UiCopy.cropIcon(),
       maxOutputDimension: 512,
     );
     if (cropped == null || !mounted) return;
@@ -247,11 +284,13 @@ class _SpaceSettingsState extends ConsumerState<_SpaceSettings> {
 
   /// Flushes the whole overview/settings form in one `spaces.update`. Icon is
   /// only sent when it was changed (uploaded or removed) this session.
-  Future<void> _saveSettings() async {
+  Future<bool> _saveSettings() async {
+    if (_busy) return false;
+    if (!_hasChanges) return true;
     final name = _name.text.trim();
     if (name.isEmpty) {
-      setState(() => _error = 'Name is required');
-      return;
+      setState(() => _error = UiCopy.nameIsRequired());
+      return false;
     }
     final body = <String, dynamic>{
       'name': name,
@@ -278,14 +317,17 @@ class _SpaceSettingsState extends ConsumerState<_SpaceSettings> {
     } else if (_bannerRemoved) {
       body['banner'] = null;
     }
-    if (await _update(body, 'Failed to save settings') && mounted) {
+    if (await _update(body, UiCopy.failedToSaveSettings()) && mounted) {
       setState(() {
         _pendingIconBytes = null;
         _iconRemoved = false;
         _pendingBannerBytes = null;
         _bannerRemoved = false;
+        _savedValues = _formValues;
       });
+      return true;
     }
+    return false;
   }
 
   /// Deletes the space after a typed confirmation (owner only). On success the
@@ -300,22 +342,19 @@ class _SpaceSettingsState extends ConsumerState<_SpaceSettings> {
         builder: (ctx, setLocal) {
           final canDelete = confirmController.text.trim() == spaceName.trim();
           return AlertDialog(
-            title: const Text('Delete space'),
+            title: Text(UiCopy.deleteSpace()),
             content: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Text(
-                  'This permanently deletes "$spaceName" and all of its '
-                  'channels and messages. This cannot be undone.',
-                ),
+                Text(UiCopy.thisPermanentlyDeletesAndAllOfIts(arg0: spaceName)),
                 const SizedBox(height: 12),
                 TextField(
                   controller: confirmController,
                   autofocus: true,
                   onChanged: (_) => setLocal(() {}),
                   decoration: InputDecoration(
-                    labelText: 'Type the space name to confirm',
+                    labelText: UiCopy.typeTheSpaceNameToConfirm(),
                     hintText: spaceName,
                     isDense: true,
                     border: const OutlineInputBorder(),
@@ -326,14 +365,14 @@ class _SpaceSettingsState extends ConsumerState<_SpaceSettings> {
             actions: [
               TextButton(
                 onPressed: () => Navigator.of(ctx).pop(false),
-                child: const Text('Cancel'),
+                child: Text(UiCopy.cancel()),
               ),
               FilledButton(
                 style: FilledButton.styleFrom(
                   backgroundColor: Theme.of(ctx).colorScheme.error,
                 ),
                 onPressed: canDelete ? () => Navigator.of(ctx).pop(true) : null,
-                child: const Text('Delete'),
+                child: Text(UiCopy.delete()),
               ),
             ],
           );
@@ -351,7 +390,7 @@ class _SpaceSettingsState extends ConsumerState<_SpaceSettings> {
     if (!result.ok) {
       setState(() {
         _busy = false;
-        _error = result.errorOr('Failed to delete space');
+        _error = result.errorOr(UiCopy.failedToDeleteSpace());
       });
       return;
     }
@@ -376,11 +415,11 @@ class _SpaceSettingsState extends ConsumerState<_SpaceSettings> {
     final initial = me?.nickname ?? '';
     final next = (await showTextPromptDialog(
       context,
-      title: 'Change nickname',
-      label: 'Nickname',
-      hintText: 'Leave empty to reset to your display name',
+      title: UiCopy.changeNickname(),
+      label: UiCopy.nickname(),
+      hintText: UiCopy.leaveEmptyToResetToYourDisplay(),
       initial: initial,
-      resetLabel: initial.isNotEmpty ? 'Reset' : null,
+      resetLabel: initial.isNotEmpty ? UiCopy.reset() : null,
     ))?.trim();
     if (next == null || !mounted) return;
     setState(() {
@@ -393,7 +432,7 @@ class _SpaceSettingsState extends ConsumerState<_SpaceSettings> {
     if (!mounted) return;
     setState(() => _busy = false);
     if (!result.ok) {
-      setState(() => _error = result.errorOr('Failed to update nickname'));
+      setState(() => _error = result.errorOr(UiCopy.failedToUpdateNickname()));
       return;
     }
     final updated = result.data;
@@ -478,106 +517,135 @@ class _SpaceSettingsState extends ConsumerState<_SpaceSettings> {
       backgroundColor: colors.background,
       appBar: AppBar(
         backgroundColor: colors.foreground,
-        title: Text(space?.name ?? 'Space settings'),
+        title: Text(
+          space?.name ?? AppStrings.label('Space settings', context: context),
+        ),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
-          onPressed: () => Navigator.of(context).pop(),
+          onPressed: _busy ? null : () => Navigator.of(context).maybePop(),
         ),
-      ),
-      body: _AdaptiveSettingsBody(
-        form: [
-          _BannerSection(
-            bannerUrl: _bannerRemoved ? null : bannerUrl,
-            pendingBytes: _pendingBannerBytes,
-            canManage: canManageSpace,
-            busy: _busy,
-            onPick: _pickBanner,
-            onRemove: _removeBanner,
-          ),
-          if (canManageSpace) ...[
-            const Divider(height: 24),
-            _OverviewSection(
-              nameController: _name,
-              descriptionController: _description,
-              iconUrl: iconUrl,
-              pendingIconBytes: _pendingIconBytes,
-              iconRemoved: _iconRemoved,
-              busy: _busy,
-              onPickIcon: _pickIcon,
-              onRemoveIcon: _markIconRemoved,
-            ),
-            const Divider(height: 24),
-            _ModerationSection(
-              verification: _verification,
-              notifications: _notifications,
-              nsfw: _nsfw,
-              contentFilter: _contentFilter,
-              isPublic: _public,
-              guestAccess: _guestAccess,
-              busy: _busy,
-              onVerificationChanged: (v) =>
-                  setState(() => _verification = v ?? 'none'),
-              onNotificationsChanged: (v) =>
-                  setState(() => _notifications = v ?? 'all'),
-              onNsfwChanged: (v) => setState(() => _nsfw = v ?? 'default'),
-              onContentFilterChanged: (v) =>
-                  setState(() => _contentFilter = v ?? 'disabled'),
-              onPublicChanged: (v) => setState(() => _public = v),
-              onGuestAccessChanged: (v) => setState(() => _guestAccess = v),
-            ),
-            const Divider(height: 24),
-            _ChannelsSection(
-              textChannels: textChannels,
-              rulesValue: rulesValue,
-              systemValue: systemValue,
-              busy: _busy,
-              onRulesChanged: (v) => setState(() => _rulesChannelId = v),
-              onSystemChanged: (v) => setState(() => _systemChannelId = v),
-            ),
-            _SaveSettingsButton(busy: _busy, onSave: _saveSettings),
-          ],
-        ],
         actions: [
-          _MembershipSection(onEditNickname: _editOwnNickname),
-          if (accordHasPermission(perms, AccordPermission.manageSpace) ||
-              accordHasPermission(perms, AccordPermission.moderateMembers))
-            ListTile(
-              leading: const Icon(Icons.shield_outlined),
-              title: const Text('AutoMod'),
-              subtitle: const Text('Attachment rules and moderation review'),
-              onTap: () => showAutomodPanel(context, widget.spaceId),
+          if (canManageSpace)
+            TextButton(
+              onPressed: _busy || !_hasChanges ? null : _saveSettings,
+              child: Text(UiCopy.saveSettings(context: context)),
             ),
-          if (canManageRoles ||
-              canViewAuditLog ||
-              canModerate ||
-              canManageEmojis ||
-              canUseSoundboard) ...[
-            const Divider(height: 24),
-            _ManagementSection(
-              spaceId: widget.spaceId,
-              canManageRoles: canManageRoles,
-              canViewAuditLog: canViewAuditLog,
-              canModerate: canModerate,
-              canManageEmojis: canManageEmojis,
-              canUseSoundboard: canUseSoundboard,
-              canManageSoundboard: canManageSoundboard,
-            ),
-          ],
-          if (isOwner) ...[
-            const Divider(height: 24),
-            _DangerZoneSection(
-              spaceId: widget.spaceId,
-              busy: _busy,
-              onDeleteSpace: () => _deleteSpace(space.name),
-            ),
-          ],
         ],
-        error: _error == null
-            ? null
-            : Padding(
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-                child: InlineError(_error!, centered: false),
+      ),
+      bottomNavigationBar: _error == null
+          ? null
+          : SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Row(
+                  children: [
+                    Expanded(child: InlineError(_error!, centered: false)),
+                    TextButton(
+                      onPressed: _busy
+                          ? null
+                          : () => Navigator.of(context).pop(),
+                      child: Text(UiCopy.discard(context: context)),
+                    ),
+                  ],
+                ),
               ),
+            ),
+      body: PopScope<void>(
+        canPop: !_busy && !_hasChanges,
+        onPopInvokedWithResult: (didPop, _) {
+          if (!didPop) _saveAndLeave();
+        },
+        child: _AdaptiveSettingsBody(
+          form: [
+            _BannerSection(
+              bannerUrl: _bannerRemoved ? null : bannerUrl,
+              pendingBytes: _pendingBannerBytes,
+              canManage: canManageSpace,
+              busy: _busy,
+              onPick: _pickBanner,
+              onRemove: _removeBanner,
+            ),
+            if (canManageSpace) ...[
+              const Divider(height: 24),
+              _OverviewSection(
+                nameController: _name,
+                descriptionController: _description,
+                iconUrl: iconUrl,
+                pendingIconBytes: _pendingIconBytes,
+                iconRemoved: _iconRemoved,
+                busy: _busy,
+                onPickIcon: _pickIcon,
+                onRemoveIcon: _markIconRemoved,
+              ),
+              const Divider(height: 24),
+              _ModerationSection(
+                verification: _verification,
+                notifications: _notifications,
+                nsfw: _nsfw,
+                contentFilter: _contentFilter,
+                isPublic: _public,
+                guestAccess: _guestAccess,
+                busy: _busy,
+                onVerificationChanged: (v) =>
+                    setState(() => _verification = v ?? 'none'),
+                onNotificationsChanged: (v) =>
+                    setState(() => _notifications = v ?? 'all'),
+                onNsfwChanged: (v) => setState(() => _nsfw = v ?? 'default'),
+                onContentFilterChanged: (v) =>
+                    setState(() => _contentFilter = v ?? 'disabled'),
+                onPublicChanged: (v) => setState(() => _public = v),
+                onGuestAccessChanged: (v) => setState(() => _guestAccess = v),
+              ),
+              const Divider(height: 24),
+              _ChannelsSection(
+                textChannels: textChannels,
+                rulesValue: rulesValue,
+                systemValue: systemValue,
+                busy: _busy,
+                onRulesChanged: (v) => setState(() => _rulesChannelId = v),
+                onSystemChanged: (v) => setState(() => _systemChannelId = v),
+              ),
+              _SaveSettingsButton(busy: _busy, onSave: _saveSettings),
+            ],
+          ],
+          actions: [
+            _MembershipSection(onEditNickname: _editOwnNickname),
+            if (accordHasPermission(perms, AccordPermission.manageSpace) ||
+                accordHasPermission(perms, AccordPermission.moderateMembers))
+              ListTile(
+                leading: const Icon(Icons.shield_outlined),
+                title: Text(UiCopy.automod(context: context)),
+                subtitle: Text(
+                  UiCopy.attachmentRulesAndModerationReview(context: context),
+                ),
+                onTap: () => showAutomodPanel(context, widget.spaceId),
+              ),
+            if (canManageRoles ||
+                canViewAuditLog ||
+                canModerate ||
+                canManageEmojis ||
+                canUseSoundboard) ...[
+              const Divider(height: 24),
+              _ManagementSection(
+                spaceId: widget.spaceId,
+                canManageRoles: canManageRoles,
+                canViewAuditLog: canViewAuditLog,
+                canModerate: canModerate,
+                canManageEmojis: canManageEmojis,
+                canUseSoundboard: canUseSoundboard,
+                canManageSoundboard: canManageSoundboard,
+              ),
+            ],
+            if (isOwner) ...[
+              const Divider(height: 24),
+              _DangerZoneSection(
+                spaceId: widget.spaceId,
+                busy: _busy,
+                onDeleteSpace: () => _deleteSpace(space.name),
+              ),
+            ],
+          ],
+        ),
       ),
     );
   }

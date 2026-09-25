@@ -33,62 +33,70 @@ List<AccordMenuEntry> _serverActionEntries(
       .isSpaceMuted(serverKey, space.id);
   return [
     AccordMenuEntry(
-      label: muted ? 'Unmute server' : 'Mute server',
+      label: muted
+          ? UiCopy.unmuteServer(context: context)
+          : UiCopy.muteServer(context: context),
       icon: muted
           ? Icons.notifications_active_outlined
           : Icons.notifications_off_outlined,
-      subtitle: muted ? null : 'Silence notifications from this server',
+      subtitle: muted
+          ? null
+          : UiCopy.silenceNotificationsFromThisServer(context: context),
       onSelected: () => settingsCtl.toggleSpaceMuted(serverKey, space.id),
     ),
     if (canInvite)
       AccordMenuEntry(
-        label: 'Copy server link',
+        label: UiCopy.copyServerLink(context: context),
         icon: Icons.link_outlined,
         onSelected: () => _copyServerLink(context, ref, space, serverKey),
       ),
     if (canInvite)
       AccordMenuEntry(
-        label: 'Invite people',
+        label: UiCopy.invitePeople(context: context),
         icon: Icons.person_add_outlined,
         onSelected: () => showAccordInvites(context, spaceId: space.id),
       ),
     if (canManage)
       AccordMenuEntry(
-        label: 'Space settings',
+        label: UiCopy.spaceSettings(context: context),
         icon: Icons.settings_outlined,
         onSelected: () => showAccordSpaceSettings(context, spaceId: space.id),
       ),
     AccordMenuEntry(
-      label: 'Hide from list',
+      label: UiCopy.hideFromList(context: context),
       icon: Icons.visibility_off_outlined,
-      subtitle: 'Remove from your rail without leaving',
+      subtitle: UiCopy.removeFromYourRailWithoutLeaving(context: context),
       onSelected: () => settingsCtl.setSpaceHidden(serverKey, space.id, true),
     ),
     AccordMenuEntry(
-      label: 'Leave server',
+      label: UiCopy.leaveServer(context: context),
       icon: Icons.logout,
       destructive: !isOwner,
       enabled: !isOwner,
-      subtitle: isOwner ? 'Transfer ownership before leaving.' : null,
+      subtitle: isOwner
+          ? UiCopy.transferOwnershipBeforeLeaving(context: context)
+          : null,
       onSelected: isOwner
           ? null
           : () => _leaveSpace(context, ref, space, serverKey),
     ),
     AccordMenuEntry(
-      label: 'Leave & delete data',
+      label: UiCopy.leaveDeleteData2(context: context),
       icon: Icons.delete_forever_outlined,
       destructive: !isOwner,
       enabled: !isOwner,
-      subtitle: isOwner ? null : 'Permanently delete your messages & data here',
+      subtitle: isOwner
+          ? null
+          : UiCopy.permanentlyDeleteYourMessagesDataHere(context: context),
       onSelected: isOwner
           ? null
           : () => _leaveAndDeleteSpace(context, ref, space, serverKey),
     ),
     AccordMenuEntry(
-      label: 'Remove server',
+      label: UiCopy.removeServer(context: context),
       icon: Icons.link_off,
       destructive: true,
-      subtitle: 'Disconnect & remove from this app — works even when offline',
+      subtitle: UiCopy.disconnectRemoveFromThisAppWorksEven(context: context),
       onSelected: () => _removeServer(context, ref, serverKey),
     ),
     const AccordMenuEntry.divider(),
@@ -115,11 +123,8 @@ Future<void> _removeServer(
   final confirmed = await showConfirmDialog(
     context,
     title: "Remove '$label'?",
-    message:
-        'This disconnects your account and removes the server from this app, '
-        'including any of its spaces. Nothing is deleted on the server, and you '
-        'can add it back later with its address or an invite.',
-    confirmLabel: 'Remove',
+    message: UiCopy.thisDisconnectsYourAccountAndRemovesThe(context: context),
+    confirmLabel: UiCopy.remove(context: context),
     danger: true,
   );
   if (confirmed != true) return;
@@ -169,13 +174,17 @@ Future<void> _copyServerLink(
   }
   if (code == null) {
     if (context.mounted) {
-      showInfoSnack(context, 'Could not create an invite link');
+      showInfoSnack(
+        context,
+        UiCopy.couldNotCreateAnInviteLink(context: context),
+      );
     }
     return;
   }
   final link = baseUrl == null ? code : '$baseUrl/invite/$code';
   await Clipboard.setData(ClipboardData(text: link));
-  if (context.mounted) showInfoSnack(context, 'Server link copied');
+  if (context.mounted)
+    showInfoSnack(context, UiCopy.serverLinkCopied(context: context));
 }
 
 /// Confirms then leaves [space] *and deletes all the user's data* on its own
@@ -190,12 +199,9 @@ Future<void> _leaveAndDeleteSpace(
 ) async {
   final confirmed = await showConfirmDialog(
     context,
-    title: 'Leave & delete data',
-    message:
-        "This will permanently leave '${space.name}' and delete all your "
-        'messages, reactions, and data from this server. Your account stays '
-        'active. This cannot be undone.',
-    confirmLabel: 'Leave & delete',
+    title: UiCopy.leaveDeleteData2(context: context),
+    message: UiCopy.thisWillPermanentlyLeaveAndDeleteAll(context: context, arg0: space.name),
+    confirmLabel: UiCopy.leaveDelete2(context: context),
     danger: true,
   );
   if (confirmed != true || !context.mounted) return;
@@ -205,7 +211,11 @@ Future<void> _leaveAndDeleteSpace(
   final result = await client.members.leaveMe(space.id, deleteData: true);
   if (!result.ok) {
     if (context.mounted) {
-      showErrorSnack(context, result, prefix: 'Failed to leave');
+      showErrorSnack(
+        context,
+        result,
+        prefix: UiCopy.failedToLeave(context: context),
+      );
     }
     return;
   }
@@ -214,7 +224,10 @@ Future<void> _leaveAndDeleteSpace(
       .removeSpace(serverKey, space.id);
   ref.read(spacesControllerProvider.notifier).removeSpace(space.id);
   if (context.mounted) {
-    showInfoSnack(context, "Left '${space.name}' and deleted your data");
+    showInfoSnack(
+      context,
+      UiCopy.leftAndDeletedYourData(context: context, arg0: space.name),
+    );
   }
 }
 
@@ -230,10 +243,8 @@ Future<void> _leaveSpace(
   final confirmed = await showConfirmDialog(
     context,
     title: "Leave '${space.name}'?",
-    message:
-        'You will lose access to this server until you rejoin with an '
-        'invite. Your messages stay on the server.',
-    confirmLabel: 'Leave',
+    message: UiCopy.youWillLoseAccessToThisServer(context: context),
+    confirmLabel: UiCopy.leave(context: context),
     danger: true,
   );
   if (confirmed != true || !context.mounted) return;
@@ -243,7 +254,11 @@ Future<void> _leaveSpace(
   final result = await client.members.leaveMe(space.id);
   if (!result.ok) {
     if (context.mounted) {
-      showErrorSnack(context, result, prefix: 'Failed to leave');
+      showErrorSnack(
+        context,
+        result,
+        prefix: UiCopy.failedToLeave(context: context),
+      );
     }
     return;
   }

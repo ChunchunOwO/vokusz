@@ -1,3 +1,4 @@
+import 'package:bonfire/l10n/ui_copy.dart';
 import 'package:accordkit/accordkit.dart';
 import 'package:bonfire/features/member/utils/member_display.dart';
 import 'package:bonfire/shared/components/async_state_views.dart';
@@ -65,15 +66,18 @@ class _EmojiManagementState extends ConsumerState<_EmojiManagement> {
     if (!mounted) return;
     setState(() => _busy = false);
     if (!result.ok) {
-      setState(
-        () => _error = result.errorOr('Failed to upload emoji'),
-      );
+      setState(() => _error = result.errorOr(UiCopy.failedToUploadEmoji()));
       return;
     }
     final emoji = result.data;
     if (emoji is AccordEmoji) {
       ref
-          .read(accordEmojisControllerProvider(ref.readActiveServerKey() ?? '', widget.spaceId).notifier)
+          .read(
+            accordEmojisControllerProvider(
+              ref.readActiveServerKey() ?? '',
+              widget.spaceId,
+            ).notifier,
+          )
           .upsert(emoji);
     }
   }
@@ -95,15 +99,18 @@ class _EmojiManagementState extends ConsumerState<_EmojiManagement> {
     if (!mounted) return;
     setState(() => _busy = false);
     if (!result.ok) {
-      setState(
-        () => _error = result.errorOr('Failed to rename emoji'),
-      );
+      setState(() => _error = result.errorOr(UiCopy.failedToRenameEmoji()));
       return;
     }
     final updated = result.data;
     if (updated is AccordEmoji) {
       ref
-          .read(accordEmojisControllerProvider(ref.readActiveServerKey() ?? '', widget.spaceId).notifier)
+          .read(
+            accordEmojisControllerProvider(
+              ref.readActiveServerKey() ?? '',
+              widget.spaceId,
+            ).notifier,
+          )
           .upsert(updated);
     }
   }
@@ -115,9 +122,9 @@ class _EmojiManagementState extends ConsumerState<_EmojiManagement> {
     if (id == null) return;
     final ok = await showConfirmDialog(
       context,
-      title: 'Delete emoji?',
-      message: ':${emoji.name}: will be removed from this space.',
-      confirmLabel: 'Delete',
+      title: UiCopy.deleteEmoji(),
+      message: UiCopy.willBeRemovedFromThisSpace(arg0: emoji.name),
+      confirmLabel: UiCopy.delete(),
       danger: true,
     );
     if (ok != true || !mounted) return;
@@ -129,22 +136,25 @@ class _EmojiManagementState extends ConsumerState<_EmojiManagement> {
     if (!mounted) return;
     setState(() => _busy = false);
     if (!result.ok) {
-      setState(
-        () => _error = result.errorOr('Failed to delete emoji'),
-      );
+      setState(() => _error = result.errorOr(UiCopy.failedToDeleteEmoji()));
       return;
     }
     ref
-        .read(accordEmojisControllerProvider(ref.readActiveServerKey() ?? '', widget.spaceId).notifier)
+        .read(
+          accordEmojisControllerProvider(
+            ref.readActiveServerKey() ?? '',
+            widget.spaceId,
+          ).notifier,
+        )
         .remove(id);
   }
 
   Future<String?> _promptForName(String initial) async {
     final name = await showTextPromptDialog(
       context,
-      title: 'Rename emoji',
-      label: 'Name',
-      helperText: 'Letters, numbers, and underscores',
+      title: UiCopy.renameEmoji(),
+      label: UiCopy.name(),
+      helperText: UiCopy.lettersNumbersAndUnderscores(),
       initial: initial,
     );
     return name?.trim();
@@ -166,7 +176,12 @@ class _EmojiManagementState extends ConsumerState<_EmojiManagement> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colors = BonfireThemeExtension.of(context);
-    final emojis = ref.watch(accordEmojisControllerProvider(ref.readActiveServerKey() ?? '', widget.spaceId));
+    final emojis = ref.watch(
+      accordEmojisControllerProvider(
+        ref.readActiveServerKey() ?? '',
+        widget.spaceId,
+      ),
+    );
     final cdnUrl = ref.watchCdnUrl();
 
     return Dialog(
@@ -186,10 +201,13 @@ class _EmojiManagementState extends ConsumerState<_EmojiManagement> {
                     color: colors.dirtyWhite,
                   ),
                   const SizedBox(width: 8),
-                  Text('Custom emoji', style: theme.textTheme.titleMedium),
+                  Text(
+                    UiCopy.customEmoji(context: context),
+                    style: theme.textTheme.titleMedium,
+                  ),
                   const Spacer(),
                   IconButton(
-                    tooltip: 'Close',
+                    tooltip: UiCopy.close(context: context),
                     onPressed: () => Navigator.of(context).maybePop(),
                     icon: const Icon(Icons.close, size: 18),
                   ),
@@ -199,7 +217,7 @@ class _EmojiManagementState extends ConsumerState<_EmojiManagement> {
               FilledButton.icon(
                 onPressed: _busy ? null : _pickAndUpload,
                 icon: const Icon(Icons.upload, size: 18),
-                label: const Text('Upload emoji'),
+                label: Text(UiCopy.uploadEmoji(context: context)),
               ),
               if (_error != null) ...[
                 const SizedBox(height: 8),
@@ -214,7 +232,7 @@ class _EmojiManagementState extends ConsumerState<_EmojiManagement> {
                         padding: const EdgeInsets.all(24),
                         child: Center(
                           child: Text(
-                            'No custom emoji yet.',
+                            UiCopy.noCustomEmojiYet(context: context),
                             style: theme.textTheme.bodyMedium,
                           ),
                         ),
@@ -244,14 +262,14 @@ class _EmojiManagementState extends ConsumerState<_EmojiManagement> {
                               mainAxisSize: MainAxisSize.min,
                               children: [
                                 IconButton(
-                                  tooltip: 'Rename',
+                                  tooltip: UiCopy.rename(context: context),
                                   onPressed: _busy
                                       ? null
                                       : () => _rename(emoji),
                                   icon: const Icon(Icons.edit, size: 18),
                                 ),
                                 IconButton(
-                                  tooltip: 'Delete',
+                                  tooltip: UiCopy.delete(context: context),
                                   onPressed: _busy
                                       ? null
                                       : () => _delete(emoji),

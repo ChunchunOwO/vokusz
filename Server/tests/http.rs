@@ -1534,7 +1534,8 @@ async fn test_get_settings() {
     assert_eq!(body["data"]["max_emoji_size"], 262144);
     assert_eq!(body["data"]["max_avatar_size"], 2097152);
     assert_eq!(body["data"]["max_sound_size"], 2097152);
-    assert_eq!(body["data"]["max_attachment_size"], 26214400);
+    assert_eq!(body["data"]["max_attachment_size"], 1073741824);
+    assert_eq!(body["data"]["upload_bytes_per_minute"], 2147483648_i64);
     assert_eq!(body["data"]["max_attachments_per_message"], 10);
 }
 
@@ -1634,7 +1635,9 @@ async fn test_attachment_upload_url_resolves_via_cdn() {
     let space_id = server.create_space(&alice.user.id, "AttachSpace").await;
     let channel_id = server.create_channel(&space_id, "general").await;
 
-    let png_bytes = tiny_png_bytes();
+    let mut png_bytes = tiny_png_bytes();
+    // Regression: uploads must exceed Axum's default 2 MiB extractor limit.
+    png_bytes.resize(3 * 1024 * 1024, 0);
 
     let boundary = "----accordtestboundary";
     let body = build_multipart_upload_body(
@@ -1696,6 +1699,29 @@ async fn test_attachment_upload_url_resolves_via_cdn() {
         .await
         .unwrap();
     assert_eq!(&served[..], &png_bytes[..]);
+
+    // The enlarged file limit must not permit unbounded JSON metadata.
+    let oversized_metadata = build_multipart_upload_body(
+        boundary,
+        &serde_json::json!({ "content": "x".repeat(2 * 1024 * 1024) }),
+        "image.png",
+        "image/png",
+        &tiny_png_bytes(),
+    );
+    let req = Request::builder()
+        .method(Method::POST)
+        .uri(format!("/api/v1/channels/{channel_id}/messages/upload"))
+        .header("Authorization", alice.auth_header())
+        .header(
+            "Content-Type",
+            format!("multipart/form-data; boundary={boundary}"),
+        )
+        .body(Body::from(oversized_metadata))
+        .unwrap();
+    assert_eq!(
+        server.router().oneshot(req).await.unwrap().status(),
+        StatusCode::PAYLOAD_TOO_LARGE
+    );
 }
 
 #[tokio::test]

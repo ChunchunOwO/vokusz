@@ -1,3 +1,5 @@
+import 'package:bonfire/l10n/app_strings.dart';
+import 'package:bonfire/l10n/ui_copy.dart';
 import 'package:bonfire/features/authentication/views/auth_form.dart';
 import 'package:bonfire/theme/theme.dart';
 import 'package:flutter/material.dart';
@@ -31,13 +33,13 @@ class PasswordResetForm extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Text(
-          'Change your password',
+          UiCopy.changeYourPassword(context: context),
           textAlign: TextAlign.center,
           style: theme.textTheme.titleLarge,
         ),
         const SizedBox(height: 4),
         Text(
-          'The server requires a new password before you can continue',
+          UiCopy.theServerRequiresANewPasswordBefore(context: context),
           textAlign: TextAlign.center,
           style: const TextStyle(
             color: Color(0xFFC8C8C8),
@@ -48,21 +50,21 @@ class PasswordResetForm extends StatelessWidget {
         const SizedBox(height: 32),
         AuthField(
           controller: oldController,
-          label: 'Current password',
+          label: UiCopy.currentPassword(context: context),
           obscureText: true,
           enabled: enabled,
         ),
         const SizedBox(height: 12),
         AuthField(
           controller: newController,
-          label: 'New password',
+          label: UiCopy.newPassword(context: context),
           obscureText: true,
           enabled: enabled,
         ),
         const SizedBox(height: 12),
         AuthField(
           controller: confirmController,
-          label: 'Confirm new password',
+          label: UiCopy.confirmNewPassword(context: context),
           obscureText: true,
           enabled: enabled,
           onSubmitted: (_) => enabled ? onSubmit() : null,
@@ -70,7 +72,7 @@ class PasswordResetForm extends StatelessWidget {
         if (error != null) ...[
           const SizedBox(height: 16),
           Text(
-            error!,
+            AppStrings.label(error!, context: context),
             textAlign: TextAlign.center,
             style: theme.textTheme.bodyMedium!.copyWith(
               color: BonfireThemeExtension.of(context).red,
@@ -83,16 +85,21 @@ class PasswordResetForm extends StatelessWidget {
           child: ElevatedButton(
             onPressed: enabled ? onSubmit : null,
             style: ElevatedButton.styleFrom(
-              backgroundColor: BonfireThemeExtension.of(context).primary,
+              elevation: 0,
+              backgroundColor: BonfireThemeExtension.of(context).background,
+              foregroundColor: BonfireThemeExtension.of(context).dirtyWhite,
+              side: BorderSide(
+                color: BonfireThemeExtension.of(context).primary,
+              ),
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: BorderRadius.circular(4),
               ),
             ),
             child: enabled
                 ? Text(
-                    'Change Password',
+                    UiCopy.changePassword(context: context),
                     style: theme.textTheme.titleSmall!.copyWith(
-                      color: Colors.white,
+                      color: BonfireThemeExtension.of(context).dirtyWhite,
                     ),
                   )
                 : const SizedBox(
@@ -105,7 +112,10 @@ class PasswordResetForm extends StatelessWidget {
         const SizedBox(height: 8),
         TextButton(
           onPressed: enabled ? onCancel : null,
-          child: Text('Cancel', style: theme.textTheme.bodyMedium),
+          child: Text(
+            UiCopy.cancel(context: context),
+            style: theme.textTheme.bodyMedium,
+          ),
         ),
       ],
     );

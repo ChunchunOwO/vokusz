@@ -10,6 +10,8 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  flutter_localizations:
+    sdk: flutter
   flutter_web_plugins:
     sdk: flutter
 
@@ -108,6 +110,7 @@ dependencies:
   archive: ^3.6.1
   crop_your_image: ^2.0.0
   desktop_drop: ^0.7.1
+  image: ^4.3.0
 
 dependency_overrides:
   http: ^1.2.1
@@ -173,7 +176,6 @@ dependency_overrides:
 dev_dependencies:
   flutter_test:
     sdk: flutter
-  image: ^4.3.0
   # Drives the real widget tree on a real device for the UI end-to-end suite
   # (integration_test/, see its README). Not used by `flutter test`.
   integration_test:
@@ -192,7 +194,7 @@ flutter_launcher_icons:
   # a white circle and shrink it ("small logo on white"). The foreground is a
   # pre-padded copy of the mascot sized into the adaptive-icon safe zone.
   min_sdk_android: 21
-  adaptive_icon_background: "#FFFFFF"
+  adaptive_icon_background: "#6757E8"
   adaptive_icon_foreground: "assets/images/icon_foreground.png"
 
 flutter:

@@ -1,3 +1,5 @@
+import 'package:bonfire/l10n/app_strings.dart';
+import 'package:bonfire/l10n/ui_copy.dart';
 import 'package:bonfire/shared/app_info.dart';
 import 'package:bonfire/theme/theme.dart';
 import 'package:flutter/material.dart';
@@ -71,7 +73,7 @@ Future<void> showOnboardingHelpDialog(BuildContext context) => showDialog<void>(
     final colors = BonfireThemeExtension.of(dialogContext);
     return AlertDialog(
       icon: Icon(Icons.help_outline, color: colors.primary),
-      title: const Text('Help & support'),
+      title: Text(UiCopy.helpSupport(context: context)),
       content: SizedBox(
         width: 380,
         child: Column(
@@ -82,8 +84,10 @@ Future<void> showOnboardingHelpDialog(BuildContext context) => showDialog<void>(
               ListTile(
                 contentPadding: EdgeInsets.zero,
                 leading: Icon(link.icon, color: colors.primary),
-                title: Text(link.label),
-                subtitle: Text(link.description),
+                title: Text(AppStrings.label(link.label, context: context)),
+                subtitle: Text(
+                  AppStrings.label(link.description, context: context),
+                ),
                 trailing: const Icon(Icons.open_in_new, size: 16),
                 onTap: () => openOnboardingHelpUrl(link.url),
               ),
@@ -93,7 +97,7 @@ Future<void> showOnboardingHelpDialog(BuildContext context) => showDialog<void>(
       actions: [
         FilledButton(
           onPressed: () => Navigator.of(dialogContext).maybePop(),
-          child: const Text('Close'),
+          child: Text(UiCopy.close(context: context)),
         ),
       ],
     );

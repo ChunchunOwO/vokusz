@@ -1,3 +1,5 @@
+import 'package:bonfire/l10n/app_strings.dart';
+import 'package:bonfire/l10n/ui_copy.dart';
 import 'package:accordkit/accordkit.dart';
 import 'package:bonfire/theme/theme.dart';
 import 'package:flutter/material.dart';
@@ -48,7 +50,10 @@ class ModerationReportRow extends StatelessWidget {
           children: [
             Icon(Icons.flag_outlined, size: 16, color: colors.red),
             const SizedBox(width: 6),
-            Text(categoryLabel, style: theme.textTheme.titleSmall),
+            Text(
+              AppStrings.label(categoryLabel, context: context),
+              style: theme.textTheme.titleSmall,
+            ),
             const SizedBox(width: 6),
             Text(
               '· ${report.targetType}',
@@ -70,28 +75,28 @@ class ModerationReportRow extends StatelessWidget {
               TextButton.icon(
                 onPressed: busy ? null : () => onDeleteMessage(report),
                 icon: const Icon(Icons.delete_outline, size: 16),
-                label: const Text('Delete msg'),
+                label: Text(UiCopy.deleteMsg(context: context)),
               ),
             if (report.reportedUserId != null) ...[
               TextButton.icon(
                 onPressed: busy ? null : () => onKick(report),
                 icon: const Icon(Icons.exit_to_app, size: 16),
-                label: const Text('Kick'),
+                label: Text(UiCopy.kick(context: context)),
               ),
               TextButton.icon(
                 onPressed: busy ? null : () => onBan(report),
                 style: TextButton.styleFrom(foregroundColor: colors.red),
                 icon: const Icon(Icons.gavel, size: 16),
-                label: const Text('Ban'),
+                label: Text(UiCopy.ban(context: context)),
               ),
             ],
             TextButton(
               onPressed: busy ? null : () => onDismiss(report),
-              child: const Text('Dismiss'),
+              child: Text(UiCopy.dismiss(context: context)),
             ),
             FilledButton(
               onPressed: busy ? null : () => onResolve(report),
-              child: const Text('Resolve'),
+              child: Text(UiCopy.resolve(context: context)),
             ),
           ],
         ),

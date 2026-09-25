@@ -1,3 +1,4 @@
+import 'package:bonfire/l10n/ui_copy.dart';
 import 'dart:async';
 import 'package:bonfire/shared/components/async_state_views.dart';
 import 'package:bonfire/shared/components/load_more_footer.dart';
@@ -87,10 +88,10 @@ class _AuditLogDialogState extends ConsumerState<_AuditLogDialog>
   );
 
   @override
-  String loadError(RestResult result) => 'Failed to load audit log';
+  String loadError(RestResult result) => UiCopy.failedToLoadAuditLog();
 
   @override
-  String loadMoreError(RestResult result) => 'Failed to load more entries';
+  String loadMoreError(RestResult result) => UiCopy.failedToLoadMoreEntries();
 
   /// The endpoint returns raw JSON; entries may be a bare list or wrapped under
   /// `entries`/`audit_log_entries`.
@@ -110,15 +111,28 @@ class _AuditLogDialogState extends ConsumerState<_AuditLogDialog>
   }
 
   String _actionLabel(String actionType) =>
-      actionType.isEmpty ? 'Action' : titleCaseFromToken(actionType);
+      actionType.isEmpty ? UiCopy.action() : titleCaseFromToken(actionType);
 
   @override
   Widget build(BuildContext context) {
     final colors = BonfireThemeExtension.of(context);
     final theme = Theme.of(context);
-    final members = ref.watch(accordMembersControllerProvider(ref.readActiveServerKey() ?? '', widget.spaceId));
-    final users = ref.watch(accordUsersControllerProvider(ref.readActiveServerKey() ?? ''));
-    final ensureUser = ref.read(accordUsersControllerProvider(ref.readActiveServerKey() ?? '').notifier).ensure;
+    final members = ref.watch(
+      accordMembersControllerProvider(
+        ref.readActiveServerKey() ?? '',
+        widget.spaceId,
+      ),
+    );
+    final users = ref.watch(
+      accordUsersControllerProvider(ref.readActiveServerKey() ?? ''),
+    );
+    final ensureUser = ref
+        .read(
+          accordUsersControllerProvider(
+            ref.readActiveServerKey() ?? '',
+          ).notifier,
+        )
+        .ensure;
 
     // Distinct action types present, for the filter dropdown.
     final actionTypes = <String>{
@@ -154,10 +168,13 @@ class _AuditLogDialogState extends ConsumerState<_AuditLogDialog>
                 children: [
                   Icon(Icons.history, size: 18, color: colors.dirtyWhite),
                   const SizedBox(width: 8),
-                  Text('Audit log', style: theme.textTheme.titleMedium),
+                  Text(
+                    UiCopy.auditLog(context: context),
+                    style: theme.textTheme.titleMedium,
+                  ),
                   const Spacer(),
                   IconButton(
-                    tooltip: 'Refresh',
+                    tooltip: UiCopy.refresh(context: context),
                     onPressed: loading ? null : load,
                     icon: const Icon(Icons.refresh, size: 18),
                   ),
@@ -176,15 +193,15 @@ class _AuditLogDialogState extends ConsumerState<_AuditLogDialog>
                   Expanded(
                     child: DropdownButtonFormField<String?>(
                       initialValue: _actionFilter,
-                      decoration: const InputDecoration(
-                        labelText: 'Action',
+                      decoration: InputDecoration(
+                        labelText: UiCopy.action(context: context),
                         isDense: true,
                         border: OutlineInputBorder(),
                       ),
                       items: [
-                        const DropdownMenuItem(
+                        DropdownMenuItem(
                           value: null,
-                          child: Text('All actions'),
+                          child: Text(UiCopy.allActions(context: context)),
                         ),
                         for (final a in actionTypes)
                           DropdownMenuItem(
@@ -198,8 +215,8 @@ class _AuditLogDialogState extends ConsumerState<_AuditLogDialog>
                   const SizedBox(width: 12),
                   Expanded(
                     child: TextField(
-                      decoration: const InputDecoration(
-                        labelText: 'User',
+                      decoration: InputDecoration(
+                        labelText: UiCopy.user(context: context),
                         isDense: true,
                         prefixIcon: Icon(Icons.search, size: 18),
                         border: OutlineInputBorder(),
@@ -229,7 +246,7 @@ class _AuditLogDialogState extends ConsumerState<_AuditLogDialog>
                       padding: const EdgeInsets.all(32),
                       child: Center(
                         child: Text(
-                          'No matching entries',
+                          UiCopy.noMatchingEntries(context: context),
                           style: theme.textTheme.bodyMedium,
                         ),
                       ),

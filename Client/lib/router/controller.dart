@@ -1,6 +1,5 @@
 import 'package:bonfire/features/authentication/models/accord_auth_state.dart';
 import 'package:bonfire/features/authentication/repositories/accord_auth.dart';
-import 'package:bonfire/features/authentication/views/switcher.dart';
 import 'package:bonfire/theme/theme.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -44,11 +43,11 @@ String? redirectLoggedInToHome(BuildContext context, GoRouterState state) {
 /// Every signed-in destination is a *sibling* of the sign-in routes, never a
 /// child of them. Nesting them under `/` used to put the sign-in screen in the
 /// navigator stack underneath the whole app, which is what made `/settings`,
-/// `/admin`, and `/switcher` inherit `/`'s logged-in redirect (#179: Settings
+/// and `/admin` inherit `/`'s logged-in redirect (#179: Settings
 /// twitched open then closed) and what made Android's back swipe on the home
 /// screen pop down to sign-in (#125).
 ///
-/// Screens opened *from* the home screen (Settings, Switch account, Server
+/// Screens opened *from* the home screen (Settings, Server
 /// administration) are reached with `push`, so `/spaces` stays beneath them and
 /// their back affordance — system back, or the app bar's arrow via
 /// `context.canPop()` — returns there. `go` is for replacing the stack
@@ -84,10 +83,6 @@ final routerController = GoRouter(
             initialMode: AuthMode.register,
             startOnCredentials: true,
           ),
-        ),
-        GoRoute(
-          path: '/switcher',
-          builder: (context, state) => const AccountSwitcherScreen(),
         ),
         GoRoute(
           path: '/spaces',

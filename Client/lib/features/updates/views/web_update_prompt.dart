@@ -1,3 +1,4 @@
+import 'package:bonfire/l10n/ui_copy.dart';
 import 'dart:async';
 
 import 'package:bonfire/features/updates/services/web_update.dart';
@@ -48,13 +49,16 @@ class _WebUpdatePromptState extends State<WebUpdatePrompt> {
     if (!kIsWeb || !_available || _dismissed) return const SizedBox.shrink();
     return AppBanner(
       icon: Icons.refresh,
-      message: 'A new version is available — reload to update.',
+      message: UiCopy.aNewVersionIsAvailableReloadTo(context: context),
       onTap: applyWebUpdate,
       onDismiss: () => setState(() => _dismissed = true),
       actions: [
         TextButton(
           onPressed: applyWebUpdate,
-          child: const Text('Reload', style: TextStyle(color: Colors.white)),
+          child: Text(
+            UiCopy.reload(context: context),
+            style: TextStyle(color: Colors.white),
+          ),
         ),
       ],
     );

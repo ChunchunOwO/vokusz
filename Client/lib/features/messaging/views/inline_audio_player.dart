@@ -1,3 +1,4 @@
+import 'package:bonfire/l10n/ui_copy.dart';
 import 'dart:async';
 
 import 'package:audioplayers/audioplayers.dart';
@@ -8,7 +9,11 @@ import 'package:flutter/material.dart';
 /// A compact inline audio player for an audio attachment. The source is loaded
 /// lazily on first play; play/pause and a seek slider are exposed.
 class InlineAudioPlayer extends StatefulWidget {
-  const InlineAudioPlayer({super.key, required this.url, required this.filename});
+  const InlineAudioPlayer({
+    super.key,
+    required this.url,
+    required this.filename,
+  });
 
   final String url;
   final String filename;
@@ -37,23 +42,31 @@ class _InlineAudioPlayerState extends State<InlineAudioPlayer> {
   @override
   void initState() {
     super.initState();
-    _subs.add(_player.onPositionChanged.listen((p) {
-      if (mounted) setState(() => _position = p);
-    }));
-    _subs.add(_player.onDurationChanged.listen((d) {
-      if (mounted) setState(() => _duration = d);
-    }));
-    _subs.add(_player.onPlayerStateChanged.listen((s) {
-      if (mounted) setState(() => _playing = s == PlayerState.playing);
-    }));
-    _subs.add(_player.onPlayerComplete.listen((_) {
-      if (mounted) {
-        setState(() {
-          _playing = false;
-          _position = Duration.zero;
-        });
-      }
-    }));
+    _subs.add(
+      _player.onPositionChanged.listen((p) {
+        if (mounted) setState(() => _position = p);
+      }),
+    );
+    _subs.add(
+      _player.onDurationChanged.listen((d) {
+        if (mounted) setState(() => _duration = d);
+      }),
+    );
+    _subs.add(
+      _player.onPlayerStateChanged.listen((s) {
+        if (mounted) setState(() => _playing = s == PlayerState.playing);
+      }),
+    );
+    _subs.add(
+      _player.onPlayerComplete.listen((_) {
+        if (mounted) {
+          setState(() {
+            _playing = false;
+            _position = Duration.zero;
+          });
+        }
+      }),
+    );
   }
 
   @override
@@ -121,11 +134,13 @@ class _InlineAudioPlayerState extends State<InlineAudioPlayer> {
     ScaffoldMessenger.maybeOf(context)?.showSnackBar(
       SnackBar(
         content: Text(
-          reveal ? 'Saved to ${_folderOf(path!)}' : 'Saved ${widget.filename}',
+          reveal
+              ? UiCopy.savedTo(arg0: _folderOf(path!))
+              : 'Saved ${widget.filename}',
         ),
         action: reveal
             ? SnackBarAction(
-                label: 'Show in folder',
+                label: UiCopy.showInFolder(),
                 onPressed: () => revealDownloadedFile(path!),
               )
             : null,
@@ -137,7 +152,9 @@ class _InlineAudioPlayerState extends State<InlineAudioPlayer> {
   /// went without spilling the user's full home path into the UI.
   String _folderOf(String path) {
     final parts = path.split(RegExp(r'[/\\]'))..removeLast();
-    return parts.isEmpty || parts.last.isEmpty ? 'your downloads' : parts.last;
+    return parts.isEmpty || parts.last.isEmpty
+        ? UiCopy.yourDownloads()
+        : parts.last;
   }
 
   String _fmt(Duration d) {
@@ -172,8 +189,9 @@ class _InlineAudioPlayerState extends State<InlineAudioPlayer> {
                 child: Text(
                   widget.filename,
                   overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.bodySmall!
-                      .copyWith(color: colors.dirtyWhite),
+                  style: theme.textTheme.bodySmall!.copyWith(
+                    color: colors.dirtyWhite,
+                  ),
                 ),
               ),
             ],
@@ -190,22 +208,23 @@ class _InlineAudioPlayerState extends State<InlineAudioPlayer> {
               ),
               Expanded(
                 child: SliderTheme(
-                  data: SliderTheme.of(context)
-                      .copyWith(trackHeight: 2, overlayShape: SliderComponentShape.noOverlay),
+                  data: SliderTheme.of(context).copyWith(
+                    trackHeight: 2,
+                    overlayShape: SliderComponentShape.noOverlay,
+                  ),
                   child: Slider(
                     value: value,
                     max: maxMs == 0 ? 1 : maxMs.toDouble(),
                     onChanged: maxMs == 0
                         ? null
-                        : (v) => _player
-                            .seek(Duration(milliseconds: v.toInt())),
+                        : (v) =>
+                              _player.seek(Duration(milliseconds: v.toInt())),
                   ),
                 ),
               ),
               Text(
                 '${_fmt(_position)} / ${_fmt(_duration)}',
-                style:
-                    theme.textTheme.labelSmall!.copyWith(color: colors.gray),
+                style: theme.textTheme.labelSmall!.copyWith(color: colors.gray),
               ),
               const SizedBox(width: 2),
               // Sized to match the IconButton it swaps places with, so the row
@@ -229,7 +248,7 @@ class _InlineAudioPlayerState extends State<InlineAudioPlayer> {
                         iconSize: 18,
                         padding: EdgeInsets.zero,
                         splashRadius: 16,
-                        tooltip: 'Download',
+                        tooltip: UiCopy.download(context: context),
                         onPressed: _download,
                         icon: Icon(
                           Icons.download_outlined,

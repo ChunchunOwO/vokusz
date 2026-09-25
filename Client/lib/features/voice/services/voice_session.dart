@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:bonfire/features/voice/utils/voice_logic.dart';
+import 'package:bonfire/l10n/app_strings.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart' as rtc;
 import 'package:livekit_client/livekit_client.dart';
@@ -43,12 +44,17 @@ class VoiceSession {
   /// before giving up on the initial mic publish. Only ever waited on in the
   /// rare case the join-response listener hasn't finished when `connect`
   /// returns.
-  static const _localParticipantTimeout = Duration(seconds: 10);
 
   /// Output (remote-audio) gain as a 0–2 multiplier; applied to every remote
   /// audio track. The reference dropped to -80 dB for deafen; here LiveKit has
   /// no per-track volume so we lean on the WebRTC track volume.
   double _outputGain = 1;
+
+  /// Application-audio (accompaniment) published beside the microphone.
+  /// Bumped on every stop so an in-flight publish cannot land after a leave.
+  int _appAudioGen = 0;
+  rtc.MediaStream? _appAudioStream;
+  LocalTrackPublication<LocalAudioTrack>? _appAudioPub;
 
   /// Input (microphone) gain as a 0–2 multiplier; best-effort — not every
   /// platform honours setting volume on a capture track.
@@ -62,6 +68,12 @@ class VoiceSession {
   double _localInputLevel = 0;
   Timer? _levelTimer;
   bool _pollingLevel = false;
+
+  /// Latest 0–1 level per user id, sampled on this client. The local value is
+  /// the mic meter; remote values come from receiver stats on the same timer.
+  /// Replaced as a whole map so a reader never sees a half-updated sample.
+  Map<String, double> _audioLevels = const {};
+  final Map<String, (double, double)> _energy = {};
 
   /// Fires on high-frequency room churn (active-speaker / audio-level reports).
   /// The controller uses this only to refresh the speaking set, so it must stay
@@ -88,6 +100,23 @@ class VoiceSession {
 
   /// See [_micError].
   String? get micError => _micError;
+
+  /// Stores the fast-connect publish result on this session. [connect] calls
+  /// this with the room's outcome; tests call it with the same helper so a
+  /// failed publish is the real [micError], not a stand-in getter.
+  @visibleForTesting
+  void noteFastConnectMic({
+    required bool offeredMic,
+    required bool published,
+    Object? publishError,
+  }) {
+    final failure = fastConnectMicFailure(
+      offeredMic: offeredMic,
+      published: published,
+      publishError: publishError,
+    );
+    if (failure != null) _micError = failure;
+  }
 
   LocalParticipant? get localParticipant => _room?.localParticipant;
 
@@ -147,6 +176,9 @@ class VoiceSession {
   /// their own input being picked up. Zero while silent/muted.
   double get localAudioLevel => _localInputLevel;
 
+  /// Levels from [_pollInputLevel], keyed by participant identity (the user id).
+  Map<String, double> get audioLevels => _audioLevels;
+
   /// Whether the local mic is currently over LiveKit's own speaking threshold
   /// (server active-speaker report). The meter prefers a locally-computed
   /// threshold comparison for responsiveness; this is the fallback.
@@ -171,6 +203,7 @@ class VoiceSession {
     String? audioOutputDeviceId,
     int outputVolume = 100,
     int inputVolume = 100,
+    LocalAudioTrack? preparedMic,
   }) async {
     _deafened = selfDeaf;
     _outputGain = voiceGain(outputVolume);
@@ -209,11 +242,14 @@ class VoiceSession {
     // `localParticipant?.setMicrophoneEnabled` inside an error-swallowing
     // guard, and when that did nothing the first `mute` was a no-op and the
     // `unmute` created the track — and prompted — for the first time (#325).
-    LocalAudioTrack? micTrack;
-    if (!selfMute) {
+    LocalAudioTrack? micTrack = preparedMic;
+    if (micTrack == null && !selfMute) {
       try {
         micTrack = await LocalAudioTrack.create(
-          AudioCaptureOptions(deviceId: captureDeviceId),
+          AudioCaptureOptions(
+            deviceId: captureDeviceId,
+            stopAudioCaptureOnMute: false,
+          ),
         );
       } catch (e) {
         _micError = describeMicFailure(e);
@@ -221,26 +257,36 @@ class VoiceSession {
       }
     }
 
+    final publishing = micTrack;
+    micTrack = null;
     try {
       await room.connect(
         url,
         token,
         connectOptions: voiceConnectOptions(relayOnly),
+        fastConnectOptions: publishing == null
+            ? null
+            : FastConnectOptions(microphone: TrackOption(track: publishing)),
+      );
+      // Fast-connect publish runs in the join handler. [Room.connect] now waits
+      // for that handler, then exposes its error. Record it before we tell the
+      // controller the session is up.
+      noteFastConnectMic(
+        offeredMic: publishing != null,
+        published:
+            room.localParticipant?.audioTrackPublications.isNotEmpty ?? false,
+        publishError: room.fastConnectMicError,
       );
       // The new connection is live — genuine drops from here are unintentional.
       _intentionalDisconnect = false;
-      if (micTrack != null) {
-        // Ownership moves to the publication (or is released on failure).
-        final track = micTrack;
-        micTrack = null;
-        await _publishMic(room, track);
-      }
-      if (selfDeaf) await _applyDeafen(true);
-      await _applyOutputDevice(audioOutputDeviceId);
-      await _applyOutputGain();
-      await _applyInputGain();
       _startLevelPolling();
       _setState(VoiceSessionState.connected);
+      unawaited(
+        _finishAudio(
+          selfDeaf: selfDeaf,
+          audioOutputDeviceId: audioOutputDeviceId,
+        ),
+      );
     } catch (e) {
       _lastError = relayOnly
           ? 'Relay-only voice could not connect. The server needs a reachable '
@@ -249,48 +295,40 @@ class VoiceSession {
           : '$e';
       debugPrint('LiveKit connect failed: $e');
       _setState(VoiceSessionState.failed);
-      await _releaseTrack(micTrack);
+      await _releaseTrack(publishing);
       // Soft cleanup — keep the Room so the next attempt can reuse it.
       await _softDisconnect();
     }
   }
 
-  /// Publishes the pre-captured microphone [track]. Unlike the other media
-  /// toggles this is *not* fire-and-forget: a failure is recorded in
-  /// [micError] (and the track released) so the controller can show it.
-  Future<void> _publishMic(Room room, LocalAudioTrack track) async {
-    try {
-      final participant = await _awaitLocalParticipant(room);
-      await participant.publishAudioTrack(track);
-    } catch (e) {
-      _micError = describeMicFailure(e);
-      debugPrint('LiveKit mic publish failed: $e');
-      await _releaseTrack(track);
-    }
+  /// Device routing and deafen happen after the room is up so the join
+  /// button does not wait on them.
+  Future<void> _finishAudio({
+    required bool selfDeaf,
+    required String? audioOutputDeviceId,
+  }) async {
+    if (selfDeaf) await _applyDeafen(true);
+    await Future.wait([
+      _applyOutputDevice(audioOutputDeviceId),
+      _applyOutputGain(),
+      _applyInputGain(),
+    ]);
   }
 
-  /// `Room.connect` resolves on the engine's join/ICE events, while the local
-  /// participant is created by an async listener on that same join response
-  /// and is only guaranteed once `RoomConnectedEvent` fires. Normally it exists
-  /// by the time `connect` returns; if not, wait for it rather than silently
-  /// skipping the publish.
-  Future<LocalParticipant> _awaitLocalParticipant(Room room) async {
-    final existing = room.localParticipant;
-    if (existing != null) return existing;
-    final listener = _listener;
-    if (listener != null) {
-      await listener.waitFor<RoomConnectedEvent>(
-        duration: _localParticipantTimeout,
-        onTimeout: () => throw TrackPublishException(
-          'Timed out waiting for the room to finish connecting',
-        ),
+  /// Drops a microphone track that never made it into the room.
+  Future<void> releaseMic(LocalAudioTrack? track) => _releaseTrack(track);
+
+  /// Opens the microphone while the join token is still in flight.
+  Future<LocalAudioTrack?> captureMic(String? deviceId) async {
+    try {
+      return await LocalAudioTrack.create(
+        AudioCaptureOptions(deviceId: normalizeDeviceId(deviceId)),
       );
+    } catch (e) {
+      _micError = describeMicFailure(e);
+      debugPrint('LiveKit mic capture failed: $e');
+      return null;
     }
-    final participant = room.localParticipant;
-    if (participant == null) {
-      throw TrackPublishException('Room connected without a local participant');
-    }
-    return participant;
   }
 
   /// Stops and disposes a local track we created but never published.
@@ -308,7 +346,13 @@ class VoiceSession {
   Room _ensureRoom() {
     var room = _room;
     if (room != null) return room;
-    room = Room();
+    room = Room(
+      roomOptions: const RoomOptions(
+        defaultAudioCaptureOptions: AudioCaptureOptions(
+          stopAudioCaptureOnMute: false,
+        ),
+      ),
+    );
     _room = room;
     room.addListener(_onRoomChanged);
     final listener = room.createListener();
@@ -322,17 +366,30 @@ class VoiceSession {
   /// an already-gone track throws "No active stream to cancel" on some
   /// platforms, which must not abort the disconnect.
   Future<void> _stopLocalMedia() async {
+    await stopAccompaniment();
     final participant = _room?.localParticipant;
     if (participant == null) return;
-    await _guardMedia(
-      'stop screen share',
-      () => participant.setScreenShareEnabled(false),
-    );
-    await _guardMedia('stop camera', () => participant.setCameraEnabled(false));
-    await _guardMedia(
-      'stop mic',
-      () => participant.setMicrophoneEnabled(false),
-    );
+    final pubs = participant.trackPublications.values;
+    bool has(TrackSource source) => pubs.any((pub) => pub.source == source);
+    if (has(TrackSource.screenShareVideo) ||
+        has(TrackSource.screenShareAudio)) {
+      await _guardMedia(
+        'stop screen share',
+        () => participant.setScreenShareEnabled(false),
+      );
+    }
+    if (has(TrackSource.camera)) {
+      await _guardMedia(
+        'stop camera',
+        () => participant.setCameraEnabled(false),
+      );
+    }
+    if (has(TrackSource.microphone)) {
+      await _guardMedia(
+        'stop mic',
+        () => participant.setMicrophoneEnabled(false),
+      );
+    }
   }
 
   /// Drops the live connection but keeps the [Room] object alive for reuse.
@@ -353,6 +410,124 @@ class VoiceSession {
   /// auto-reconnect). The Room is only fully released in [dispose].
   Future<void> disconnect() => _softDisconnect();
 
+  /// Publishes [stream]'s audio into the room as accompaniment. The stream is
+  /// the Windows application loopback opened by `getDisplayMedia`. Returns a
+  /// user-facing error, or null on success.
+  Future<String?> publishAccompaniment(
+    rtc.MediaStream stream, {
+    required double volume,
+  }) async {
+    final gen = ++_appAudioGen;
+    await _releaseAppAudio(stopCapture: false);
+    if (gen != _appAudioGen) return null;
+    final participant = _room?.localParticipant;
+    final tracks = stream.getAudioTracks();
+    if (participant == null) {
+      return AppStrings.choose(
+        'Join a voice channel before starting accompaniment',
+        '请先加入语音频道再开始伴奏',
+      );
+    }
+    if (tracks.isEmpty) {
+      return AppStrings.choose(
+        'This application is not producing audio that can be captured',
+        '无法捕获这个应用的声音',
+      );
+    }
+    final rtcTrack = tracks.first;
+    _appAudioStream = stream;
+    try {
+      await rtc.Helper.setVolume(volume, rtcTrack);
+      final track = LocalAudioTrack.fromStream(
+        stream,
+        rtcTrack,
+        // The room token allows microphone audio. An unknown source is
+        // rejected, and the publish waits until it times out.
+        source: TrackSource.microphone,
+        options: const AudioCaptureOptions(
+          echoCancellation: false,
+          noiseSuppression: false,
+          autoGainControl: false,
+          voiceIsolation: false,
+          typingNoiseDetection: false,
+        ),
+      );
+      final pub = await participant.publishAudioTrack(
+        track,
+        publishOptions: const AudioPublishOptions(
+          name: 'accompaniment',
+          dtx: false,
+        ),
+      );
+      if (gen != _appAudioGen) {
+        await _guardMedia(
+          'drop accompaniment',
+          () => participant.removePublishedTrack(pub.sid),
+        );
+        return null;
+      }
+      _appAudioPub = pub;
+      await rtc.Helper.setVolume(volume, rtcTrack);
+      return null;
+    } catch (e) {
+      debugPrint('Accompaniment publish failed: $e');
+      if (gen == _appAudioGen) await _releaseAppAudio(stopCapture: true);
+      return '$e';
+    }
+  }
+
+  Future<void> setAccompanimentVolume(double volume) async {
+    final stream = _appAudioStream;
+    if (stream == null) return;
+    final tracks = stream.getAudioTracks();
+    if (tracks.isEmpty) return;
+    try {
+      await rtc.Helper.setVolume(volume, tracks.first);
+    } catch (e) {
+      debugPrint('Accompaniment volume failed: $e');
+    }
+  }
+
+  /// Stops application-audio capture and unpublishes it. Safe to call when
+  /// nothing is playing.
+  Future<void> stopAccompaniment() async {
+    final active = _appAudioPub != null || _appAudioStream != null;
+    _appAudioGen++;
+    if (!active) return;
+    await _releaseAppAudio(stopCapture: true);
+  }
+
+  Future<void> _releaseAppAudio({required bool stopCapture}) async {
+    final pub = _appAudioPub;
+    final stream = _appAudioStream;
+    _appAudioPub = null;
+    _appAudioStream = null;
+    final participant = _room?.localParticipant;
+    if (pub != null && participant != null && pub.sid.isNotEmpty) {
+      await _guardMedia(
+        'stop accompaniment',
+        () => participant.removePublishedTrack(pub.sid),
+      );
+    }
+    if (stream != null) {
+      for (final track in stream.getAudioTracks()) {
+        await _guardMedia('stop accompaniment track', track.stop);
+      }
+    }
+    if (stopCapture &&
+        !kIsWeb &&
+        defaultTargetPlatform == TargetPlatform.windows) {
+      try {
+        await rtc.navigator.mediaDevices.getDisplayMedia(<String, dynamic>{
+          'video': false,
+          'audio': false,
+        });
+      } catch (e) {
+        debugPrint('Accompaniment capture stop failed: $e');
+      }
+    }
+  }
+
   /// Mutes or unmutes the microphone. An unmute with no published mic (the
   /// initial capture failed, or we joined muted) creates and publishes the
   /// track — on mobile that is where the OS permission prompt appears if it
@@ -362,11 +537,17 @@ class VoiceSession {
   /// reason an *unmute* failed (permission denied, no capture device) so the
   /// controller can revert to muted and say why. Muting never fails: stopping a
   /// track the OS already tore down is harmless.
-  Future<String?> setMicEnabled(bool enabled) async {
+  Future<String?> setMicEnabled(bool enabled, {String? deviceId}) async {
     final participant = _room?.localParticipant;
     if (participant == null) return null;
     try {
-      await participant.setMicrophoneEnabled(enabled);
+      await participant.setMicrophoneEnabled(
+        enabled,
+        audioCaptureOptions: AudioCaptureOptions(
+          deviceId: normalizeDeviceId(deviceId),
+          stopAudioCaptureOnMute: false,
+        ),
+      );
       if (enabled) {
         _micError = null;
         // Unmuting restarts the capture track, which drops the applied gain.
@@ -391,7 +572,7 @@ class VoiceSession {
   /// Enables (or disables) the camera. When enabling, [width]/[height]/[fps]/
   /// [bitrate] shape the capture via [CameraCaptureOptions] so the configured
   /// video-quality settings take effect, and [deviceId] selects the camera.
-  Future<void> setCameraEnabled(
+  Future<bool> setCameraEnabled(
     bool enabled, {
     int? width,
     int? height,
@@ -419,6 +600,13 @@ class VoiceSession {
         cameraCaptureOptions: options,
       ),
     );
+    if (!enabled) return true;
+    final participant = _room?.localParticipant;
+    if (participant == null) return false;
+    for (final pub in participant.videoTrackPublications) {
+      if (pub.source == TrackSource.camera && pub.track != null) return true;
+    }
+    return false;
   }
 
   /// Enables (or disables) screen sharing. When enabling, [sourceId] selects a
@@ -444,6 +632,7 @@ class VoiceSession {
     int? fps,
     int? bitrate,
     bool motionPriority = true,
+    bool shareSystemAudio = false,
   }) async {
     final participant = _room?.localParticipant;
     if (participant == null) return;
@@ -457,7 +646,7 @@ class VoiceSession {
     }
 
     // No more hardcoded 15 fps fallback: an unspecified size/rate means the
-    // screen-share defaults (720p60), not a slideshow.
+    // screen-share defaults (720p30).
     final resolvedFps = fps ?? defaultScreenShareFps;
     final resolvedBitrate = bitrate ?? defaultScreenShareBitrate;
     final dimensions = (width != null && height != null)
@@ -469,18 +658,18 @@ class VoiceSession {
     );
     final options = ScreenShareCaptureOptions(
       sourceId: (sourceId != null && sourceId.isNotEmpty) ? sourceId : null,
+      captureScreenAudio: shareSystemAudio,
       maxFrameRate: resolvedFps.toDouble(),
       params: VideoParameters(dimensions: dimensions, encoding: encoding),
     );
 
-    await _guardMedia(
-      'screen share',
-      () => _publishScreenShare(
-        participant,
-        options: options,
-        encoding: encoding,
-        motionPriority: motionPriority,
-      ),
+    // A failed native capture must not advertise a running share. The picker
+    // displays the error; the controller updates selfStream only after success.
+    await _publishScreenShare(
+      participant,
+      options: options,
+      encoding: encoding,
+      motionPriority: motionPriority,
     );
   }
 
@@ -516,6 +705,7 @@ class VoiceSession {
     if (existing != null || isIOS) {
       await participant.setScreenShareEnabled(
         true,
+        captureScreenAudio: options.captureScreenAudio,
         screenShareCaptureOptions: options,
       );
       await _applyScreenShareDegradation(participant, degradation);
@@ -523,17 +713,59 @@ class VoiceSession {
     }
 
     final track = await LocalVideoTrack.createScreenShareTrack(options);
-    await participant.publishVideoTrack(
-      track,
-      publishOptions: VideoPublishOptions(
-        screenShareEncoding: encoding,
-        // One layer, all of the budget. Simulcast would split the bitrate
-        // across a half-resolution duplicate and double the encode cost — a
-        // bad trade when the whole point is sustaining 60 fps at full detail.
-        simulcast: false,
-        degradationPreference: degradation,
+    try {
+      await participant.publishVideoTrack(
+        track,
+        publishOptions: VideoPublishOptions(
+          screenShareEncoding: encoding,
+          // One layer, all of the budget. Simulcast would split the bitrate
+          // across a half-resolution duplicate and double the encode cost — a
+          // bad trade when the whole point is sustaining 60 fps at full detail.
+          simulcast: false,
+          degradationPreference: degradation,
+        ),
+      );
+      await _publishScreenShareAudio(participant, track, options);
+    } catch (_) {
+      await _releaseTrack(track);
+      rethrow;
+    }
+  }
+
+  /// Sends the system-audio track that arrived on the same capture stream.
+  /// A missing track (the platform has no loopback) leaves the picture up.
+  Future<void> _publishScreenShareAudio(
+    LocalParticipant participant,
+    LocalVideoTrack video,
+    ScreenShareCaptureOptions options,
+  ) async {
+    if (!options.captureScreenAudio) return;
+    final audioTracks = video.mediaStream.getAudioTracks();
+    if (audioTracks.isEmpty) return;
+    final audio = LocalAudioTrack.fromStream(
+      video.mediaStream,
+      audioTracks.first,
+      source: TrackSource.screenShareAudio,
+      options: const AudioCaptureOptions(
+        echoCancellation: false,
+        noiseSuppression: false,
+        autoGainControl: false,
+        voiceIsolation: false,
+        typingNoiseDetection: false,
       ),
     );
+    try {
+      await participant.publishAudioTrack(
+        audio,
+        publishOptions: const AudioPublishOptions(
+          name: 'screen_share_audio',
+          dtx: false,
+        ),
+      );
+    } catch (error) {
+      debugPrint('Screen-share audio publish failed: $error');
+      await _releaseTrack(audio);
+    }
   }
 
   /// Applies [preference] to the published screen-share sender, for the paths
@@ -564,6 +796,7 @@ class VoiceSession {
         wasEnabled,
         audioCaptureOptions: AudioCaptureOptions(
           deviceId: normalizeDeviceId(deviceId),
+          stopAudioCaptureOnMute: false,
         ),
       );
       await _applyInputGain();
@@ -616,12 +849,12 @@ class VoiceSession {
     }
   }
 
-  /// Polls the local mic track's WebRTC stats so [localAudioLevel] tracks input
+  /// Polls WebRTC stats so [localAudioLevel] and [audioLevels] track input
   /// continuously, independent of the throttled server speaker reports.
   void _startLevelPolling() {
     _levelTimer?.cancel();
     _levelTimer = Timer.periodic(
-      const Duration(milliseconds: 100),
+      const Duration(milliseconds: 50),
       (_) => _pollInputLevel(),
     );
   }
@@ -630,32 +863,119 @@ class VoiceSession {
     _levelTimer?.cancel();
     _levelTimer = null;
     _localInputLevel = 0;
+    _audioLevels = const {};
+    _energy.clear();
   }
 
   Future<void> _pollInputLevel() async {
     if (_pollingLevel) return; // a previous getStats call is still in flight
     _pollingLevel = true;
     try {
-      final track = _localMicTrack;
-      if (track is LocalAudioTrack) {
-        final stats = await track.getSenderStats();
-        _localInputLevel = (stats?.audioSourceStats?.audioLevel ?? 0)
-            .toDouble();
-      } else {
-        _localInputLevel = 0; // muted/unpublished — nothing to measure
+      final room = _room;
+      final next = <String, double>{};
+      final localId = room?.localParticipant?.identity ?? '';
+      try {
+        final track = _localMicTrack;
+        if (track is LocalAudioTrack) {
+          final stats = await track.getSenderStats();
+          _localInputLevel = (stats?.audioSourceStats?.audioLevel ?? 0)
+              .toDouble()
+              .clamp(0.0, 1.0);
+        } else {
+          _localInputLevel = 0; // muted/unpublished — nothing to measure
+        }
+      } catch (_) {
+        // Transient stats failures shouldn't disturb the meter.
       }
-    } catch (_) {
-      // Transient stats failures shouldn't disturb the meter.
+      if (localId.isNotEmpty) next[localId] = _localInputLevel;
+      if (room != null) {
+        final remotes = room.remoteParticipants.values.toList();
+        await Future.wait([
+          for (final participant in remotes) _sampleRemote(participant, next),
+        ]);
+        final live = {
+          if (localId.isNotEmpty) localId,
+          for (final participant in remotes)
+            if (participant.identity.isNotEmpty) participant.identity,
+        };
+        _energy.removeWhere((id, _) => !live.contains(id));
+      }
+      if (identical(_room, room)) {
+        _audioLevels = next;
+        onChanged?.call();
+      }
     } finally {
       _pollingLevel = false;
     }
+  }
+
+  Future<void> _sampleRemote(
+    RemoteParticipant participant,
+    Map<String, double> levels,
+  ) async {
+    final id = participant.identity;
+    if (id.isEmpty) return;
+    RemoteAudioTrack? mic;
+    for (final pub in participant.audioTrackPublications) {
+      if (pub.source != TrackSource.microphone || pub.name == 'accompaniment') {
+        continue;
+      }
+      if (pub.muted) continue;
+      final track = pub.track;
+      if (track is RemoteAudioTrack) {
+        mic = track;
+        break;
+      }
+    }
+    if (mic == null) {
+      levels[id] = 0;
+      return;
+    }
+    try {
+      final level = await _receiverLevel(id, mic);
+      if (level != null) levels[id] = level;
+    } catch (_) {
+      // Keep this person out of the map so the UI can fall back for one tick.
+    }
+  }
+
+  Future<double?> _receiverLevel(String id, RemoteAudioTrack track) async {
+    final receiver = track.receiver;
+    if (receiver == null) return null;
+    final reports = await receiver.getStats();
+    double? reported;
+    double? energy;
+    double? duration;
+    for (final report in reports) {
+      final values = report.values;
+      reported ??= _statNum(values['audioLevel']);
+      energy ??= _statNum(values['totalAudioEnergy']);
+      duration ??= _statNum(values['totalSamplesDuration']);
+    }
+    final previous = _energy[id];
+    if (energy != null && duration != null) {
+      _energy[id] = (energy, duration);
+    }
+    return liveAudioLevel(
+      reported: reported,
+      energy: energy,
+      duration: duration,
+      previousEnergy: previous?.$1,
+      previousDuration: previous?.$2,
+    );
+  }
+
+  double? _statNum(Object? value) {
+    if (value is num) return value.toDouble();
+    if (value is String) return double.tryParse(value);
+    return null;
   }
 
   AudioTrack? get _localMicTrack {
     final participant = _room?.localParticipant;
     if (participant == null) return null;
     for (final pub in participant.audioTrackPublications) {
-      if (pub.source == TrackSource.microphone) {
+      if (pub.source == TrackSource.microphone && pub.name != 'accompaniment') {
         final track = pub.track;
         if (track is AudioTrack) return track;
       }

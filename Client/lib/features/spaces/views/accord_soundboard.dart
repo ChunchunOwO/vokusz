@@ -1,3 +1,4 @@
+import 'package:bonfire/l10n/ui_copy.dart';
 import 'package:accordkit/accordkit.dart';
 import 'package:bonfire/shared/components/async_state_views.dart';
 import 'package:bonfire/shared/utils/client_access.dart';
@@ -62,7 +63,7 @@ class _SoundboardDialogState extends ConsumerState<_SoundboardDialog>
     if (client == null || id == null) return;
     final result = await client.soundboard.play(widget.spaceId, id);
     if (!mounted || result.ok) return;
-    setState(() => error = 'Failed to play (join a voice channel first)');
+    setState(() => error = UiCopy.failedToPlayJoinAVoiceChannel());
   }
 
   Future<void> _add() async {
@@ -89,7 +90,7 @@ class _SoundboardDialogState extends ConsumerState<_SoundboardDialog>
     if (result.ok) {
       await load();
     } else {
-      setState(() => error = 'Failed to add sound');
+      setState(() => error = UiCopy.failedToAddSound());
     }
   }
 
@@ -99,7 +100,7 @@ class _SoundboardDialogState extends ConsumerState<_SoundboardDialog>
     if (id == null || client == null) return;
     final name = (await showTextPromptDialog(
       context,
-      title: 'Rename sound',
+      title: UiCopy.renameSound(),
       initial: sound.name,
     ))?.trim();
     if (name == null || name.isEmpty || name == sound.name || !mounted) return;
@@ -110,7 +111,7 @@ class _SoundboardDialogState extends ConsumerState<_SoundboardDialog>
     if (result.ok) {
       setState(() => sound.name = name);
     } else {
-      setState(() => error = 'Failed to rename sound');
+      setState(() => error = UiCopy.failedToRenameSound());
     }
   }
 
@@ -130,7 +131,7 @@ class _SoundboardDialogState extends ConsumerState<_SoundboardDialog>
     if (result.ok) {
       setState(() => sound.volume = volume);
     } else {
-      setState(() => error = 'Failed to set volume');
+      setState(() => error = UiCopy.failedToSetVolume());
     }
   }
 
@@ -150,7 +151,7 @@ class _SoundboardDialogState extends ConsumerState<_SoundboardDialog>
         () => items = (items ?? const []).where((s) => s.id != id).toList(),
       );
     } else {
-      setState(() => error = 'Failed to remove sound');
+      setState(() => error = UiCopy.failedToRemoveSound());
     }
   }
 
@@ -161,7 +162,7 @@ class _SoundboardDialogState extends ConsumerState<_SoundboardDialog>
     final sounds = items;
     return Dialog(
       backgroundColor: colors.foreground,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
       child: ConstrainedBox(
         constraints: dialogConstraints(context, maxWidth: 480, maxHeight: 520),
         child: Padding(
@@ -176,18 +177,18 @@ class _SoundboardDialogState extends ConsumerState<_SoundboardDialog>
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      'Soundboard',
+                      UiCopy.soundboard(context: context),
                       style: theme.textTheme.titleMedium,
                     ),
                   ),
                   if (widget.canManage)
                     IconButton(
-                      tooltip: 'Add sound',
+                      tooltip: UiCopy.addSound(context: context),
                       onPressed: _busy ? null : _add,
                       icon: Icon(Icons.add, size: 20, color: colors.dirtyWhite),
                     ),
                   IconButton(
-                    tooltip: 'Close',
+                    tooltip: UiCopy.close(context: context),
                     onPressed: () => Navigator.of(context).pop(),
                     icon: Icon(Icons.close, size: 20, color: colors.gray),
                   ),
@@ -209,9 +210,9 @@ class _SoundboardDialogState extends ConsumerState<_SoundboardDialog>
                         size: 18,
                         color: colors.gray,
                       ),
-                      hintText: 'Search sounds',
+                      hintText: UiCopy.searchSounds(context: context),
                       border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(8),
+                        borderRadius: BorderRadius.circular(4),
                         borderSide: BorderSide.none,
                       ),
                     ),
@@ -233,7 +234,7 @@ class _SoundboardDialogState extends ConsumerState<_SoundboardDialog>
                           if (sounds.isEmpty) {
                             return Center(
                               child: Text(
-                                'No sounds yet',
+                                UiCopy.noSoundsYet(context: context),
                                 style: theme.textTheme.bodyMedium,
                               ),
                             );
@@ -241,7 +242,7 @@ class _SoundboardDialogState extends ConsumerState<_SoundboardDialog>
                           if (filtered.isEmpty) {
                             return Center(
                               child: Text(
-                                'No matches',
+                                UiCopy.noMatches(context: context),
                                 style: theme.textTheme.bodyMedium,
                               ),
                             );
@@ -302,9 +303,9 @@ class _SoundTile extends StatelessWidget {
     final colors = BonfireThemeExtension.of(context);
     return Material(
       color: colors.darkGray,
-      borderRadius: BorderRadius.circular(10),
+      borderRadius: BorderRadius.circular(4),
       child: InkWell(
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(4),
         onTap: onPlay,
         child: Stack(
           children: [
@@ -333,7 +334,7 @@ class _SoundTile extends StatelessWidget {
                 right: 0,
                 child: PopupMenuButton<String>(
                   iconSize: 16,
-                  tooltip: 'Manage',
+                  tooltip: UiCopy.manage(context: context),
                   padding: EdgeInsets.zero,
                   icon: Icon(Icons.more_vert, color: colors.gray),
                   onSelected: (v) {
@@ -346,10 +347,19 @@ class _SoundTile extends StatelessWidget {
                         onDelete();
                     }
                   },
-                  itemBuilder: (_) => const [
-                    PopupMenuItem(value: 'rename', child: Text('Rename')),
-                    PopupMenuItem(value: 'volume', child: Text('Volume')),
-                    PopupMenuItem(value: 'delete', child: Text('Remove')),
+                  itemBuilder: (_) => [
+                    PopupMenuItem(
+                      value: 'rename',
+                      child: Text(UiCopy.rename(context: context)),
+                    ),
+                    PopupMenuItem(
+                      value: 'volume',
+                      child: Text(UiCopy.volume(context: context)),
+                    ),
+                    PopupMenuItem(
+                      value: 'delete',
+                      child: Text(UiCopy.remove(context: context)),
+                    ),
                   ],
                 ),
               ),
@@ -377,7 +387,7 @@ class _VolumeDialogState extends State<_VolumeDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('Sound volume'),
+      title: Text(UiCopy.soundVolume(context: context)),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -394,11 +404,11 @@ class _VolumeDialogState extends State<_VolumeDialog> {
       actions: [
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
+          child: Text(UiCopy.cancel(context: context)),
         ),
         FilledButton(
           onPressed: () => Navigator.of(context).pop(_value),
-          child: const Text('Save'),
+          child: Text(UiCopy.save(context: context)),
         ),
       ],
     );

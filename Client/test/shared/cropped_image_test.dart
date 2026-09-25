@@ -65,6 +65,21 @@ void main() {
     },
   );
 
+  test('banner upload is a jpeg small enough to save', () async {
+    final source = img.Image(width: 1600, height: 900);
+    img.fill(source, color: img.ColorRgb8(20, 80, 160));
+    final png = await prepareCroppedImage(
+      Uint8List.fromList(img.encodePng(source)),
+      maxDimension: 1024,
+    );
+    final jpeg = encodeBannerJpeg(png);
+    expect(looksLikeJpeg(jpeg), isTrue);
+    expect(jpeg.length, lessThan(300 * 1024));
+    final decoded = img.decodeJpg(jpeg)!;
+    expect(decoded.width, 1024);
+    expect(decoded.height, 576);
+  });
+
   test('small images are not enlarged', () async {
     final source = img.Image(width: 32, height: 18);
     final bytes = await prepareCroppedImage(

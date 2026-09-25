@@ -8,6 +8,7 @@ import 'package:bonfire/features/settings/controllers/settings.dart';
 import 'package:bonfire/features/spaces/controllers/spaces.dart';
 import 'package:bonfire/features/spaces/views/accord_soundboard.dart';
 import 'package:bonfire/features/voice/controllers/voice.dart';
+import 'package:bonfire/l10n/app_strings.dart';
 import 'package:bonfire/features/voice/services/voice_session.dart';
 import 'package:bonfire/features/voice/views/mic_level_meter.dart';
 import 'package:bonfire/features/voice/views/screen_share_picker.dart';
@@ -63,7 +64,12 @@ class _VoiceBarState extends ConsumerState<VoiceBar> {
     final channelName = voice.spaceId == null
         ? null
         : ref
-              .watch(accordChannelsControllerProvider(ref.readActiveServerKey() ?? '', voice.spaceId!))
+              .watch(
+                accordChannelsControllerProvider(
+                  voice.serverKey ?? ref.readActiveServerKey() ?? '',
+                  voice.spaceId!,
+                ),
+              )
               ?.firstWhereOrNull((c) => c.id == voice.channelId)
               ?.name;
 
@@ -89,8 +95,11 @@ class _VoiceBarState extends ConsumerState<VoiceBar> {
 
     final (statusText, statusColor) = _status(voice, colors, channelName);
 
-    return Material(
-      color: colors.darkGray,
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: colors.background,
+        border: Border(top: BorderSide(color: colors.darkGray)),
+      ),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(10, 6, 6, 6),
         child: Column(
@@ -128,16 +137,23 @@ class _VoiceBarState extends ConsumerState<VoiceBar> {
             Row(
               children: [
                 _VoiceButton(
-                  icon: voice.selfMute ? Icons.mic_off : Icons.mic,
-                  tooltip: voice.selfMute ? 'Unmute' : 'Mute',
-                  active: voice.selfMute,
+                  icon: _micIcon(ref, voice.selfMute),
+                  tooltip: _micTooltip(context, ref, voice.selfMute),
+                  active: _micActive(ref, voice.selfMute),
                   activeColor: colors.red,
-                  onPressed: () =>
-                      ref.read(voiceControllerProvider.notifier).toggleMute(),
+                  onPressed: () {
+                    if (ref.read(settingsControllerProvider).voicePushToTalk) {
+                      return;
+                    }
+                    ref.read(voiceControllerProvider.notifier).toggleMute();
+                  },
+                  onSecondaryPressed: () => _toggleTalkMode(ref),
                 ),
                 _VoiceButton(
                   icon: voice.selfDeaf ? Icons.headset_off : Icons.headset,
-                  tooltip: voice.selfDeaf ? 'Undeafen' : 'Deafen',
+                  tooltip: voice.selfDeaf
+                      ? AppStrings.of(context).undeafen
+                      : AppStrings.of(context).deafen,
                   active: voice.selfDeaf,
                   activeColor: colors.red,
                   onPressed: () =>
@@ -145,7 +161,9 @@ class _VoiceBarState extends ConsumerState<VoiceBar> {
                 ),
                 _VoiceButton(
                   icon: voice.selfVideo ? Icons.videocam_off : Icons.videocam,
-                  tooltip: voice.selfVideo ? 'Stop camera' : 'Camera',
+                  tooltip: voice.selfVideo
+                      ? AppStrings.of(context).stopCamera
+                      : AppStrings.of(context).camera,
                   active: voice.selfVideo,
                   activeColor: colors.green,
                   onPressed: () =>
@@ -156,7 +174,9 @@ class _VoiceBarState extends ConsumerState<VoiceBar> {
                     icon: voice.selfStream
                         ? Icons.stop_screen_share
                         : Icons.screen_share,
-                    tooltip: voice.selfStream ? 'Stop sharing' : 'Screen share',
+                    tooltip: voice.selfStream
+                        ? AppStrings.of(context).stopShare
+                        : AppStrings.of(context).screenShare,
                     active: voice.selfStream,
                     activeColor: colors.green,
                     onPressed: () => toggleScreenShareWithPicker(context, ref),
@@ -164,7 +184,7 @@ class _VoiceBarState extends ConsumerState<VoiceBar> {
                 if (canUseSoundboard && spaceId != null)
                   _VoiceButton(
                     icon: Icons.graphic_eq,
-                    tooltip: 'Soundboard',
+                    tooltip: AppStrings.of(context).soundboard,
                     active: false,
                     activeColor: colors.primary,
                     onPressed: () => showAccordSoundboard(
@@ -176,14 +196,14 @@ class _VoiceBarState extends ConsumerState<VoiceBar> {
                 const Spacer(),
                 _VoiceButton(
                   icon: Icons.settings,
-                  tooltip: 'Voice settings',
+                  tooltip: AppStrings.of(context).voiceSettings,
                   active: false,
                   activeColor: colors.primary,
                   onPressed: () => showVoiceSettings(context),
                 ),
                 _VoiceButton(
                   icon: Icons.call_end,
-                  tooltip: 'Disconnect',
+                  tooltip: AppStrings.of(context).disconnect,
                   active: false,
                   activeColor: colors.red,
                   iconColor: colors.red,
@@ -221,23 +241,51 @@ class _VoiceBarState extends ConsumerState<VoiceBar> {
     if (voice.error != null) return (voice.error!, colors.red);
     // Tell the user *why* they've dimmed out in the participant list — an AFK
     // badge nobody explains is just a mystery.
+    final text = AppStrings.of(context);
     if (voice.isAfk && voice.sessionState == VoiceSessionState.connected) {
-      return ('Away — ${channelName ?? 'Voice'}', colors.yellow);
+      return (text.awayIn(channelName), colors.yellow);
     }
     switch (voice.sessionState) {
       case VoiceSessionState.connected:
-        return (channelName ?? 'Voice connected', colors.green);
+        return (channelName ?? text.voiceConnected, colors.green);
       case VoiceSessionState.connecting:
-        return ('Connecting…', colors.yellow);
+        return (text.connecting, colors.yellow);
       case VoiceSessionState.reconnecting:
-        return ('Reconnecting…', colors.yellow);
+        return (text.reconnecting, colors.yellow);
       case VoiceSessionState.failed:
-        return ('Connection failed', colors.red);
+        return (text.connectionFailed, colors.red);
       case VoiceSessionState.disconnected:
-        return (channelName ?? 'Voice', colors.gray);
+        return (channelName ?? text.voice, colors.gray);
     }
   }
 }
+
+bool _pushToTalk(WidgetRef ref) => ref.watch(
+  settingsControllerProvider.select((settings) => settings.voicePushToTalk),
+);
+
+void _toggleTalkMode(WidgetRef ref) {
+  final enabled = ref.read(settingsControllerProvider).voicePushToTalk;
+  ref.read(settingsControllerProvider.notifier).setVoicePushToTalk(!enabled);
+}
+
+IconData _micIcon(WidgetRef ref, bool muted) =>
+    _pushToTalk(ref) ? Icons.keyboard : (muted ? Icons.mic_off : Icons.mic);
+
+String _micTooltip(BuildContext context, WidgetRef ref, bool muted) {
+  if (_pushToTalk(ref)) {
+    return AppStrings.choose(
+      'Push to talk',
+      '按键说话',
+      context: context,
+    );
+  }
+  return muted
+      ? AppStrings.of(context).unmute
+      : AppStrings.of(context).mute;
+}
+
+bool _micActive(WidgetRef ref, bool muted) => !_pushToTalk(ref) && muted;
 
 class _VoiceButton extends StatelessWidget {
   const _VoiceButton({
@@ -246,6 +294,7 @@ class _VoiceButton extends StatelessWidget {
     required this.active,
     required this.activeColor,
     required this.onPressed,
+    this.onSecondaryPressed,
     this.iconColor,
   });
 
@@ -255,22 +304,30 @@ class _VoiceButton extends StatelessWidget {
   final Color activeColor;
   final Color? iconColor;
   final VoidCallback onPressed;
+  final VoidCallback? onSecondaryPressed;
 
   @override
   Widget build(BuildContext context) {
     final colors = BonfireThemeExtension.of(context);
     return Padding(
       padding: const EdgeInsets.only(right: 2),
-      child: Material(
-        color: active ? activeColor.withValues(alpha: 0.3) : Colors.transparent,
-        borderRadius: BorderRadius.circular(4),
-        child: IconButton(
-          tooltip: tooltip,
-          onPressed: onPressed,
-          icon: Icon(icon, size: 18, color: iconColor ?? colors.dirtyWhite),
-          padding: EdgeInsets.zero,
-          visualDensity: VisualDensity.compact,
-          constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+      child: GestureDetector(
+        onSecondaryTap: onSecondaryPressed,
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(4),
+            border: Border.all(
+              color: active ? activeColor : Colors.transparent,
+            ),
+          ),
+          child: IconButton(
+            tooltip: tooltip,
+            onPressed: onPressed,
+            icon: Icon(icon, size: 18, color: iconColor ?? colors.dirtyWhite),
+            padding: EdgeInsets.zero,
+            visualDensity: VisualDensity.compact,
+            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+          ),
         ),
       ),
     );

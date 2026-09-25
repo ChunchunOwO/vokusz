@@ -1,6 +1,9 @@
-import 'package:accordkit/accordkit.dart';
+import 'package:bonfire/l10n/app_strings.dart';
+import 'package:bonfire/l10n/ui_copy.dart';
 import 'package:bonfire/shared/utils/client_access.dart';
 import 'package:bonfire/features/events/controllers/presence.dart';
+import 'package:bonfire/features/presence/local_presence.dart';
+import 'package:bonfire/features/server/controllers/connections.dart';
 import 'package:bonfire/features/member/utils/member_display.dart';
 import 'package:bonfire/theme/theme.dart';
 import 'package:flutter/material.dart';
@@ -37,7 +40,7 @@ class SelfStatusButton extends ConsumerWidget {
     final dotColor = accordPresenceColor(status) ?? colors.gray;
 
     return PopupMenuButton<String>(
-      tooltip: customStatus ?? 'Set status',
+      tooltip: customStatus ?? AppStrings.label('Set status', context: context),
       onSelected: (value) {
         switch (value) {
           case _customValue:
@@ -60,7 +63,7 @@ class SelfStatusButton extends ConsumerWidget {
                   color: accordPresenceColor(option.value) ?? colors.gray,
                 ),
                 const SizedBox(width: 10),
-                Text(option.label),
+                Text(AppStrings.label(option.label, context: context)),
               ],
             ),
           ),
@@ -71,7 +74,11 @@ class SelfStatusButton extends ConsumerWidget {
             children: [
               Icon(Icons.edit_note, size: 16, color: colors.gray),
               const SizedBox(width: 10),
-              Text(customStatus == null ? 'Set custom status' : 'Edit status'),
+              Text(
+                customStatus == null
+                    ? UiCopy.setCustomStatus(context: context)
+                    : UiCopy.editStatus(context: context),
+              ),
             ],
           ),
         ),
@@ -82,7 +89,7 @@ class SelfStatusButton extends ConsumerWidget {
               children: [
                 Icon(Icons.clear, size: 16, color: colors.gray),
                 const SizedBox(width: 10),
-                const Text('Clear custom status'),
+                Text(UiCopy.clearCustomStatus(context: context)),
               ],
             ),
           ),
@@ -118,49 +125,31 @@ class SelfStatusButton extends ConsumerWidget {
     String text,
   ) {
     final client = ref.accordClient;
-    if (client == null) return;
-    final trimmed = text.trim();
-    client.gateway.updatePresence(
-      status,
-      activity: trimmed.isEmpty
-          ? const {}
-          : {'name': trimmed, 'type': 'custom'},
+    if (client == null || userId == null) return;
+    final key = ref.read(connectionsControllerProvider).activeKey;
+    if (key == null) return;
+    LocalPresence.ensureSeeded(ref.read(presenceControllerProvider(key)), userId);
+    LocalPresence.status = status;
+    LocalPresence.custom = text.trim().isEmpty ? null : text.trim();
+    LocalPresence.publish(
+      client,
+      ref.read(presenceControllerProvider(key).notifier),
+      userId,
     );
-    if (userId != null) {
-      activePresenceNotifier(ref)?.upsert(
-        AccordPresence(
-          userId: userId,
-          status: status,
-          activities: trimmed.isEmpty
-              ? []
-              : [AccordActivity(name: trimmed, type: 'custom')],
-        ),
-      );
-    }
   }
 
   void _setStatus(WidgetRef ref, String? userId, String status) {
     final client = ref.accordClient;
-    if (client == null) return;
-    // Preserve any custom status when only the status dot changes.
-    final custom = userId == null
-        ? null
-        : accordCustomStatus(ref.read(activePresencesProvider), userId);
-    client.gateway.updatePresence(
-      status,
-      activity: custom == null ? const {} : {'name': custom, 'type': 'custom'},
+    if (client == null || userId == null) return;
+    final key = ref.read(connectionsControllerProvider).activeKey;
+    if (key == null) return;
+    LocalPresence.ensureSeeded(ref.read(presenceControllerProvider(key)), userId);
+    LocalPresence.status = status;
+    LocalPresence.publish(
+      client,
+      ref.read(presenceControllerProvider(key).notifier),
+      userId,
     );
-    if (userId != null) {
-      activePresenceNotifier(ref)?.upsert(
-        AccordPresence(
-          userId: userId,
-          status: status,
-          activities: custom == null
-              ? []
-              : [AccordActivity(name: custom, type: 'custom')],
-        ),
-      );
-    }
   }
 }
 
@@ -215,7 +204,7 @@ class _CustomStatusDialogState extends State<_CustomStatusDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('Set custom status'),
+      title: Text(UiCopy.setCustomStatus(context: context)),
       content: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -225,8 +214,8 @@ class _CustomStatusDialogState extends State<_CustomStatusDialog> {
               controller: _emoji,
               textAlign: TextAlign.center,
               maxLength: 8,
-              decoration: const InputDecoration(
-                labelText: 'Emoji',
+              decoration: InputDecoration(
+                labelText: UiCopy.emoji(context: context),
                 counterText: '',
               ),
             ),
@@ -237,9 +226,9 @@ class _CustomStatusDialogState extends State<_CustomStatusDialog> {
               controller: _text,
               autofocus: true,
               maxLength: 128,
-              decoration: const InputDecoration(
-                labelText: 'Status',
-                hintText: "What's on your mind?",
+              decoration: InputDecoration(
+                labelText: UiCopy.status(context: context),
+                hintText: UiCopy.whatSOnYourMind(context: context),
               ),
               onSubmitted: (_) => Navigator.of(context).pop(_composed),
             ),
@@ -249,16 +238,16 @@ class _CustomStatusDialogState extends State<_CustomStatusDialog> {
       actions: [
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
+          child: Text(UiCopy.cancel(context: context)),
         ),
         if (widget.initial.trim().isNotEmpty)
           TextButton(
             onPressed: () => Navigator.of(context).pop(''),
-            child: const Text('Clear'),
+            child: Text(UiCopy.clear(context: context)),
           ),
         FilledButton(
           onPressed: () => Navigator.of(context).pop(_composed),
-          child: const Text('Save'),
+          child: Text(UiCopy.save(context: context)),
         ),
       ],
     );

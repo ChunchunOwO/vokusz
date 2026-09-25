@@ -1,4 +1,5 @@
 import 'package:accordkit/accordkit.dart';
+import 'package:bonfire/features/spaces/utils/space_merge.dart';
 import 'package:bonfire/features/authentication/models/accord_session.dart';
 import 'package:bonfire/features/events/controllers/connection.dart';
 import 'package:bonfire/shared/utils/list_ext.dart';
@@ -133,6 +134,10 @@ class ConnectionsController extends _$ConnectionsController {
   void upsertSpace(String key, AccordSpace space) {
     final existing = state.connectionFor(key);
     if (existing == null) return;
+    retainOmittedSpaceDetails(
+      space,
+      existing.spaces.where((s) => s.id == space.id).firstOrNull,
+    );
     final spaces = existing.spaces.upsertById(space, (s) => s.id);
     state = state.copyWith(connections: _upsert(existing.copyWith(spaces: spaces)));
   }

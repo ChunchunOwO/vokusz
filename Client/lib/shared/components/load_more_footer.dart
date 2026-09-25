@@ -1,3 +1,4 @@
+import 'package:bonfire/l10n/ui_copy.dart';
 import 'package:flutter/material.dart';
 
 /// The "Load more" sentinel row appended to cursor-paginated lists (reports,
@@ -40,7 +41,7 @@ class LoadMoreFooter extends StatelessWidget {
               )
             : TextButton(
                 onPressed: onPressed,
-                child: const Text('Load more'),
+                child: Text(UiCopy.loadMore(context: context)),
               ),
       ),
     );

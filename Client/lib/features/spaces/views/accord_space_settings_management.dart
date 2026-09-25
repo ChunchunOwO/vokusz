@@ -13,11 +13,11 @@ class _MembershipSection extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        SectionHeader('Membership'),
+        SectionHeader(UiCopy.membership(context: context)),
         ListTile(
           leading: Icon(Icons.badge_outlined, color: colors.dirtyWhite),
-          title: const Text('Change your nickname'),
-          subtitle: const Text('How you appear in this space'),
+          title: Text(UiCopy.changeYourNickname(context: context)),
+          subtitle: Text(UiCopy.howYouAppearInThisSpace(context: context)),
           trailing: const Icon(Icons.chevron_right),
           onTap: onEditNickname,
         ),
@@ -54,35 +54,39 @@ class _ManagementSection extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        SectionHeader('Management'),
+        SectionHeader(UiCopy.management(context: context)),
         if (canManageRoles)
           ListTile(
             leading: Icon(Icons.shield_outlined, color: colors.dirtyWhite),
-            title: const Text('Roles'),
-            subtitle: const Text('Create, edit, and order roles'),
+            title: Text(UiCopy.roles2(context: context)),
+            subtitle: Text(UiCopy.createEditAndOrderRoles(context: context)),
             trailing: const Icon(Icons.chevron_right),
             onTap: () => showAccordRoleManagement(context, spaceId: spaceId),
           ),
         if (canViewAuditLog)
           ListTile(
             leading: Icon(Icons.history, color: colors.dirtyWhite),
-            title: const Text('Audit log'),
-            subtitle: const Text('Recent moderation and admin actions'),
+            title: Text(UiCopy.auditLog(context: context)),
+            subtitle: Text(
+              UiCopy.recentModerationAndAdminActions(context: context),
+            ),
             trailing: const Icon(Icons.chevron_right),
             onTap: () => showAccordAuditLog(context, spaceId: spaceId),
           ),
         if (canModerate) ...[
           ListTile(
             leading: Icon(Icons.gavel, color: colors.dirtyWhite),
-            title: const Text('Banned members'),
-            subtitle: const Text('Review and unban members'),
+            title: Text(UiCopy.bannedMembers(context: context)),
+            subtitle: Text(UiCopy.reviewAndUnbanMembers(context: context)),
             trailing: const Icon(Icons.chevron_right),
             onTap: () => showAccordBanList(context, spaceId: spaceId),
           ),
           ListTile(
             leading: Icon(Icons.flag_outlined, color: colors.dirtyWhite),
-            title: const Text('Reports'),
-            subtitle: const Text('Review and resolve member reports'),
+            title: Text(UiCopy.reports(context: context)),
+            subtitle: Text(
+              UiCopy.reviewAndResolveMemberReports(context: context),
+            ),
             trailing: const Icon(Icons.chevron_right),
             onTap: () => showReportsPanel(context, spaceId: spaceId),
           ),
@@ -93,16 +97,18 @@ class _ManagementSection extends StatelessWidget {
               Icons.emoji_emotions_outlined,
               color: colors.dirtyWhite,
             ),
-            title: const Text('Custom emoji'),
-            subtitle: const Text('Upload, rename, and delete emoji'),
+            title: Text(UiCopy.customEmoji(context: context)),
+            subtitle: Text(UiCopy.uploadRenameAndDeleteEmoji(context: context)),
             trailing: const Icon(Icons.chevron_right),
             onTap: () => showAccordEmojiManagement(context, spaceId: spaceId),
           ),
         if (canUseSoundboard)
           ListTile(
             leading: Icon(Icons.graphic_eq, color: colors.dirtyWhite),
-            title: const Text('Soundboard'),
-            subtitle: const Text('Play and manage soundboard clips'),
+            title: Text(UiCopy.soundboard(context: context)),
+            subtitle: Text(
+              UiCopy.playAndManageSoundboardClips(context: context),
+            ),
             trailing: const Icon(Icons.chevron_right),
             onTap: () => showAccordSoundboard(
               context,
@@ -134,18 +140,21 @@ class _DangerZoneSection extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        SectionHeader('Danger zone'),
+        SectionHeader(UiCopy.dangerZone(context: context)),
         ListTile(
           leading: Icon(Icons.swap_horiz, color: colors.dirtyWhite),
-          title: const Text('Transfer ownership'),
-          subtitle: const Text('Hand this space to another member'),
+          title: Text(UiCopy.transferOwnership(context: context)),
+          subtitle: Text(UiCopy.handThisSpaceToAnotherMember(context: context)),
           trailing: const Icon(Icons.chevron_right),
           onTap: () => showTransferOwnership(context, spaceId: spaceId),
         ),
         ListTile(
           leading: Icon(Icons.delete_forever, color: colors.red),
-          title: Text('Delete space', style: TextStyle(color: colors.red)),
-          subtitle: const Text('Permanently remove this space'),
+          title: Text(
+            UiCopy.deleteSpace(context: context),
+            style: TextStyle(color: colors.red),
+          ),
+          subtitle: Text(UiCopy.permanentlyRemoveThisSpace(context: context)),
           onTap: busy ? null : onDeleteSpace,
         ),
       ],

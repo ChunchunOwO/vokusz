@@ -1,3 +1,5 @@
+import 'package:bonfire/l10n/app_strings.dart';
+import 'package:bonfire/l10n/ui_copy.dart';
 import 'package:accordkit/accordkit.dart';
 import 'package:bonfire/features/channels/views/channel_member_picker_dialog.dart';
 import 'package:bonfire/shared/components/async_state_views.dart';
@@ -25,8 +27,7 @@ Future<void> showChannelPermissionsDialog(
 }) {
   return showDialog<void>(
     context: context,
-    builder: (_) =>
-        _ChannelPermissionsDialog(spaceId: spaceId, channel: channel),
+    builder: (_) => _ChannelPermissionsDialog(spaceId: spaceId, channel: channel),
   );
 }
 
@@ -216,7 +217,7 @@ class _ChannelPermissionsDialogState
   }
 
   List<String> _visiblePerms() {
-    final all = AccordPermission.all();
+    final all = AccordPermission.all().where((p) => p != AccordPermission.administrator).toList();
     switch (widget.channel.type) {
       case 'voice':
         return all.where((p) => !_textOnlyPerms.contains(p)).toList();
@@ -277,7 +278,7 @@ class _ChannelPermissionsDialogState
       if (active.contains(id)) continue;
       final res = await client.channels.deleteOverwrite(widget.channel.id, id);
       if (!res.ok) {
-        err = res.errorOr('Failed to update permissions');
+        err = res.errorOr(UiCopy.failedToUpdatePermissions());
         break;
       }
     }
@@ -289,7 +290,7 @@ class _ChannelPermissionsDialogState
           {'type': p.$2, 'allow': p.$3, 'deny': p.$4},
         );
         if (!res.ok) {
-          err = res.errorOr('Failed to update permissions');
+          err = res.errorOr(UiCopy.failedToUpdatePermissions());
           break;
         }
       }
@@ -313,9 +314,9 @@ class _ChannelPermissionsDialogState
     }
     final discard = await showConfirmDialog(
       context,
-      title: 'Unsaved Changes',
-      message: 'You have unsaved permission changes. Discard them?',
-      confirmLabel: 'Discard',
+      title: UiCopy.unsavedChanges(),
+      message: UiCopy.youHaveUnsavedPermissionChangesDiscardThem(),
+      confirmLabel: UiCopy.discard(),
     );
     if (discard == true && mounted) Navigator.of(context).pop();
   }
@@ -390,8 +391,10 @@ class _ChannelPermissionsDialogState
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               _Header(
-                title:
-                    'Permissions: #${widget.channel.name ?? widget.channel.id}',
+                title: UiCopy.permissions2(
+                  context: context,
+                  arg0: widget.channel.name ?? widget.channel.id,
+                ),
                 onClose: _tryClose,
               ),
               Expanded(
@@ -466,7 +469,7 @@ class _ChannelPermissionsDialogState
     if (_selectedId == null) {
       return Center(
         child: Text(
-          'Select a role or member',
+          UiCopy.selectARoleOrMember(context: context),
           style: Theme.of(context).textTheme.bodyMedium,
         ),
       );
@@ -507,7 +510,7 @@ class _Header extends StatelessWidget {
             ),
           ),
           IconButton(
-            tooltip: 'Close',
+            tooltip: UiCopy.close(context: context),
             onPressed: onClose,
             icon: Icon(Icons.close, size: 20, color: colors.gray),
           ),
@@ -549,11 +552,15 @@ class _Footer extends StatelessWidget {
         children: [
           TextButton(
             onPressed: (saving || !canReset) ? null : onReset,
-            child: const Text('Reset'),
+            child: Text(UiCopy.reset(context: context)),
           ),
           FilledButton(
             onPressed: saving ? null : onSave,
-            child: Text(saving ? 'Saving…' : 'Save'),
+            child: Text(
+              saving
+                  ? UiCopy.saving(context: context)
+                  : UiCopy.save(context: context),
+            ),
           ),
         ],
       ),
@@ -613,7 +620,7 @@ class _EntityListPane extends StatelessWidget {
         Padding(
           padding: const EdgeInsets.fromLTRB(10, 12, 10, 4),
           child: Text(
-            'MEMBERS',
+            UiCopy.members2(context: context),
             style: theme.textTheme.labelSmall!.copyWith(
               color: colors.gray,
               letterSpacing: 0.6,
@@ -633,7 +640,7 @@ class _EntityListPane extends StatelessWidget {
       _EntityRow(
         key: const ValueKey('add-member'),
         compact: compact,
-        label: '+ Add Member',
+        label: UiCopy.addMember(context: context),
         color: colors.primary,
         icon: Icons.add,
         selected: false,
@@ -810,7 +817,7 @@ class _OverwriteEditorPane extends StatelessWidget {
       Padding(
         padding: const EdgeInsets.only(top: 14, bottom: 4),
         child: Text(
-          group.label.toUpperCase(),
+          AppStrings.label(group.label, context: context).toUpperCase(),
           style: theme.textTheme.labelSmall!.copyWith(
             color: colors.gray,
             letterSpacing: 0.6,

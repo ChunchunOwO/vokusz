@@ -4,6 +4,34 @@ import 'package:bonfire/features/voice/utils/voice_logic.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  group('microphoneLive', () {
+    test('open mic follows the mute toggle', () {
+      expect(
+        microphoneLive(selfMute: false, pushToTalk: false, pushToTalkHeld: false),
+        isTrue,
+      );
+      expect(
+        microphoneLive(selfMute: true, pushToTalk: false, pushToTalkHeld: true),
+        isFalse,
+      );
+    });
+
+    test('push to talk requires the key and still respects mute', () {
+      expect(
+        microphoneLive(selfMute: false, pushToTalk: true, pushToTalkHeld: false),
+        isFalse,
+      );
+      expect(
+        microphoneLive(selfMute: false, pushToTalk: true, pushToTalkHeld: true),
+        isTrue,
+      );
+      expect(
+        microphoneLive(selfMute: true, pushToTalk: true, pushToTalkHeld: true),
+        isFalse,
+      );
+    });
+  });
+
   group('voiceGain', () {
     test('100% is unity, 0% is silent, 200% is double', () {
       expect(voiceGain(100), 1.0);
@@ -130,6 +158,69 @@ void main() {
     });
   });
 
+  group('liveAudioLevel', () {
+    test('a reported level is used as-is and clamped', () {
+      expect(liveAudioLevel(reported: 0.2), 0.2);
+      expect(liveAudioLevel(reported: 4), 1);
+      expect(liveAudioLevel(reported: -1), 0);
+    });
+
+    test('a zero report still yields the energy RMS', () {
+      expect(
+        liveAudioLevel(
+          reported: 0,
+          energy: 0.05,
+          duration: 2,
+          previousEnergy: 0.01,
+          previousDuration: 1,
+        ),
+        closeTo(0.2, 1e-9),
+      );
+    });
+
+    test('energy needs a previous sample, then becomes an RMS', () {
+      expect(
+        liveAudioLevel(energy: 0.01, duration: 1, previousEnergy: null),
+        isNull,
+      );
+      expect(
+        liveAudioLevel(
+          energy: 0.05,
+          duration: 2,
+          previousEnergy: 0.01,
+          previousDuration: 1,
+        ),
+        closeTo(0.2, 1e-9),
+      );
+      expect(
+        liveAudioLevel(
+          energy: 0.01,
+          duration: 2,
+          previousEnergy: 0.01,
+          previousDuration: 1,
+        ),
+        0,
+      );
+    });
+  });
+
+  group('levelSaysSpeaking', () {
+    test('a measured level beats the slower server flag', () {
+      expect(
+        levelSaysSpeaking(level: 0.2, threshold: 0.05, serverSpeaking: false),
+        isTrue,
+      );
+      expect(
+        levelSaysSpeaking(level: 0, threshold: 0.05, serverSpeaking: true),
+        isFalse,
+      );
+      expect(
+        levelSaysSpeaking(level: null, threshold: 0.05, serverSpeaking: true),
+        isTrue,
+      );
+    });
+  });
+
   group('isVoiceDoubleTap', () {
     final now = DateTime(2026, 1, 1, 12);
 
@@ -214,6 +305,38 @@ void main() {
 
     test('an empty reason still reads as a mic failure', () {
       expect(describeMicFailure(''), 'Microphone unavailable');
+    });
+  });
+
+  group('fastConnectMicFailure', () {
+    test('a publish exception is the bar message', () {
+      final message = fastConnectMicFailure(
+        offeredMic: true,
+        published: false,
+        publishError: Exception('publishAudioTrack failed'),
+      );
+      expect(message, 'Microphone unavailable: Exception: publishAudioTrack failed');
+    });
+
+    test('an offered mic that never publishes is a failure', () {
+      expect(
+        fastConnectMicFailure(offeredMic: true, published: false),
+        'Microphone unavailable: microphone track was not published',
+      );
+    });
+
+    test('a published mic with no error stays quiet', () {
+      expect(
+        fastConnectMicFailure(offeredMic: true, published: true),
+        isNull,
+      );
+    });
+
+    test('joining muted does not invent a failure', () {
+      expect(
+        fastConnectMicFailure(offeredMic: false, published: false),
+        isNull,
+      );
     });
   });
 }

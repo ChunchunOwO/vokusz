@@ -24,6 +24,8 @@ class _StubVoiceController extends VoiceController {
   @override
   VoiceConnection build() => _initial;
 
+  void update(VoiceConnection value) => state = value;
+
   @override
   Future<void> join(String channelId, String? spaceId) async {}
 
@@ -71,6 +73,7 @@ Widget _host({
   bool hasVideo = true,
   List<AccordChannel>? dms,
   void Function(String channelId, String spaceId)? onOpen,
+  Widget? Function()? previewBuilder,
 }) {
   return ProviderScope(
     overrides: [
@@ -91,8 +94,8 @@ Widget _host({
               onOpen: onOpen ?? (_, _) {},
               // A real LiveKit VideoTrack can't be built off-device; this
               // stands in for the track preview.
-              previewBuilder: () =>
-                  hasVideo ? const ColoredBox(color: Colors.blue) : null,
+              previewBuilder: previewBuilder ??
+                  () => hasVideo ? const ColoredBox(color: Colors.blue) : null,
             ),
           ],
         ),
@@ -127,6 +130,36 @@ Widget _dialogHost({required _StubVoiceController voice}) {
 }
 
 void main() {
+  testWidgets('speaker changes do not rebuild PiP but track changes do', (
+    tester,
+  ) async {
+    const initial = VoiceConnection(channelId: 'dm1');
+    final voice = _StubVoiceController(initial);
+    var previews = 0;
+    await tester.pumpWidget(
+      _host(
+        voice: voice,
+        shownChannelId: 'other',
+        previewBuilder: () {
+          previews++;
+          return const ColoredBox(color: Colors.blue);
+        },
+      ),
+    );
+    await tester.pump();
+    final before = previews;
+    expect(before, greaterThan(0));
+    voice.update(initial.copyWith(speakingUserIds: {'u2'}));
+    await tester.pump();
+    expect(previews, before);
+    voice.update(initial.copyWith(tick: 1));
+    await tester.pump();
+    expect(previews, before + 1);
+    await voice.leave();
+    await tester.pump();
+    expect(_pip, findsNothing);
+  });
+
   testWidgets('a DM call with video gets a PiP', (tester) async {
     // DM calls used to be excluded outright (#136).
     final voice = _StubVoiceController(const VoiceConnection(channelId: 'dm1'));

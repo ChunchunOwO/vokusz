@@ -1,3 +1,5 @@
+import 'package:bonfire/l10n/app_strings.dart';
+import 'package:bonfire/l10n/ui_copy.dart';
 import 'package:accordkit/accordkit.dart';
 import 'package:bonfire/shared/components/async_state_views.dart';
 import 'package:bonfire/shared/utils/client_access.dart';
@@ -80,7 +82,7 @@ class _InvitesDialogState extends ConsumerState<_InvitesDialog>
       result.ok && data is List
           ? data.whereType<AccordInvite>().toList()
           : const <AccordInvite>[],
-      result.ok ? null : 'Failed to load invites',
+      result.ok ? null : UiCopy.failedToLoadInvites(),
     );
   }
 
@@ -107,7 +109,7 @@ class _InvitesDialogState extends ConsumerState<_InvitesDialog>
     } else {
       setState(() {
         _creating = false;
-        error = 'Failed to create invite';
+        error = UiCopy.failedToCreateInvite();
       });
     }
   }
@@ -122,7 +124,7 @@ class _InvitesDialogState extends ConsumerState<_InvitesDialog>
         () => items = items?.where((i) => i.code != invite.code).toList(),
       );
     } else {
-      setState(() => error = 'Failed to revoke invite');
+      setState(() => error = UiCopy.failedToRevokeInvite());
     }
   }
 
@@ -150,14 +152,14 @@ class _InvitesDialogState extends ConsumerState<_InvitesDialog>
   Future<void> _copy(AccordInvite invite) async {
     await Clipboard.setData(ClipboardData(text: _inviteLink(invite)));
     if (!mounted) return;
-    showInfoSnack(context, 'Invite link copied');
+    showInfoSnack(context, UiCopy.inviteLinkCopied());
   }
 
   String _usesLabel(AccordInvite invite) {
     final max = invite.maxUses;
     final maxInt = asInt(max);
     if (maxInt <= 0) return '${invite.uses} uses';
-    return '${invite.uses}/$maxInt uses';
+    return UiCopy.uses(arg0: invite.uses, arg1: maxInt);
   }
 
   @override
@@ -178,7 +180,10 @@ class _InvitesDialogState extends ConsumerState<_InvitesDialog>
                 children: [
                   Icon(Icons.person_add, size: 18, color: colors.dirtyWhite),
                   const SizedBox(width: 8),
-                  Text('Invite people', style: theme.textTheme.titleMedium),
+                  Text(
+                    UiCopy.invitePeople(context: context),
+                    style: theme.textTheme.titleMedium,
+                  ),
                   const Spacer(),
                   IconButton(
                     onPressed: () => Navigator.of(context).maybePop(),
@@ -195,8 +200,8 @@ class _InvitesDialogState extends ConsumerState<_InvitesDialog>
                   Expanded(
                     child: DropdownButtonFormField<int>(
                       initialValue: _expirySeconds,
-                      decoration: const InputDecoration(
-                        labelText: 'Expire after',
+                      decoration: InputDecoration(
+                        labelText: UiCopy.expireAfter(context: context),
                         isDense: true,
                         border: OutlineInputBorder(),
                       ),
@@ -204,7 +209,9 @@ class _InvitesDialogState extends ConsumerState<_InvitesDialog>
                         for (final p in _expiryPresets)
                           DropdownMenuItem(
                             value: p.seconds,
-                            child: Text(p.label),
+                            child: Text(
+                              AppStrings.label(p.label, context: context),
+                            ),
                           ),
                       ],
                       onChanged: _creating
@@ -216,14 +223,19 @@ class _InvitesDialogState extends ConsumerState<_InvitesDialog>
                   Expanded(
                     child: DropdownButtonFormField<int>(
                       initialValue: _maxUses,
-                      decoration: const InputDecoration(
-                        labelText: 'Max uses',
+                      decoration: InputDecoration(
+                        labelText: UiCopy.maxUses(context: context),
                         isDense: true,
                         border: OutlineInputBorder(),
                       ),
                       items: [
                         for (final p in _maxUsesPresets)
-                          DropdownMenuItem(value: p.uses, child: Text(p.label)),
+                          DropdownMenuItem(
+                            value: p.uses,
+                            child: Text(
+                              AppStrings.label(p.label, context: context),
+                            ),
+                          ),
                       ],
                       onChanged: _creating
                           ? null
@@ -246,9 +258,11 @@ class _InvitesDialogState extends ConsumerState<_InvitesDialog>
                       contentPadding: const EdgeInsets.symmetric(horizontal: 8),
                       controlAffinity: ListTileControlAffinity.leading,
                       dense: true,
-                      title: const Text('Temporary membership'),
+                      title: Text(UiCopy.temporaryMembership(context: context)),
                       subtitle: Text(
-                        'Kicked on disconnect unless given a role',
+                        UiCopy.kickedOnDisconnectUnlessGivenARole(
+                          context: context,
+                        ),
                         style: theme.textTheme.bodySmall,
                       ),
                     ),
@@ -257,7 +271,7 @@ class _InvitesDialogState extends ConsumerState<_InvitesDialog>
                   FilledButton.icon(
                     onPressed: _creating ? null : _create,
                     icon: const Icon(Icons.add, size: 18),
-                    label: const Text('Create'),
+                    label: Text(UiCopy.create(context: context)),
                   ),
                 ],
               ),
@@ -289,7 +303,7 @@ class _InvitesDialogState extends ConsumerState<_InvitesDialog>
                             size: 18,
                             color: colors.gray,
                           ),
-                          hintText: 'Search invites',
+                          hintText: UiCopy.searchInvites(context: context),
                           border: const OutlineInputBorder(),
                         ),
                       ),
@@ -323,7 +337,7 @@ class _InvitesDialogState extends ConsumerState<_InvitesDialog>
                       padding: const EdgeInsets.all(32),
                       child: Center(
                         child: Text(
-                          'No active invites',
+                          UiCopy.noActiveInvites(context: context),
                           style: theme.textTheme.bodyMedium,
                         ),
                       ),
@@ -343,7 +357,7 @@ class _InvitesDialogState extends ConsumerState<_InvitesDialog>
                             padding: const EdgeInsets.all(32),
                             child: Center(
                               child: Text(
-                                'No matches',
+                                UiCopy.noMatches(context: context),
                                 style: theme.textTheme.bodyMedium,
                               ),
                             ),
@@ -380,12 +394,12 @@ class _InvitesDialogState extends ConsumerState<_InvitesDialog>
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
                                   IconButton(
-                                    tooltip: 'Copy link',
+                                    tooltip: UiCopy.copyLink2(context: context),
                                     onPressed: () => _copy(invite),
                                     icon: const Icon(Icons.copy, size: 18),
                                   ),
                                   IconButton(
-                                    tooltip: 'Revoke',
+                                    tooltip: UiCopy.revoke(context: context),
                                     onPressed: () => _revoke(invite),
                                     icon: Icon(
                                       Icons.delete_outline,

@@ -1,7 +1,14 @@
 import 'package:bonfire/features/profiles/views/profile_gate.dart';
 import 'package:bonfire/features/settings/models/accord_settings.dart';
+import 'package:bonfire/features/voice/views/compact_voice_mode.dart';
+import 'package:bonfire/features/voice/views/compact_voice_window.dart';
 import 'package:bonfire/features/voice/views/incoming_call_overlay.dart';
+import 'package:bonfire/features/presence/rich_presence_host.dart';
+import 'package:bonfire/features/voice/views/voice_desktop_extras.dart';
+import 'package:bonfire/shared/components/desktop_window_bar.dart';
+import 'package:bonfire/theme/theme.dart';
 import 'package:flutter/material.dart';
+import 'package:window_manager/window_manager.dart';
 
 /// Upper bound on the combined (system × in-app) text scale. The OS can ask
 /// for far more than this at the top accessibility sizes; past roughly 2× the
@@ -49,7 +56,7 @@ Widget buildAppShell(
     AccordSettings.minUiScale,
     maxEffectiveTextScale,
   );
-  return MediaQuery(
+  final frame = MediaQuery(
     data: MediaQuery.of(context).copyWith(
       textScaler: TextScaler.linear(combined),
       disableAnimations: reducedMotion,
@@ -57,5 +64,57 @@ Widget buildAppShell(
     // The gate wraps the banner host too: a locked profile shows neither the
     // app nor who is calling it.
     child: ProfileGate(child: withIncomingCallOverlay(child)),
+  );
+  if (!DesktopWindowBar.enabled) return frame;
+  return ListenableBuilder(
+    listenable: CompactVoiceMode.instance,
+    builder: (context, _) {
+      if (CompactVoiceMode.instance.active) {
+        final colors = BonfireThemeExtension.of(context);
+        return MediaQuery(
+          data: MediaQuery.of(context).copyWith(
+            textScaler: TextScaler.noScaling,
+            disableAnimations:
+                reducedMotion || MediaQuery.disableAnimationsOf(context),
+          ),
+          // The native window lets unpainted pixels show the desktop. This
+          // clip is what makes those four corners round.
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(
+              CompactVoiceMode.cornerRadius,
+            ),
+            clipBehavior: Clip.antiAlias,
+            child: ColoredBox(
+              color: colors.background,
+              child: const Column(
+                children: [
+                  VoiceDesktopExtras(),
+                  RichPresenceHost(),
+                  Expanded(child: CompactVoiceWindow()),
+                ],
+              ),
+            ),
+          ),
+        );
+      }
+      return DragToResizeArea(
+        resizeEdgeColor: Colors.transparent,
+        resizeEdgeSize: 6,
+        child: Column(
+          children: [
+            const VoiceDesktopExtras(),
+            const RichPresenceHost(),
+            MediaQuery(
+              data: MediaQuery.of(context).copyWith(
+                disableAnimations:
+                    reducedMotion || MediaQuery.disableAnimationsOf(context),
+              ),
+              child: const DesktopWindowBar(),
+            ),
+            Expanded(child: frame),
+          ],
+        ),
+      );
+    },
   );
 }

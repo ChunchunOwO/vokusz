@@ -1,4 +1,5 @@
 import 'package:accordkit/accordkit.dart';
+import 'package:bonfire/features/spaces/utils/space_merge.dart';
 import 'package:bonfire/shared/controllers/load_failed.dart';
 import 'package:bonfire/shared/utils/list_ext.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
@@ -24,7 +25,12 @@ class SpacesController extends _$SpacesController {
 
   /// Inserts [space], or replaces it in place if already present.
   void upsertSpace(AccordSpace space) {
-    state = (state ?? const <AccordSpace>[]).upsertById(space, (s) => s.id);
+    final current = state;
+    retainOmittedSpaceDetails(
+      space,
+      current?.where((s) => s.id == space.id).firstOrNull,
+    );
+    state = (current ?? const <AccordSpace>[]).upsertById(space, (s) => s.id);
   }
 
   void removeSpace(String spaceId) {

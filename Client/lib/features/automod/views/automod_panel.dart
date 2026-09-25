@@ -1,3 +1,5 @@
+import 'package:bonfire/l10n/app_strings.dart';
+import 'package:bonfire/l10n/ui_copy.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
@@ -22,7 +24,9 @@ Future<void> showAutomodPanel(BuildContext context, String scope) =>
     Navigator.of(context).push<void>(
       MaterialPageRoute(
         builder: (_) => Scaffold(
-          appBar: AppBar(title: const Text('AutoMod')),
+          appBar: AppBar(
+            title: Text(AppStrings.label('AutoMod', context: context)),
+          ),
           body: AutomodPanel(scope: scope),
         ),
       ),
@@ -37,7 +41,9 @@ class AutomodPanel extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final auth = ref.watch(accordAuthProvider);
     if (auth is! AccordAuthLoggedIn) {
-      return const Center(child: Text('Connect to a server first.'));
+      return Center(
+        child: Text(UiCopy.connectToAServerFirst(context: context)),
+      );
     }
     final spaces = ref.watch(spacesControllerProvider) ?? <AccordSpace>[];
     final space = spaces.firstWhereOrNull((s) => s.id == scope);
@@ -53,8 +59,8 @@ class AutomodPanel extends ConsumerWidget {
         (scope != '*' &&
             accordHasPermission(perms, AccordPermission.moderateMembers));
     if (!configure && !review) {
-      return const Center(
-        child: Text('You do not have permission to manage AutoMod.'),
+      return Center(
+        child: Text(UiCopy.youDoNotHavePermissionToManage(context: context)),
       );
     }
     final channels = scope == '*'
@@ -154,9 +160,9 @@ class _AutomodWorkbenchState extends State<AutomodWorkbench> {
       result.statusCode == 404 ||
           result.statusCode == 405 ||
           result.statusCode == 501
-      ? 'This server does not support this AutoMod operation. Update the server.'
+      ? UiCopy.thisServerDoesNotSupportThisAutomod()
       : result.statusCode == 403
-      ? 'Your server permissions do not allow this operation.'
+      ? UiCopy.yourServerPermissionsDoNotAllowThis()
       : result.error?.message ?? 'The request failed. Try again.';
   Future<void> _load() async {
     final generation = ++_generation;
@@ -250,12 +256,12 @@ class _AutomodWorkbenchState extends State<AutomodWorkbench> {
     final reason = await showTextPromptDialog(
       context,
       title: title,
-      label: 'Reason',
-      confirmLabel: 'Continue',
+      label: UiCopy.reason(),
+      confirmLabel: UiCopy.continueAction(),
     );
     if (!mounted || reason == null) return null;
     if (reason.trim().isEmpty || utf8.encode(reason.trim()).length > 2000) {
-      setState(() => _error = 'Enter a reason of 1–2000 UTF-8 bytes.');
+      setState(() => _error = UiCopy.enterAReasonOf12000Utf());
       return null;
     }
     return reason.trim();
@@ -264,17 +270,17 @@ class _AutomodWorkbenchState extends State<AutomodWorkbench> {
   Future<void> _blockDigest() async {
     final hash = await showTextPromptDialog(
       context,
-      title: 'Block file digest',
-      label: 'SHA-256 digest',
-      helperText: '64 hexadecimal characters from a known file hash.',
+      title: UiCopy.blockFileDigest(),
+      label: UiCopy.sha256Digest(),
+      helperText: UiCopy.message64HexadecimalCharactersFromAKnownFile(),
     );
     if (!mounted || hash == null) return;
     final digest = hash.trim().toLowerCase();
     if (!RegExp(r'^[0-9a-f]{64}$').hasMatch(digest)) {
-      setState(() => _error = 'Enter a valid 64-character SHA-256 digest.');
+      setState(() => _error = UiCopy.enterAValid64CharacterSha256());
       return;
     }
-    final reason = await _reason('Why block this file?');
+    final reason = await _reason(UiCopy.whyBlockThisFile());
     if (!mounted || reason == null) return;
     await _mutate(() => _api.blockHash(widget.scope, digest, reason));
   }
@@ -301,7 +307,7 @@ class _AutomodWorkbenchState extends State<AutomodWorkbench> {
     if (!result.ok || result.data is! Uint8List) {
       setState(
         () => _error = result.statusCode == 404 || result.statusCode == 410
-            ? 'This evidence has expired or is no longer available.'
+            ? UiCopy.thisEvidenceHasExpiredOrIsNo()
             : _failure(result),
       );
       return;
@@ -329,22 +335,20 @@ class _AutomodWorkbenchState extends State<AutomodWorkbench> {
                         child: Image.memory(
                           bytes,
                           cacheWidth: 800,
-                          errorBuilder: (_, _, _) => const Text(
-                            'No image preview available. Download to review.',
+                          errorBuilder: (_, _, _) => Text(
+                            UiCopy.noImagePreviewAvailableDownloadToReview(),
                           ),
                         ),
                       )
                     else
-                      const Text(
-                        'Download this private original to review it. Saved copies remain on your device.',
-                      ),
+                      Text(UiCopy.downloadThisPrivateOriginalToReviewIt()),
                   ],
                 ),
               ),
               actions: [
                 TextButton(
                   onPressed: () => Navigator.pop(context),
-                  child: const Text('Close'),
+                  child: Text(UiCopy.close()),
                 ),
                 TextButton(
                   onPressed: () async {
@@ -357,14 +361,14 @@ class _AutomodWorkbenchState extends State<AutomodWorkbench> {
                     } catch (_) {
                       if (context.mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Could not save the evidence.'),
+                          SnackBar(
+                            content: Text(UiCopy.couldNotSaveTheEvidence()),
                           ),
                         );
                       }
                     }
                   },
-                  child: const Text('Download original'),
+                  child: Text(UiCopy.downloadOriginal()),
                 ),
               ],
             ),
@@ -406,10 +410,10 @@ class _AutomodWorkbenchState extends State<AutomodWorkbench> {
   @override
   Widget build(BuildContext context) {
     final tabs = [
-      if (widget.canConfigure) 'Rules',
-      if (widget.canReview) 'Review',
-      if (widget.canConfigure) 'Blocked files',
-      if (widget.canReview) 'Activity',
+      if (widget.canConfigure) UiCopy.rules(context: context),
+      if (widget.canReview) UiCopy.review(context: context),
+      if (widget.canConfigure) UiCopy.blockedFiles(context: context),
+      if (widget.canReview) UiCopy.activity(context: context),
     ];
     return DefaultTabController(
       length: tabs.length,
@@ -424,7 +428,7 @@ class _AutomodWorkbenchState extends State<AutomodWorkbench> {
                 ),
               ),
               IconButton(
-                tooltip: 'Refresh AutoMod',
+                tooltip: UiCopy.refreshAutomod(context: context),
                 onPressed: _loading || _busy ? null : _load,
                 icon: const Icon(Icons.refresh),
               ),
@@ -456,7 +460,7 @@ class _AutomodWorkbenchState extends State<AutomodWorkbench> {
 
   Widget _rules() {
     final policy = _policy;
-    if (policy == null) return const Center(child: Text('No policy loaded.'));
+    if (policy == null) return Center(child: Text(UiCopy.noPolicyLoaded()));
     final rules = automodList(policy['rules']);
     final exemptions = automodList(
       policy['exempt_roles'],
@@ -467,45 +471,49 @@ class _AutomodWorkbenchState extends State<AutomodWorkbench> {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        if (_health != null) Text('Detector: ${_health!['scanner']}'),
-        if (_health != null)
-          Text('Video sampler: ${_health!['video_sampler']}'),
         if (_health != null)
           Text(
-            'Queue capacity: ${_health!['max_held']} uploads · ${((asInt(_health!['max_held_bytes'])) / (1024 * 1024)).round()} MiB',
+            AppStrings.choose(
+              'Detector: ${_health!['scanner']}',
+              '检测器：${_health!['scanner']}',
+              context: context,
+            ),
+          ),
+        if (_health != null)
+          Text(UiCopy.videoSampler(arg0: _health!['video_sampler'])),
+        if (_health != null)
+          Text(
+            UiCopy.queueCapacityUploadsMib(
+              arg0: _health!['max_held'],
+              arg1: ((asInt(_health!['max_held_bytes'])) / (1024 * 1024))
+                  .round(),
+            ),
           ),
         if (_health != null)
           for (final row in automodList(_health!['uploads']))
             Text('${row['status']}: ${row['count']} uploads'),
         if (_health != null && _health!['scanner'] != 'ready')
-          const Text(
-            'Ask the server operator to install/configure the local model and runtime. Enabling rules does not install them.',
-          ),
-        if (_inherited)
-          const Text(
-            'Using the server policy. Saving creates a complete space override.',
-          ),
+          Text(UiCopy.askTheServerOperatorToInstallConfigure()),
+        if (_inherited) Text(UiCopy.usingTheServerPolicySavingCreatesA()),
         SwitchListTile(
           contentPadding: EdgeInsets.zero,
-          title: const Text('Enable automatic scanning'),
+          title: Text(UiCopy.enableAutomaticScanning()),
           value: policy['enabled'] == true,
           onChanged: _busy ? null : (v) => _edit(() => policy['enabled'] = v),
         ),
-        const Text(
-          'Explicit file blocks and upload limits work even when scanning is disabled.',
-        ),
+        Text(UiCopy.explicitFileBlocksAndUploadLimitsWork()),
         TextFormField(
           key: ObjectKey(policy),
           initialValue: '${policy['retention_days']}',
           keyboardType: TextInputType.number,
-          decoration: const InputDecoration(
-            labelText: 'Keep held evidence (days, 1–90)',
+          decoration: InputDecoration(
+            labelText: UiCopy.keepHeldEvidenceDays190(),
           ),
           onChanged: (v) =>
               _edit(() => policy['retention_days'] = int.tryParse(v)),
         ),
         const SizedBox(height: 12),
-        const Text('Exempt roles'),
+        Text(UiCopy.exemptRoles()),
         Wrap(
           spacing: 6,
           children: [
@@ -528,7 +536,9 @@ class _AutomodWorkbenchState extends State<AutomodWorkbench> {
               (id) => !widget.roles.any((r) => r.id == id),
             ))
               InputChip(
-                label: Text('Role $id'),
+                label: Text(
+                  AppStrings.choose('Role $id', '角色 $id', context: context),
+                ),
                 onDeleted: () => _edit(() {
                   exemptions.remove(id);
                   policy['exempt_roles'] = exemptions.toList();
@@ -536,7 +546,7 @@ class _AutomodWorkbenchState extends State<AutomodWorkbench> {
               ),
           ],
         ),
-        const Text('Exempt permissions'),
+        Text(UiCopy.exemptPermissions()),
         Wrap(
           spacing: 6,
           children: [
@@ -563,20 +573,20 @@ class _AutomodWorkbenchState extends State<AutomodWorkbench> {
           ],
         ),
         const SizedBox(height: 12),
-        const Text('Rules run in order; the first match decides the action.'),
+        Text(UiCopy.rulesRunInOrderTheFirstMatch()),
         for (var i = 0; i < rules.length; i++)
           Card(
             child: ListTile(
               title: Text(asString(rules[i]['id'])),
               subtitle: Text(
-                '${automodTriggers[rules[i]['trigger']['type']] ?? rules[i]['trigger']['type']} · ${automodActions[rules[i]['action']['type']] ?? rules[i]['action']['type']}',
+                '${AppStrings.label(asString(automodTriggers[rules[i]['trigger']['type']] ?? rules[i]['trigger']['type']), context: context)} · ${AppStrings.label(asString(automodActions[rules[i]['action']['type']] ?? rules[i]['action']['type']), context: context)}',
               ),
               onTap: _busy ? null : () => _rule(i),
               trailing: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   IconButton(
-                    tooltip: 'Move rule up',
+                    tooltip: UiCopy.moveRuleUp(),
                     onPressed: _busy || i == 0
                         ? null
                         : () => _edit(() {
@@ -587,7 +597,7 @@ class _AutomodWorkbenchState extends State<AutomodWorkbench> {
                     icon: const Icon(Icons.arrow_upward),
                   ),
                   IconButton(
-                    tooltip: 'Delete rule',
+                    tooltip: UiCopy.deleteRule(),
                     onPressed: _busy
                         ? null
                         : () => _edit(() {
@@ -606,7 +616,7 @@ class _AutomodWorkbenchState extends State<AutomodWorkbench> {
             TextButton.icon(
               onPressed: _busy || rules.length >= 32 ? null : () => _rule(),
               icon: const Icon(Icons.add),
-              label: const Text('Add rule'),
+              label: Text(UiCopy.addRule()),
             ),
             FilledButton(
               onPressed: !_dirty || _busy
@@ -625,7 +635,7 @@ class _AutomodWorkbenchState extends State<AutomodWorkbench> {
                         policy: true,
                       );
                     },
-              child: const Text('Save policy'),
+              child: Text(UiCopy.savePolicy()),
             ),
             if (widget.scope != '*')
               TextButton(
@@ -634,10 +644,9 @@ class _AutomodWorkbenchState extends State<AutomodWorkbench> {
                     : () async {
                         final confirmed = await showConfirmDialog(
                           context,
-                          title: 'Use server policy?',
-                          message:
-                              'This removes this space’s override and discards unsaved changes.',
-                          confirmLabel: 'Use server policy',
+                          title: UiCopy.useServerPolicy(),
+                          message: UiCopy.thisRemovesThisSpaceSOverrideAnd(),
+                          confirmLabel: UiCopy.useServerPolicy2(),
                         );
                         if (mounted && confirmed == true) {
                           await _mutate(
@@ -646,7 +655,7 @@ class _AutomodWorkbenchState extends State<AutomodWorkbench> {
                           );
                         }
                       },
-                child: const Text('Use server policy'),
+                child: Text(UiCopy.useServerPolicy2()),
               ),
           ],
         ),
@@ -676,8 +685,7 @@ class _AutomodWorkbenchState extends State<AutomodWorkbench> {
                 _load();
               },
       ),
-      if (_uploads.isEmpty && !_loading)
-        const Text('No uploads with this status.'),
+      if (_uploads.isEmpty && !_loading) Text(UiCopy.noUploadsWithThisStatus()),
       for (final upload in _uploads)
         Card(
           child: Padding(
@@ -686,7 +694,7 @@ class _AutomodWorkbenchState extends State<AutomodWorkbench> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  asString(upload['filename'], 'Attachment'),
+                  asString(upload['filename'], UiCopy.attachment()),
                   style: Theme.of(context).textTheme.titleMedium,
                 ),
                 Text(
@@ -703,7 +711,7 @@ class _AutomodWorkbenchState extends State<AutomodWorkbench> {
                       onPressed: _busy || upload['status'] == 'removed'
                           ? null
                           : () => _content(upload),
-                      child: const Text('View evidence'),
+                      child: Text(UiCopy.viewEvidence()),
                     ),
                     for (final action in [
                       'release',
@@ -732,23 +740,21 @@ class _AutomodWorkbenchState extends State<AutomodWorkbench> {
       if (_uploads.length >= 100)
         TextButton(
           onPressed: _busy ? null : () => _more('uploads'),
-          child: const Text('Load older uploads'),
+          child: Text(UiCopy.loadOlderUploads()),
         ),
     ],
   );
   Widget _blocked() => ListView(
     padding: const EdgeInsets.all(16),
     children: [
-      const Text(
-        'Exact file blocks remain active without model scanning. Modified or re-encoded copies have different hashes.',
-      ),
+      Text(UiCopy.exactFileBlocksRemainActiveWithoutModel()),
       TextButton.icon(
         onPressed: _busy ? null : _blockDigest,
         icon: const Icon(Icons.block),
-        label: const Text('Block file digest'),
+        label: Text(UiCopy.blockFileDigest()),
       ),
       if (_hashes.isEmpty && !_loading)
-        const Text('No blocked files in this scope.'),
+        Text(UiCopy.noBlockedFilesInThisScope()),
       for (final row in _hashes)
         Card(
           child: ListTile(
@@ -757,17 +763,17 @@ class _AutomodWorkbenchState extends State<AutomodWorkbench> {
               '${row['reason']}\nAdded by ${row['added_by'] ?? 'unknown'}${row['created_at'] == null ? '' : ' · ${DateTime.fromMillisecondsSinceEpoch(asInt(row['created_at']) * 1000).toLocal()}'}',
             ),
             trailing: IconButton(
-              tooltip: 'Unblock file',
+              tooltip: UiCopy.unblockFile(),
               icon: const Icon(Icons.delete_outline),
               onPressed: _busy
                   ? null
                   : () async {
                       final ok = await showConfirmDialog(
                         context,
-                        title: 'Unblock file?',
+                        title: UiCopy.unblockFile2(),
                         message:
-                            'Identical copies will be allowed unless another rule or instance block applies.',
-                        confirmLabel: 'Unblock',
+                            UiCopy.identicalCopiesWillBeAllowedUnlessAnother(),
+                        confirmLabel: UiCopy.unblock(),
                       );
                       if (mounted && ok == true) {
                         await _mutate(
@@ -784,7 +790,7 @@ class _AutomodWorkbenchState extends State<AutomodWorkbench> {
       if (_hashes.length >= 100)
         TextButton(
           onPressed: _busy ? null : () => _more('hashes'),
-          child: const Text('Load older blocks'),
+          child: Text(UiCopy.loadOlderBlocks()),
         ),
     ],
   );
@@ -820,8 +826,8 @@ class _AutomodWorkbenchState extends State<AutomodWorkbench> {
     final details = _decodeDetails(value);
     return [
       if (details['reason'] != null) asString(details['reason']),
-      if (details['rule_id'] != null) 'Rule: ${details['rule_id']}',
-      if (details['hash'] != null) 'File digest: ${details['hash']}',
+      if (details['rule_id'] != null) AppStrings.choose('Rule: ${details['rule_id']}', '规则：${details['rule_id']}'),
+      if (details['hash'] != null) AppStrings.choose('File digest: ${details['hash']}', '文件指纹：${details['hash']}'),
       if (details['error'] != null) asString(details['error']),
     ].join('\n');
   }
@@ -829,18 +835,18 @@ class _AutomodWorkbenchState extends State<AutomodWorkbench> {
   Widget _activity() => ListView(
     padding: const EdgeInsets.all(16),
     children: [
-      if (_events.isEmpty && !_loading) const Text('No moderation activity.'),
+      if (_events.isEmpty && !_loading) Text(UiCopy.noModerationActivity()),
       for (final row in _events)
         ListTile(
           title: Text(asString(row['action'])),
           subtitle: SelectableText(
-            'Actor: ${row['actor_id'] ?? 'AutoMod'} · ${_timestamp(row['created_at'])}\n${_detailsSummary(row['details'])}',
+            AppStrings.choose('Actor: ${row['actor_id'] ?? 'AutoMod'} · ${_timestamp(row['created_at'])}\n${_detailsSummary(row['details'])}', '操作人：${row['actor_id'] ?? AppStrings.label('AutoMod')} · ${_timestamp(row['created_at'])}\n${_detailsSummary(row['details'])}'),
           ),
         ),
       if (_events.length >= 100)
         TextButton(
           onPressed: _busy ? null : () => _more('events'),
-          child: const Text('Load older activity'),
+          child: Text(UiCopy.loadOlderActivity()),
         ),
     ],
   );

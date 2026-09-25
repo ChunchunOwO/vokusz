@@ -1,3 +1,4 @@
+import 'package:bonfire/l10n/ui_copy.dart';
 import 'package:flutter/material.dart';
 
 import 'package:bonfire/theme/theme.dart';
@@ -33,7 +34,7 @@ class RemoteOriginBadge extends StatelessWidget {
     final colors = BonfireThemeExtension.of(context);
     final theme = Theme.of(context);
     return Tooltip(
-      message: 'Homed on $d',
+      message: UiCopy.homedOn(context: context, arg0: d),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [

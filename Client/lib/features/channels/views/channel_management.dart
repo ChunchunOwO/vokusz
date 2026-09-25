@@ -1,3 +1,5 @@
+import 'package:bonfire/l10n/app_strings.dart';
+import 'package:bonfire/l10n/ui_copy.dart';
 import 'package:accordkit/accordkit.dart';
 import 'package:bonfire/shared/utils/confirm_dialog.dart';
 import 'package:bonfire/shared/utils/client_access.dart';
@@ -60,8 +62,7 @@ Future<void> showEditChannelDialog(
 }) {
   return showDialog<void>(
     context: context,
-    builder: (_) =>
-        _ChannelEditorDialog(spaceId: spaceId, channel: channel),
+    builder: (_) => _ChannelEditorDialog(spaceId: spaceId, channel: channel),
   );
 }
 
@@ -79,18 +80,26 @@ Future<bool> confirmAndDeleteChannel(
   final noun = isCategory ? 'category' : 'channel';
   final confirmed = await showConfirmDialog(
     context,
-    title: 'Delete $noun',
-    message: 'Delete "${channel.name ?? channel.id}"? This cannot be undone.',
-    confirmLabel: 'Delete',
+    title: UiCopy.delete2(context: context, arg0: noun),
+    message: UiCopy.deleteThisCannotBeUndone3(
+      context: context,
+      arg0: channel.name ?? channel.id,
+    ),
+    confirmLabel: UiCopy.delete(context: context),
   );
   if (confirmed != true) return false;
   final client = ref.accordClient;
   if (client == null) return false;
   final ok = await ref
-      .read(accordChannelsControllerProvider(ref.readActiveServerKey() ?? '', spaceId).notifier)
+      .read(
+        accordChannelsControllerProvider(
+          ref.readActiveServerKey() ?? '',
+          spaceId,
+        ).notifier,
+      )
       .deleteChannel(client, channel.id);
   if (!ok && context.mounted) {
-    showInfoSnack(context, 'Failed to delete $noun');
+    showInfoSnack(context, UiCopy.failedToDelete(context: context, arg0: noun));
   }
   return ok;
 }
@@ -112,10 +121,12 @@ class _ChannelEditorDialog extends ConsumerStatefulWidget {
 }
 
 class _ChannelEditorDialogState extends ConsumerState<_ChannelEditorDialog> {
-  late final TextEditingController _name =
-      TextEditingController(text: widget.channel?.name ?? '');
-  late final TextEditingController _topic =
-      TextEditingController(text: widget.channel?.topic ?? '');
+  late final TextEditingController _name = TextEditingController(
+    text: widget.channel?.name ?? '',
+  );
+  late final TextEditingController _topic = TextEditingController(
+    text: widget.channel?.topic ?? '',
+  );
   late String _type = widget.channel?.type ?? 'text';
   late String? _parentId = widget.channel?.parentId ?? widget.parentId;
   late bool _nsfw = widget.channel?.nsfw ?? false;
@@ -137,7 +148,7 @@ class _ChannelEditorDialogState extends ConsumerState<_ChannelEditorDialog> {
   Future<void> _submit() async {
     final name = _name.text.trim();
     if (name.isEmpty) {
-      setState(() => _error = 'Name is required');
+      setState(() => _error = UiCopy.nameIsRequired());
       return;
     }
     final client = _client;
@@ -146,8 +157,12 @@ class _ChannelEditorDialogState extends ConsumerState<_ChannelEditorDialog> {
       _busy = true;
       _error = null;
     });
-    final controller =
-        ref.read(accordChannelsControllerProvider(ref.readActiveServerKey() ?? '', widget.spaceId).notifier);
+    final controller = ref.read(
+      accordChannelsControllerProvider(
+        ref.readActiveServerKey() ?? '',
+        widget.spaceId,
+      ).notifier,
+    );
     final topic = _topic.text.trim();
     final bool ok;
     final supportsModeration = _type != 'category';
@@ -180,7 +195,9 @@ class _ChannelEditorDialogState extends ConsumerState<_ChannelEditorDialog> {
     } else {
       setState(() {
         _busy = false;
-        _error = _isEdit ? 'Failed to save channel' : 'Failed to create channel';
+        _error = _isEdit
+            ? UiCopy.failedToSaveChannel()
+            : UiCopy.failedToCreateChannel();
       });
     }
   }
@@ -191,17 +208,23 @@ class _ChannelEditorDialogState extends ConsumerState<_ChannelEditorDialog> {
     if (client == null || channel == null) return;
     final confirmed = await showConfirmDialog(
       context,
-      title: 'Delete channel',
-      message: 'Delete "${channel.name ?? channel.id}"? This cannot be undone.',
-      confirmLabel: 'Delete',
+      title: UiCopy.deleteChannel(),
+      message: UiCopy.deleteThisCannotBeUndone3(
+        arg0: channel.name ?? channel.id,
+      ),
+      confirmLabel: UiCopy.delete(),
     );
     if (confirmed != true || !mounted) return;
     setState(() {
       _busy = true;
       _error = null;
     });
-    final controller =
-        ref.read(accordChannelsControllerProvider(ref.readActiveServerKey() ?? '', widget.spaceId).notifier);
+    final controller = ref.read(
+      accordChannelsControllerProvider(
+        ref.readActiveServerKey() ?? '',
+        widget.spaceId,
+      ).notifier,
+    );
     final ok = await controller.deleteChannel(client, channel.id);
     if (!mounted) return;
     if (ok) {
@@ -209,7 +232,7 @@ class _ChannelEditorDialogState extends ConsumerState<_ChannelEditorDialog> {
     } else {
       setState(() {
         _busy = false;
-        _error = 'Failed to delete channel';
+        _error = UiCopy.failedToDeleteChannel();
       });
     }
   }
@@ -219,8 +242,14 @@ class _ChannelEditorDialogState extends ConsumerState<_ChannelEditorDialog> {
     final theme = Theme.of(context);
     // Categories the new channel can be nested under (edit keeps the channel's
     // own category fixed for simplicity).
-    final categories = ref
-            .watch(accordChannelsControllerProvider(ref.readActiveServerKey() ?? '', widget.spaceId))
+    final categories =
+        ref
+            .watch(
+              accordChannelsControllerProvider(
+                ref.readActiveServerKey() ?? '',
+                widget.spaceId,
+              ),
+            )
             ?.where((c) => c.type == 'category')
             .toList() ??
         const <AccordChannel>[];
@@ -233,8 +262,12 @@ class _ChannelEditorDialogState extends ConsumerState<_ChannelEditorDialog> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text(_isEdit ? 'Edit channel' : 'Create channel',
-                  style: theme.textTheme.titleMedium),
+              Text(
+                _isEdit
+                    ? UiCopy.editChannel(context: context)
+                    : UiCopy.createChannel(context: context),
+                style: theme.textTheme.titleMedium,
+              ),
               const SizedBox(height: 16),
               _ChannelNameField(
                 controller: _name,
@@ -284,9 +317,12 @@ class _ChannelEditorDialogState extends ConsumerState<_ChannelEditorDialog> {
                 ),
               if (_error != null) ...[
                 const SizedBox(height: 12),
-                Text(_error!,
-                    style: theme.textTheme.bodySmall!
-                        .copyWith(color: theme.colorScheme.error)),
+                Text(
+                  _error!,
+                  style: theme.textTheme.bodySmall!.copyWith(
+                    color: theme.colorScheme.error,
+                  ),
+                ),
               ],
               const SizedBox(height: 20),
               _EditorActionsRow(
@@ -321,8 +357,8 @@ class _ChannelNameField extends StatelessWidget {
       controller: controller,
       autofocus: true,
       enabled: enabled,
-      decoration: const InputDecoration(
-        labelText: 'Name',
+      decoration: InputDecoration(
+        labelText: UiCopy.name(context: context),
         isDense: true,
         border: OutlineInputBorder(),
       ),
@@ -359,8 +395,8 @@ class _CreateTypeSelector extends StatelessWidget {
       children: [
         DropdownButtonFormField<String>(
           initialValue: type,
-          decoration: const InputDecoration(
-            labelText: 'Type',
+          decoration: InputDecoration(
+            labelText: UiCopy.type(context: context),
             isDense: true,
             border: OutlineInputBorder(),
           ),
@@ -372,7 +408,7 @@ class _CreateTypeSelector extends StatelessWidget {
                   children: [
                     Icon(t.icon, size: 16, color: colors.dirtyWhite),
                     const SizedBox(width: 8),
-                    Text(t.label),
+                    Text(AppStrings.label(t.label, context: context)),
                   ],
                 ),
               ),
@@ -383,13 +419,16 @@ class _CreateTypeSelector extends StatelessWidget {
         if (type != 'category' && categories.isNotEmpty)
           DropdownButtonFormField<String?>(
             initialValue: parentId,
-            decoration: const InputDecoration(
-              labelText: 'Category',
+            decoration: InputDecoration(
+              labelText: UiCopy.category(context: context),
               isDense: true,
               border: OutlineInputBorder(),
             ),
             items: [
-              const DropdownMenuItem(value: null, child: Text('None')),
+              DropdownMenuItem(
+                value: null,
+                child: Text(UiCopy.none(context: context)),
+              ),
               for (final c in categories)
                 DropdownMenuItem(value: c.id, child: Text(c.name ?? c.id)),
             ],
@@ -426,8 +465,8 @@ class _EditTypeSelector extends StatelessWidget {
       children: [
         DropdownButtonFormField<String>(
           initialValue: _textLikeTypes.contains(type) ? type : originalType,
-          decoration: const InputDecoration(
-            labelText: 'Type',
+          decoration: InputDecoration(
+            labelText: UiCopy.type(context: context),
             isDense: true,
             border: OutlineInputBorder(),
           ),
@@ -440,7 +479,7 @@ class _EditTypeSelector extends StatelessWidget {
                     children: [
                       Icon(t.icon, size: 16, color: colors.dirtyWhite),
                       const SizedBox(width: 8),
-                      Text(t.label),
+                      Text(AppStrings.label(t.label, context: context)),
                     ],
                   ),
                 ),
@@ -467,8 +506,8 @@ class _ChannelTopicField extends StatelessWidget {
       enabled: enabled,
       minLines: 1,
       maxLines: 3,
-      decoration: const InputDecoration(
-        labelText: 'Topic (optional)',
+      decoration: InputDecoration(
+        labelText: UiCopy.topicOptional(context: context),
         isDense: true,
         border: OutlineInputBorder(),
       ),
@@ -506,30 +545,48 @@ class _ChannelModerationFields extends StatelessWidget {
           onChanged: busy ? null : onNsfwChanged,
           contentPadding: EdgeInsets.zero,
           dense: true,
-          title: const Text('Age-restricted (NSFW)'),
-          subtitle: Text('Users must confirm before viewing',
-              style: theme.textTheme.bodySmall),
+          title: Text(
+            AppStrings.choose(
+              'Age-restricted (NSFW)',
+              '年龄限制频道',
+              context: context,
+            ),
+          ),
+          subtitle: Text(
+            UiCopy.usersMustConfirmBeforeViewing(context: context),
+            style: theme.textTheme.bodySmall,
+          ),
         ),
         const SizedBox(height: 8),
         DropdownButtonFormField<int>(
           initialValue: rateLimit,
-          decoration: const InputDecoration(
-            labelText: 'Slowmode',
-            helperText: 'One message per user per interval; moderators are '
-                'exempt',
+          decoration: InputDecoration(
+            labelText: UiCopy.slowmode(context: context),
+            helperText: UiCopy.oneMessagePerUserPerIntervalModerators(
+              context: context,
+            ),
             isDense: true,
             border: OutlineInputBorder(),
           ),
           items: [
             for (final p in _slowmodePresets)
-              DropdownMenuItem(value: p.seconds, child: Text(p.label)),
+              DropdownMenuItem(
+                value: p.seconds,
+                child: Text(AppStrings.label(p.label, context: context)),
+              ),
             // A value set elsewhere (the API, another client) that isn't a
             // preset: show it as-is rather than as "Off", which would
             // silently turn slowmode off on the next save.
             if (!_slowmodePresets.any((p) => p.seconds == rateLimit))
               DropdownMenuItem(
                 value: rateLimit,
-                child: Text('Custom (${rateLimit}s)'),
+                child: Text(
+                  AppStrings.choose(
+                    'Custom (${rateLimit}s)',
+                    '自定义（$rateLimit 秒）',
+                    context: context,
+                  ),
+                ),
               ),
           ],
           onChanged: busy ? null : onRateLimitChanged,
@@ -563,7 +620,7 @@ class _PermissionsButtonRow extends StatelessWidget {
           child: TextButton.icon(
             onPressed: enabled ? onShowPermissions : null,
             icon: Icon(Icons.lock_outline, size: 18, color: colors.dirtyWhite),
-            label: const Text('Permissions'),
+            label: Text(UiCopy.permissions(context: context)),
           ),
         ),
       ],
@@ -593,20 +650,29 @@ class _EditorActionsRow extends StatelessWidget {
         if (isEdit)
           TextButton.icon(
             onPressed: busy ? null : onDelete,
-            icon: Icon(Icons.delete_outline,
-                size: 18, color: theme.colorScheme.error),
-            label: Text('Delete',
-                style: TextStyle(color: theme.colorScheme.error)),
+            icon: Icon(
+              Icons.delete_outline,
+              size: 18,
+              color: theme.colorScheme.error,
+            ),
+            label: Text(
+              UiCopy.delete(context: context),
+              style: TextStyle(color: theme.colorScheme.error),
+            ),
           ),
         const Spacer(),
         TextButton(
           onPressed: busy ? null : () => Navigator.of(context).maybePop(),
-          child: const Text('Cancel'),
+          child: Text(UiCopy.cancel(context: context)),
         ),
         const SizedBox(width: 8),
         FilledButton(
           onPressed: busy ? null : onSubmit,
-          child: Text(isEdit ? 'Save' : 'Create'),
+          child: Text(
+            isEdit
+                ? UiCopy.save(context: context)
+                : UiCopy.create(context: context),
+          ),
         ),
       ],
     );

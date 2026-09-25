@@ -1,3 +1,4 @@
+import 'package:bonfire/l10n/ui_copy.dart';
 import 'package:bonfire/shared/utils/client_access.dart';
 import 'package:bonfire/features/channels/controllers/dm_channels.dart';
 import 'package:bonfire/features/member/utils/member_display.dart';
@@ -66,14 +67,18 @@ class IncomingCallOverlay extends ConsumerWidget {
     // Surface transient call outcomes (e.g. "Call declined") app-wide. This
     // widget is mounted above every route for the whole life of the app, so
     // it's a stable host even after the full-screen call view pops.
-    ref.listen(callControllerProvider.select((s) => s.endedMessage),
-        (prev, msg) {
+    ref.listen(callControllerProvider.select((s) => s.endedMessage), (
+      prev,
+      msg,
+    ) {
       if (msg == null) return;
       showInfoSnack(context, msg);
       ref.read(callControllerProvider.notifier).clearEndedMessage();
     });
 
-    final incoming = ref.watch(callControllerProvider.select((s) => s.incoming));
+    final incoming = ref.watch(
+      callControllerProvider.select((s) => s.incoming),
+    );
     if (incoming == null) return const SizedBox.shrink();
 
     final colors = BonfireThemeExtension.of(context);
@@ -85,17 +90,25 @@ class IncomingCallOverlay extends ConsumerWidget {
     final cdnUrl = ref.watchCdnUrl();
 
     final caller = users[incoming.callerId];
-    final callerName = accordUserName(caller, fallback: 'Someone');
+    final callerName = accordUserName(
+      caller,
+      fallback: UiCopy.someone(context: context),
+    );
     final avatarUrl = accordAvatarUrl(caller, cdnUrl);
     final bg = accordAvatarColor(caller, incoming.callerId);
 
     // For a group DM, name the group; otherwise it's a 1:1 call from the caller.
-    final channels = ref.watch(dmChannelsControllerProvider(incoming.serverKey));
-    final channel =
-        channels?.where((c) => c.id == incoming.channelId).firstOrNull;
+    final channels = ref.watch(
+      dmChannelsControllerProvider(incoming.serverKey),
+    );
+    final channel = channels
+        ?.where((c) => c.id == incoming.channelId)
+        .firstOrNull;
     final isGroup =
         channel?.type == 'group_dm' || incoming.participants.length > 2;
-    final subtitle = incoming.video ? 'Incoming video call' : 'Incoming call';
+    final subtitle = incoming.video
+        ? UiCopy.incomingVideoCall(context: context)
+        : UiCopy.incomingCall(context: context);
     final title = isGroup
         ? '${channel?.name?.isNotEmpty == true ? channel!.name : 'Group'} · $callerName'
         : callerName;
@@ -114,10 +127,13 @@ class IncomingCallOverlay extends ConsumerWidget {
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             decoration: BoxDecoration(
               color: colors.foreground,
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(4),
               boxShadow: const [
                 BoxShadow(
-                    color: Colors.black54, blurRadius: 16, offset: Offset(0, 4)),
+                  color: Colors.black54,
+                  blurRadius: 16,
+                  offset: Offset(0, 4),
+                ),
               ],
             ),
             child: Row(
@@ -135,15 +151,18 @@ class IncomingCallOverlay extends ConsumerWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Text(title,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: Theme.of(context).textTheme.titleSmall),
-                      Text(subtitle,
-                          style: Theme.of(context)
-                              .textTheme
-                              .bodySmall!
-                              .copyWith(color: colors.gray)),
+                      Text(
+                        title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.titleSmall,
+                      ),
+                      Text(
+                        subtitle,
+                        style: Theme.of(
+                          context,
+                        ).textTheme.bodySmall!.copyWith(color: colors.gray),
+                      ),
                     ],
                   ),
                 ),
@@ -151,7 +170,7 @@ class IncomingCallOverlay extends ConsumerWidget {
                 _RoundButton(
                   color: colors.red,
                   icon: Icons.call_end,
-                  tooltip: 'Decline',
+                  tooltip: UiCopy.decline(context: context),
                   onPressed: () => ref
                       .read(callControllerProvider.notifier)
                       .declineIncoming(),
@@ -160,7 +179,7 @@ class IncomingCallOverlay extends ConsumerWidget {
                 _RoundButton(
                   color: colors.green,
                   icon: incoming.video ? Icons.videocam : Icons.call,
-                  tooltip: 'Accept',
+                  tooltip: UiCopy.accept(context: context),
                   onPressed: () => _accept(context, ref),
                 ),
               ],
@@ -178,20 +197,28 @@ class IncomingCallOverlay extends ConsumerWidget {
     // [withIncomingCallOverlay]), so there is normally no Navigator in its own
     // ancestry — fall back to the app's root navigator. Accepting must not
     // depend on finding one: worst case we join without opening the call view.
-    final navigator = Navigator.maybeOf(context, rootNavigator: true) ??
+    final navigator =
+        Navigator.maybeOf(context, rootNavigator: true) ??
         rootNavigatorKey.currentState;
     final users = ref.read(accordUsersControllerProvider(incoming.serverKey));
     final channels = ref.read(dmChannelsControllerProvider(incoming.serverKey));
-    final channel =
-        channels?.where((c) => c.id == incoming.channelId).firstOrNull;
-    final isGroup = channel?.type == 'group_dm' ||
-        incoming.participants.length > 2;
+    final channel = channels
+        ?.where((c) => c.id == incoming.channelId)
+        .firstOrNull;
+    final isGroup =
+        channel?.type == 'group_dm' || incoming.participants.length > 2;
     final name = isGroup
-        ? (channel?.name?.isNotEmpty == true ? channel!.name! : 'Group call')
-        : accordUserName(users[incoming.callerId], fallback: 'Call');
+        ? (channel?.name?.isNotEmpty == true
+              ? channel!.name!
+              : UiCopy.groupCall(context: context))
+        : accordUserName(
+            users[incoming.callerId],
+            fallback: UiCopy.call(context: context),
+          );
 
-    final channelId =
-        await ref.read(callControllerProvider.notifier).acceptIncoming();
+    final channelId = await ref
+        .read(callControllerProvider.notifier)
+        .acceptIncoming();
     if (channelId == null || navigator == null || !navigator.mounted) return;
     await showFullScreenVoice(
       navigator.context,

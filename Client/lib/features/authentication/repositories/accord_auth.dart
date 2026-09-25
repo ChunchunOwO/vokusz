@@ -1,3 +1,5 @@
+import 'package:bonfire/l10n/app_strings.dart';
+import 'package:bonfire/l10n/ui_copy.dart';
 import 'dart:async';
 
 import 'package:accordkit/accordkit.dart';
@@ -177,7 +179,8 @@ class AccordAuth extends _$AccordAuth {
       }
     }
     final target = clientForKey(key);
-    if (target == null) return (spaceId: null, error: 'Connection unavailable');
+    if (target == null)
+      return (spaceId: null, error: UiCopy.connectionUnavailable());
     final result = invite != null
         ? await target.invites.accept(invite)
         : await target.spaces.join(spaceId!);
@@ -658,6 +661,74 @@ class AccordAuth extends _$AccordAuth {
     _makeActive(key);
   }
 
+  /// Makes [session]'s server the one in front, reconnecting a saved account
+  /// that is not live yet. Its spaces replace the current rail.
+  Future<String?> useAccount(AccordSession session) async {
+    final live = clientForKey(session.key) != null
+        ? session.key
+        : keyForBaseUrl(session.server.baseUrl);
+    if (live != null) {
+      setActiveServer(live);
+      return null;
+    }
+    try {
+      await _addConnection(session, makeActive: true, replaceExisting: true);
+      return null;
+    } catch (error) {
+      return error.toString();
+    }
+  }
+
+  /// Saves a new address for [session] and reconnects that account. The token
+  /// stays with the account; a server that rejects it signs that account out.
+  Future<String?> updateAccountServer(
+    AccordSession session,
+    String rawUrl,
+  ) async {
+    final AccordServer server;
+    try {
+      server = AccordServer.fromBaseUrl(rawUrl);
+    } catch (_) {
+      return AppStrings.choose(
+        'Enter a valid server address',
+        '请输入有效的服务器地址',
+      );
+    }
+    if (AccordServer.sameEndpoint(session.server.baseUrl, server.baseUrl)) {
+      return null;
+    }
+    final updated = AccordSession(
+      server: server,
+      token: session.token,
+      tokenType: session.tokenType,
+      userId: session.userId,
+      username: session.username,
+      avatar: session.avatar,
+      isAdmin: session.isAdmin,
+      isGuest: session.isGuest,
+      expiresAt: session.expiresAt,
+    );
+    final oldKey = session.key;
+    final wasActive =
+        ref.read(connectionsControllerProvider).activeKey == oldKey;
+    try {
+      await _store.persist(updated);
+      if (_connections.containsKey(oldKey)) {
+        await _evictConnection(oldKey);
+      }
+      if (oldKey != updated.key) await _store.removeAccount(oldKey);
+      await _addConnection(
+        updated,
+        makeActive:
+            wasActive ||
+            ref.read(connectionsControllerProvider).activeKey == null,
+      );
+      return null;
+    } catch (error) {
+      return error.toString();
+    }
+  }
+
   // ── internals ─────────────────────────────────────────────────────────────
 
   AccordClient _restClientFor(
@@ -995,6 +1066,8 @@ class AccordAuth extends _$AccordAuth {
               GatewayIntents.members,
               GatewayIntents.presences,
               GatewayIntents.voiceStates,
+              GatewayIntents.emojis,
+              GatewayIntents.relationships,
             ],
     );
     _connections[key] = _Conn(client: client, session: session);

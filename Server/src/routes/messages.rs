@@ -374,12 +374,22 @@ pub async fn create_message_multipart(
         let name = field.name().unwrap_or("").to_string();
 
         if name == "payload_json" {
-            let text = field
-                .text()
+            let mut metadata = Vec::new();
+            while let Some(chunk) = field
+                .chunk()
                 .await
-                .map_err(|e| AppError::BadRequest(format!("failed to read payload_json: {e}")))?;
+                .map_err(|e| AppError::BadRequest(format!("failed to read payload_json: {e}")))?
+            {
+                // Keep metadata bounded when allowing much larger file bodies.
+                if metadata.len().saturating_add(chunk.len()) > 2 * 1024 * 1024 {
+                    return Err(AppError::PayloadTooLarge(
+                        "payload_json exceeds maximum size".into(),
+                    ));
+                }
+                metadata.extend_from_slice(&chunk);
+            }
             payload_json = Some(
-                serde_json::from_str(&text)
+                serde_json::from_slice(&metadata)
                     .map_err(|e| AppError::BadRequest(format!("invalid payload_json: {e}")))?,
             );
         } else if name.starts_with("files[") {

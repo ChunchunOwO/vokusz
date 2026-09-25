@@ -1,3 +1,4 @@
+import 'package:bonfire/l10n/ui_copy.dart';
 import 'dart:async';
 import 'package:bonfire/shared/components/async_state_views.dart';
 import 'package:bonfire/shared/utils/client_access.dart';
@@ -122,7 +123,9 @@ class _SearchDialogState extends ConsumerState<_SearchDialog>
                       decoration: InputDecoration(
                         isDense: true,
                         prefixIcon: const Icon(Icons.search, size: 18),
-                        hintText: 'Search messages and members',
+                        hintText: UiCopy.searchMessagesAndMembers(
+                          context: context,
+                        ),
                         border: const OutlineInputBorder(),
                       ),
                     ),
@@ -136,9 +139,9 @@ class _SearchDialogState extends ConsumerState<_SearchDialog>
             ),
             TabBar(
               controller: _tabs,
-              tabs: const [
-                Tab(text: 'Messages'),
-                Tab(text: 'Members'),
+              tabs: [
+                Tab(text: UiCopy.messages(context: context)),
+                Tab(text: UiCopy.members3(context: context)),
               ],
             ),
             Flexible(
@@ -164,14 +167,27 @@ class _SearchDialogState extends ConsumerState<_SearchDialog>
   Widget _buildMessages(ThemeData theme, BonfireThemeExtension colors) {
     final messages = _messages;
     if (messages == null) {
-      return _hint('Type to search messages', theme);
+      return _hint(UiCopy.typeToSearchMessages(context: context), theme);
     }
     if (messages.isEmpty) {
-      return _hint('No messages found', theme);
+      return _hint(UiCopy.noMessagesFound(context: context), theme);
     }
-    final members = ref.watch(accordMembersControllerProvider(ref.readActiveServerKey() ?? '', widget.spaceId));
-    final users = ref.watch(accordUsersControllerProvider(ref.readActiveServerKey() ?? ''));
-    final ensureUser = ref.read(accordUsersControllerProvider(ref.readActiveServerKey() ?? '').notifier).ensure;
+    final members = ref.watch(
+      accordMembersControllerProvider(
+        ref.readActiveServerKey() ?? '',
+        widget.spaceId,
+      ),
+    );
+    final users = ref.watch(
+      accordUsersControllerProvider(ref.readActiveServerKey() ?? ''),
+    );
+    final ensureUser = ref
+        .read(
+          accordUsersControllerProvider(
+            ref.readActiveServerKey() ?? '',
+          ).notifier,
+        )
+        .ensure;
     return ListView.separated(
       padding: const EdgeInsets.all(8),
       itemCount: messages.length,
@@ -205,10 +221,10 @@ class _SearchDialogState extends ConsumerState<_SearchDialog>
   Widget _buildMembers(ThemeData theme) {
     final members = _members;
     if (members == null) {
-      return _hint('Type to search members', theme);
+      return _hint(UiCopy.typeToSearchMembers(context: context), theme);
     }
     if (members.isEmpty) {
-      return _hint('No members found', theme);
+      return _hint(UiCopy.noMembersFound(context: context), theme);
     }
     return ListView.separated(
       padding: const EdgeInsets.all(8),

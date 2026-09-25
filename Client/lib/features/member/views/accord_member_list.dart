@@ -1,9 +1,13 @@
+import 'package:bonfire/l10n/app_strings.dart';
+import 'package:bonfire/l10n/ui_copy.dart';
 import 'package:accordkit/accordkit.dart';
 import 'package:bonfire/shared/utils/client_access.dart';
 import 'package:bonfire/features/authentication/models/accord_auth_state.dart';
 import 'package:bonfire/features/authentication/repositories/accord_auth.dart';
 import 'package:bonfire/features/events/controllers/connection.dart';
 import 'package:bonfire/features/events/controllers/presence.dart';
+import 'package:bonfire/features/presence/rich_presence.dart';
+import 'package:bonfire/features/presence/rich_presence_view.dart';
 import 'package:bonfire/features/member/controllers/accord_members.dart';
 import 'package:bonfire/features/member/utils/member_display.dart';
 import 'package:bonfire/features/member/views/accord_member_avatar.dart';
@@ -28,16 +32,19 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 /// `MemberScrollView`, but driven by the simpler [AccordMembersController]
 /// cache rather than lazy member-list sync ranges.
 class AccordMemberList extends ConsumerWidget {
-  const AccordMemberList({super.key, required this.spaceId});
+  const AccordMemberList({super.key, required this.spaceId, this.channel});
 
   final String? spaceId;
+  final AccordChannel? channel;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final colors = BonfireThemeExtension.of(context);
     final id = spaceId;
 
-    final body = id == null ? const SizedBox.shrink() : _Roster(spaceId: id);
+    final body = id == null
+        ? const SizedBox.shrink()
+        : _Roster(spaceId: id, channel: channel);
 
     return Container(
       width: 240,
@@ -51,19 +58,23 @@ class AccordMemberList extends ConsumerWidget {
 }
 
 class _Roster extends ConsumerWidget {
-  const _Roster({required this.spaceId});
+  const _Roster({required this.spaceId, this.channel});
 
   final String spaceId;
+  final AccordChannel? channel;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final members = ref.watch(accordMembersControllerProvider(ref.readActiveServerKey() ?? '', spaceId));
+    final members = ref.watch(
+      accordMembersControllerProvider(ref.readActiveServerKey() ?? '', spaceId),
+    );
     // One selector for everything read off the cached space, so a rebuild
     // only walks spacesControllerProvider's list once instead of twice.
     final spaceInfo = ref.watch(
       spacesControllerProvider.select((spaces) {
         final space = spaces?.firstWhereOrNull((s) => s.id == spaceId);
         return (
+          ownerId: space?.ownerId,
           roles: space?.roles ?? const <AccordRole>[],
           memberCount: space?.memberCount,
           presenceCount: space?.presenceCount,
@@ -78,13 +89,29 @@ class _Roster extends ConsumerWidget {
       // The roster fetch itself failed (timeout / non-2xx / network) — surface
       // a retry instead of spinning forever. onRetry clears the failed flag
       // itself, then invalidates the controller to re-run `_load`.
-      if (ref.watch(membersLoadFailedProvider(ref.readActiveServerKey() ?? '', spaceId))) {
+      if (ref.watch(
+        membersLoadFailedProvider(ref.readActiveServerKey() ?? '', spaceId),
+      )) {
         return ServerUnreachable(
-          title: "Couldn't load members",
-          message: 'Something went wrong fetching the member list.',
+          title: UiCopy.couldnTLoadMembers(context: context),
+          message: UiCopy.somethingWentWrongFetchingTheMemberList(
+            context: context,
+          ),
           onRetry: () {
-            ref.read(membersLoadFailedProvider(ref.readActiveServerKey() ?? '', spaceId).notifier).set(false);
-            ref.invalidate(accordMembersControllerProvider(ref.readActiveServerKey() ?? '', spaceId));
+            ref
+                .read(
+                  membersLoadFailedProvider(
+                    ref.readActiveServerKey() ?? '',
+                    spaceId,
+                  ).notifier,
+                )
+                .set(false);
+            ref.invalidate(
+              accordMembersControllerProvider(
+                ref.readActiveServerKey() ?? '',
+                spaceId,
+              ),
+            );
           },
         );
       }
@@ -113,6 +140,8 @@ class _Roster extends ConsumerWidget {
       presences,
       memberCount: spaceInfo.memberCount,
       presenceCount: spaceInfo.presenceCount,
+      ownerId: spaceInfo.ownerId,
+      ownerLabel: AppStrings.choose('Domain owner', '域主', context: context),
     );
 
     // Flatten sections into one lazily-built row list so a large roster only
@@ -155,66 +184,50 @@ class _RosterSection {
   int? count;
 }
 
-const int _defaultPosition = -1;
-const int _offlinePosition = -2;
-
-/// Buckets online [members] under their highest hoisted role (falling back to a
-/// "Members" group); all offline members collapse into a single trailing
-/// "Offline" section. Sections sort by role position descending,
-/// then "Members", then "Offline" last; members within a section sort by name.
 List<_RosterSection> _buildSections(
   List<AccordMember> members,
   List<AccordRole> roles,
   PresenceMap presences, {
   Object? memberCount,
   Object? presenceCount,
+  String? ownerId,
+  String ownerLabel = 'Domain owner',
 }) {
-  final byKey = <String, _RosterSection>{};
-  final defaultSection = _RosterSection(
-    label: 'Members',
-    position: _defaultPosition,
-  );
-  final offlineSection = _RosterSection(
-    label: 'Offline',
-    position: _offlinePosition,
-  );
-
-  for (final member in members) {
-    if (accordPresenceStatus(presences, member.userId) == 'offline') {
-      offlineSection.members.add(member);
-      continue;
-    }
-    final role = memberHoistRole(member, roles);
-    if (role == null) {
-      defaultSection.members.add(member);
-      continue;
-    }
-    final section = byKey.putIfAbsent(
-      role.id,
-      () => _RosterSection(label: role.name, position: role.position),
-    );
-    section.members.add(member);
-  }
-
-  offlineSection.count = rosterOfflineCount(
-    memberCount: memberCount,
-    presenceCount: presenceCount,
-    loadedOfflineCount: offlineSection.members.length,
-  );
-
-  final sections = byKey.values.toList()
+  final sections = <String, _RosterSection>{};
+  final orderedRoles = [...roles]
     ..sort((a, b) => b.position.compareTo(a.position));
-  if (defaultSection.members.isNotEmpty) sections.add(defaultSection);
-  if ((offlineSection.count ?? 0) > 0) sections.add(offlineSection);
-
-  for (final section in sections) {
-    section.members.sort(
-      (a, b) => accordMemberName(
-        a,
-      ).toLowerCase().compareTo(accordMemberName(b).toLowerCase()),
-    );
+  for (final member in members) {
+    final owner = member.userId == ownerId;
+    final role = owner ? null : memberHoistRole(member, orderedRoles);
+    final key = owner ? 'domain-owner' : role?.id ?? 'ordinary';
+    sections
+        .putIfAbsent(
+          key,
+          () => _RosterSection(
+            label: owner
+                ? ownerLabel
+                : role == null || role.name == '@everyone'
+                ? AppStrings.choose('Ordinary members', '普通成员')
+                : role.name,
+            position: owner ? 0x7fffffff : role?.position ?? 0,
+          ),
+        )
+        .members
+        .add(member);
   }
-  return sections;
+  final result = sections.values.toList()
+    ..sort((a, b) => b.position.compareTo(a.position));
+  for (final section in result) {
+    section.members.sort((a, b) {
+      final offlineA = accordPresenceStatus(presences, a.userId) == 'offline';
+      final offlineB = accordPresenceStatus(presences, b.userId) == 'offline';
+      if (offlineA != offlineB) return offlineA ? 1 : -1;
+      return accordMemberName(
+        a,
+      ).toLowerCase().compareTo(accordMemberName(b).toLowerCase());
+    });
+  }
+  return result;
 }
 
 /// Uses the server's space summary for the complete offline total while the
@@ -278,10 +291,19 @@ class _MemberRow extends ConsumerWidget {
     final name = accordMemberName(member);
     final avatarUrl = accordMemberAvatarUrl(member, cdnUrl);
     final colorRole = memberColorRole(member, roles);
-    final nameColor = colorRole == null
-        ? colors.dirtyWhite
-        : accordRoleColor(colorRole.color);
+    final nameColor =
+        communityNameColor(member.user) ??
+        (colorRole == null
+            ? colors.dirtyWhite
+            : accordRoleColor(colorRole.color));
     final initial = accordInitial(name);
+    final rich = richPresenceOf(
+      ref.watch(
+        activePresencesProvider.select(
+          (presences) => presences[member.userId]?.activities,
+        ),
+      ),
+    );
     // Offline members read as muted, matching the reference roster.
     final dimmed = status == 'offline';
 
@@ -323,14 +345,42 @@ class _MemberRow extends ConsumerWidget {
                     ),
                   ),
                   const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      name,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.bodyMedium!.copyWith(
-                        color: nameColor ?? colors.dirtyWhite,
+                  if (communityNameColor(member.user) != null)
+                    Tooltip(
+                      message: AppStrings.choose(
+                        'Community management',
+                        '社区管理',
+                        context: context,
+                      ),
+                      child: const Icon(
+                        Icons.verified_user,
+                        size: 14,
+                        color: Color(0xFFFFB74D),
                       ),
                     ),
+                  Expanded(
+                    child: rich == null
+                        ? Text(
+                            name,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.bodyMedium!.copyWith(
+                              color: nameColor ?? colors.dirtyWhite,
+                            ),
+                          )
+                        : Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                name,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: theme.textTheme.bodyMedium!.copyWith(
+                                  color: nameColor ?? colors.dirtyWhite,
+                                ),
+                              ),
+                              RichPresenceLine(presence: rich),
+                            ],
+                          ),
                   ),
                   if (member.isRemote) ...[
                     const SizedBox(width: 6),
@@ -374,13 +424,25 @@ Future<void> _showMemberContextMenu(
       Offset.zero & overlay.size,
     ),
     items: [
-      const PopupMenuItem(value: 'profile', child: Text('View Profile')),
+      PopupMenuItem(
+        value: 'profile',
+        child: Text(UiCopy.viewProfile(context: context)),
+      ),
       if (!isSelf)
-        const PopupMenuItem(value: 'dm', child: Text('Direct Message')),
+        PopupMenuItem(
+          value: 'dm',
+          child: Text(UiCopy.directMessage(context: context)),
+        ),
       const PopupMenuDivider(),
-      const PopupMenuItem(value: 'copyId', child: Text('Copy User ID')),
+      PopupMenuItem(
+        value: 'copyId',
+        child: Text(UiCopy.copyUserId(context: context)),
+      ),
       if (username != null && username.isNotEmpty)
-        const PopupMenuItem(value: 'copyName', child: Text('Copy Username')),
+        PopupMenuItem(
+          value: 'copyName',
+          child: Text(UiCopy.copyUsername(context: context)),
+        ),
     ],
   );
   if (selected == null || !context.mounted) return;
@@ -395,9 +457,11 @@ Future<void> _showMemberContextMenu(
       await openAccordDirectMessage(context, ref, member.userId);
     case 'copyId':
       await Clipboard.setData(ClipboardData(text: member.userId));
-      if (context.mounted) showInfoSnack(context, 'User ID copied');
+      if (context.mounted)
+        showInfoSnack(context, UiCopy.userIdCopied(context: context));
     case 'copyName':
       await Clipboard.setData(ClipboardData(text: username!));
-      if (context.mounted) showInfoSnack(context, 'Username copied');
+      if (context.mounted)
+        showInfoSnack(context, UiCopy.usernameCopied(context: context));
   }
 }

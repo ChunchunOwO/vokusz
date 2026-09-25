@@ -57,3 +57,7 @@ for voice, video and screen sharing. Leave and rejoin to apply it to a current
 call. The option is off by default, can add latency, and requires the server's
 LiveKit deployment to provide reachable TURN. Failed relay connections report an
 error and do not fall back to direct media. See [network privacy](../privacy-network.md).
+
+Screen sharing: choose resolution (480p–1440p) and frame rate (5–60 FPS) in the desktop source picker or Voice & Video settings. New profiles default to 720p/30 FPS; existing saved choices are retained. Changes apply to the next share. Use 480p/10–15 FPS for lower resource usage, or 60 FPS for motion. Windows x64 uses bundled OBS core with Windows Graphics Capture for GPU scaling and color conversion before WebRTC encoding. No separate OBS installation is required. Web and other platforms retain their existing backends.
+
+OBS capture build, lifecycle and native verification: [obs-capture.md](obs-capture.md).

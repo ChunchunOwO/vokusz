@@ -5,6 +5,7 @@
 /// in the `part` files stays private to this library.
 library;
 
+import 'package:bonfire/l10n/ui_copy.dart';
 import 'package:bonfire/features/automod/views/block_attachment_dialog.dart';
 
 import 'dart:async';
@@ -17,6 +18,7 @@ import 'package:bonfire/features/channels/controllers/muted_channels.dart';
 import 'package:bonfire/features/channels/controllers/read_state.dart';
 import 'package:bonfire/features/channels/utils/mark_channel_read.dart';
 import 'package:bonfire/features/channels/utils/toggle_channel_mute.dart';
+import 'package:bonfire/l10n/app_strings.dart';
 import 'package:bonfire/features/member/controllers/accord_members.dart';
 import 'package:bonfire/features/member/utils/member_display.dart';
 import 'package:bonfire/features/member/utils/permissions.dart';
@@ -248,9 +250,9 @@ class _MessagePaneState extends ConsumerState<MessagePane> {
     final count = _selectedMessageIds.length;
     final confirmed = await showConfirmDialog(
       context,
-      title: 'Delete messages',
-      message: 'Delete $count message(s)? This cannot be undone.',
-      confirmLabel: 'Delete',
+      title: UiCopy.deleteMessages(),
+      message: UiCopy.deleteMessageSThisCannotBeUndone(arg0: count),
+      confirmLabel: UiCopy.delete(),
       danger: true,
     );
     if (confirmed != true || !mounted) return;
@@ -318,8 +320,8 @@ class _MessagePaneState extends ConsumerState<MessagePane> {
       return const LoadingView();
     }
     return ServerUnreachable(
-      title: "Couldn't load messages",
-      message: 'Something went wrong fetching this channel’s history.',
+      title: UiCopy.couldnTLoadMessages(),
+      message: UiCopy.somethingWentWrongFetchingThisChannelS(),
       onRetry: () {
         ref
             .read(messagesLoadFailedProvider(serverKey, channelId).notifier)
@@ -341,7 +343,7 @@ class _MessagePaneState extends ConsumerState<MessagePane> {
         color: colors.background,
         alignment: Alignment.center,
         child: Text(
-          'Select a channel',
+          UiCopy.selectAChannel(context: context),
           style: Theme.of(context).textTheme.bodyMedium,
         ),
       );
@@ -527,7 +529,7 @@ class _MessagePaneState extends ConsumerState<MessagePane> {
                 ? Row(
                     children: [
                       IconButton(
-                        tooltip: 'Cancel',
+                        tooltip: AppStrings.of(context).cancel,
                         onPressed: _bulkDeleting ? null : _exitSelection,
                         icon: Icon(
                           Icons.close,
@@ -538,7 +540,9 @@ class _MessagePaneState extends ConsumerState<MessagePane> {
                       const SizedBox(width: 4),
                       Expanded(
                         child: Text(
-                          '${_selectedMessageIds.length} selected',
+                          AppStrings.of(
+                            context,
+                          ).selectedCount(_selectedMessageIds.length),
                           overflow: TextOverflow.ellipsis,
                           style: Theme.of(context).textTheme.titleSmall,
                         ),
@@ -561,7 +565,7 @@ class _MessagePaneState extends ConsumerState<MessagePane> {
                                 color: Theme.of(context).colorScheme.error,
                               ),
                         label: Text(
-                          'Delete',
+                          AppStrings.of(context).delete,
                           style: TextStyle(
                             color: Theme.of(context).colorScheme.error,
                           ),
@@ -592,7 +596,7 @@ class _MessagePaneState extends ConsumerState<MessagePane> {
                               panel
                                   ? (widget.panelTitle ??
                                         channel?.name ??
-                                        'Chat')
+                                        AppStrings.of(context).chat)
                                   : channel?.name ?? '',
                               overflow: TextOverflow.ellipsis,
                               style: Theme.of(context).textTheme.titleSmall,
@@ -600,7 +604,7 @@ class _MessagePaneState extends ConsumerState<MessagePane> {
                       ),
                       ...widget.headerActions,
                       IconButton(
-                        tooltip: 'Pinned messages',
+                        tooltip: AppStrings.of(context).pinnedMessages,
                         onPressed: () => showPinnedMessages(
                           context,
                           channelId: channelId,
@@ -618,7 +622,7 @@ class _MessagePaneState extends ConsumerState<MessagePane> {
                       _MuteButton(channelId: channelId),
                       if (panel && widget.onClosePanel != null)
                         IconButton(
-                          tooltip: 'Close chat',
+                          tooltip: AppStrings.of(context).closeChat,
                           onPressed: widget.onClosePanel,
                           icon: Icon(
                             Icons.close,
@@ -635,7 +639,7 @@ class _MessagePaneState extends ConsumerState<MessagePane> {
                 : messages.isEmpty
                 ? Center(
                     child: Text(
-                      'No messages yet',
+                      AppStrings.of(context).noMessagesYet,
                       style: Theme.of(context).textTheme.bodyMedium,
                     ),
                   )
@@ -850,9 +854,14 @@ class _TypingIndicator extends ConsumerWidget {
 
     String nameFor(String userId) {
       final member = members?[userId];
-      if (member != null) return accordMemberName(member, fallback: 'Someone');
+      if (member != null)
+        return accordMemberName(
+          member,
+          fallback: UiCopy.someone(context: context),
+        );
       final user = userCache[userId];
-      if (user != null) return accordUserName(user, fallback: 'Someone');
+      if (user != null)
+        return accordUserName(user, fallback: UiCopy.someone(context: context));
       ref
           .read(
             accordUsersControllerProvider(
@@ -860,16 +869,20 @@ class _TypingIndicator extends ConsumerWidget {
             ).notifier,
           )
           .ensure(userId);
-      return 'Someone';
+      return UiCopy.someone(context: context);
     }
 
     String? label;
     if (typing.length == 1) {
-      label = '${nameFor(typing.first)} is typing…';
+      label = UiCopy.isTyping(context: context, arg0: nameFor(typing.first));
     } else if (typing.length == 2) {
-      label = '${nameFor(typing[0])} and ${nameFor(typing[1])} are typing…';
+      label = UiCopy.andAreTyping(
+        context: context,
+        arg0: nameFor(typing[0]),
+        arg1: nameFor(typing[1]),
+      );
     } else if (typing.length > 2) {
-      label = 'Several people are typing…';
+      label = UiCopy.severalPeopleAreTyping(context: context);
     }
 
     return SizedBox(

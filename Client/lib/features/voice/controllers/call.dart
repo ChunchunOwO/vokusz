@@ -2,6 +2,7 @@ import 'dart:async' show Timer, unawaited;
 
 import 'package:accordkit/accordkit.dart';
 import 'package:bonfire/features/authentication/repositories/accord_auth.dart';
+import 'package:bonfire/l10n/app_strings.dart';
 import 'package:bonfire/features/notifications/services/sound.dart';
 import 'package:bonfire/features/server/controllers/connections.dart';
 import 'package:bonfire/features/voice/controllers/missed_calls.dart';
@@ -166,7 +167,10 @@ class CallController extends _$CallController {
     if (client == null) {
       state = state.copyWith(
         clearOutgoing: true,
-        endedMessage: 'Could not start the call — no connection',
+        endedMessage: AppStrings.choose(
+          'Could not start the call — no connection',
+          '没能发起通话，没有连接',
+        ),
       );
       await voice.leave();
       return;
@@ -186,7 +190,9 @@ class CallController extends _$CallController {
     _ringtone.stop();
     state = state.copyWith(
       clearOutgoing: true,
-      endedMessage: reason.isEmpty ? 'Could not ring the call' : reason,
+      endedMessage: reason.isEmpty
+          ? AppStrings.choose('Could not ring the call', '没能呼出')
+          : reason,
     );
     await voice.leave();
   }

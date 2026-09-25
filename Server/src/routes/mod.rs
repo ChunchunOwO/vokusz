@@ -180,7 +180,10 @@ fn api_routes(state: &AppState) -> Router<AppState> {
             "/users/@me",
             get(users::get_current_user)
                 .patch(users::update_current_user)
-                .delete(users::delete_current_user),
+                .delete(users::delete_current_user)
+                .layer(axum::extract::DefaultBodyLimit::max(
+                    crate::storage::MAX_IMAGE_UPLOAD_BODY,
+                )),
         )
         .route(
             "/users/@me/data-export",
@@ -212,7 +215,10 @@ fn api_routes(state: &AppState) -> Router<AppState> {
             "/spaces/{space_id}",
             get(spaces::get_space)
                 .patch(spaces::update_space)
-                .delete(spaces::delete_space),
+                .delete(spaces::delete_space)
+                .layer(axum::extract::DefaultBodyLimit::max(
+                    crate::storage::MAX_IMAGE_UPLOAD_BODY,
+                )),
         )
         .route(
             "/spaces/{space_id}/channels",
@@ -228,13 +234,20 @@ fn api_routes(state: &AppState) -> Router<AppState> {
         )
         .route(
             "/spaces/{space_id}/members/@me",
-            patch(members::update_own_member).delete(members::leave_space),
+            patch(members::update_own_member)
+                .delete(members::leave_space)
+                .layer(axum::extract::DefaultBodyLimit::max(
+                    crate::storage::MAX_IMAGE_UPLOAD_BODY,
+                )),
         )
         .route(
             "/spaces/{space_id}/members/{user_id}",
             get(members::get_member)
                 .patch(members::update_member)
-                .delete(members::kick_member),
+                .delete(members::kick_member)
+                .layer(axum::extract::DefaultBodyLimit::max(
+                    crate::storage::MAX_IMAGE_UPLOAD_BODY,
+                )),
         )
         .route(
             "/spaces/{space_id}/members/{user_id}/roles/{role_id}",
@@ -316,7 +329,11 @@ fn api_routes(state: &AppState) -> Router<AppState> {
         )
         .route(
             "/channels/{channel_id}/messages/upload",
-            post(messages::create_message_multipart),
+            post(messages::create_message_multipart).layer(
+                axum::extract::DefaultBodyLimit::max(
+                    10 * crate::storage::MAX_ATTACHMENT_SIZE + 1024 * 1024,
+                ),
+            ),
         )
         .route(
             "/channels/{channel_id}/messages/{message_id}",
@@ -485,6 +502,7 @@ fn api_routes(state: &AppState) -> Router<AppState> {
             get(voice::get_voice_status),
         )
         .route("/channels/{channel_id}/voice/join", post(voice::join_voice))
+        .route("/channels/{channel_id}/voice/move", post(voice::move_member))
         .route(
             "/channels/{channel_id}/voice/leave",
             delete(voice::leave_voice),

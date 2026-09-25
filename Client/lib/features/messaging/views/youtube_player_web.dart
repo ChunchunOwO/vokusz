@@ -1,3 +1,4 @@
+import 'package:bonfire/l10n/ui_copy.dart';
 import 'dart:async';
 import 'dart:js_interop';
 
@@ -155,7 +156,7 @@ class _YouTubePlayerState extends State<YouTubePlayer> {
       }
       frame.src = widget.video.playerUrl(web.window.location.origin);
       _readyTimeout = Timer(const Duration(seconds: 20), () {
-        _stop(error: 'YouTube did not load. Try opening the video in YouTube.');
+        _stop(error: UiCopy.youtubeDidNotLoadTryOpeningThe());
       });
       _player = _YouTubeApiPlayer(
         frame,
@@ -172,7 +173,7 @@ class _YouTubePlayerState extends State<YouTubePlayer> {
             as JSObject,
       );
     } catch (_) {
-      _stop(error: 'YouTube could not load. Try opening the video in YouTube.');
+      _stop(error: UiCopy.youtubeCouldNotLoadTryOpeningThe());
     }
   }
 
@@ -193,7 +194,7 @@ class _YouTubePlayerState extends State<YouTubePlayer> {
       }
       _frame = frame;
       frame
-        ..title = 'YouTube video player'
+        ..title = UiCopy.youtubeVideoPlayer(context: context)
         ..style.width = '100%'
         ..style.height = '100%'
         ..style.border = '0'
@@ -208,7 +209,7 @@ class _YouTubePlayerState extends State<YouTubePlayer> {
         'error',
         ((web.Event _) {
           _stop(
-            error: 'YouTube could not load. Try opening the video in YouTube.',
+            error: UiCopy.youtubeCouldNotLoadTryOpeningThe(context: context),
           );
         }).toJS,
       );

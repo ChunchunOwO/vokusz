@@ -8,8 +8,10 @@ import 'package:bonfire/features/authentication/utils/terms_acceptance.dart';
 import 'package:bonfire/features/authentication/views/accord_login.dart';
 import 'package:bonfire/features/authentication/views/terms_gate.dart';
 import 'package:bonfire/features/authentication/views/welcome_view.dart';
+import 'package:bonfire/shared/app_info.dart';
 import 'package:bonfire/theme/app_theme.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_ce/hive.dart';
@@ -36,6 +38,13 @@ Widget _loginApp() => ProviderScope(
   overrides: [accordAuthProvider.overrideWith(_LoggedOutAuth.new)],
   child: MaterialApp(
     theme: buildAppTheme(AppThemePreset.dark),
+    locale: const Locale('zh'),
+    supportedLocales: const [Locale('zh'), Locale('en')],
+    localizationsDelegates: const [
+      GlobalMaterialLocalizations.delegate,
+      GlobalWidgetsLocalizations.delegate,
+      GlobalCupertinoLocalizations.delegate,
+    ],
     home: const Scaffold(body: AccordLoginScreen()),
   ),
 );
@@ -76,7 +85,7 @@ void main() {
     expect(hasAcceptedAppTerms(), isFalse);
   });
 
-  testWidgets('the gate replaces every signed-out surface until accepted', (
+  testWidgets('signed-out entry is the default server, with no terms gate', (
     tester,
   ) async {
     await tester.binding.setSurfaceSize(const Size(800, 1600));
@@ -85,13 +94,11 @@ void main() {
     await tester.pump();
     await tester.pump();
 
-    expect(find.byType(TermsGateView), findsOneWidget);
-    expect(find.text(appTermsTitle), findsOneWidget);
-    expect(find.text('Privacy Policy'), findsOneWidget);
-    expect(find.textContaining('Zero tolerance'), findsOneWidget);
-    // The welcome screen — and with it the server browser and the credentials
-    // form behind it — stays out of reach.
+    expect(find.byType(TermsGateView), findsNothing);
     expect(find.byType(WelcomeView), findsNothing);
+    expect(find.text('欢迎来到 Vokusz'), findsOneWidget);
+    expect(find.text('登录'), findsWidgets);
+    expect(find.text(kDefaultAccordServerUrl), findsNothing);
   });
 
   testWidgets('agreeing is what lifts the gate', (tester) async {
@@ -133,37 +140,8 @@ void main() {
     await tester.pump();
 
     expect(find.byType(TermsGateView), findsNothing);
-    expect(find.byType(WelcomeView), findsOneWidget);
-  });
-
-  testWidgets('the terms stay reachable from the credentials form', (
-    tester,
-  ) async {
-    await tester.runAsync(recordAppTermsAcceptance);
-    await tester.binding.setSurfaceSize(const Size(500, 1200));
-    addTearDown(() => tester.binding.setSurfaceSize(null));
-
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: [accordAuthProvider.overrideWith(_LoggedOutAuth.new)],
-        child: MaterialApp(
-          theme: buildAppTheme(AppThemePreset.dark),
-          home: const Scaffold(
-            body: AccordLoginScreen(startOnCredentials: true),
-          ),
-        ),
-      ),
-    );
-    await tester.pump();
-    await tester.pump();
-
-    final link = find.widgetWithText(TextButton, appTermsTitle);
-    expect(link, findsOneWidget);
-    await tester.ensureVisible(link);
-    await tester.tap(link);
-    await tester.pumpAndSettle();
-
-    expect(find.byType(AppTermsBody), findsOneWidget);
+    expect(find.text('欢迎来到 Vokusz'), findsOneWidget);
+    expect(find.text('登录'), findsWidgets);
   });
 
   testWidgets('the terms dialog also offers the Privacy Policy', (

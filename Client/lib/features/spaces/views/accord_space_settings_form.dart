@@ -62,7 +62,7 @@ class _BannerSection extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        SectionHeader('Banner'),
+        SectionHeader(UiCopy.banner(context: context)),
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
           child: Column(
@@ -79,7 +79,11 @@ class _BannerSection extends StatelessWidget {
                     FilledButton.icon(
                       onPressed: busy ? null : onPick,
                       icon: const Icon(Icons.upload, size: 18),
-                      label: Text(hasBanner ? 'Change' : 'Upload'),
+                      label: Text(
+                        hasBanner
+                            ? UiCopy.change(context: context)
+                            : UiCopy.upload(context: context),
+                      ),
                     ),
                     const SizedBox(width: 8),
                     if (hasBanner)
@@ -88,7 +92,7 @@ class _BannerSection extends StatelessWidget {
                         style: TextButton.styleFrom(
                           foregroundColor: colors.red,
                         ),
-                        child: const Text('Remove'),
+                        child: Text(UiCopy.remove(context: context)),
                       ),
                   ],
                 ),
@@ -96,7 +100,7 @@ class _BannerSection extends StatelessWidget {
                 Padding(
                   padding: const EdgeInsets.only(top: 8),
                   child: Text(
-                    'You need Manage Space to edit the banner.',
+                    UiCopy.youNeedManageSpaceToEditThe(context: context),
                     style: theme.textTheme.bodySmall!.copyWith(
                       color: colors.gray,
                     ),
@@ -142,7 +146,7 @@ class _OverviewSection extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        SectionHeader('Overview'),
+        SectionHeader(UiCopy.overview(context: context)),
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
           child: Row(
@@ -161,8 +165,8 @@ class _OverviewSection extends StatelessWidget {
                     child: Text(
                       pendingIconBytes != null ||
                               (!iconRemoved && iconUrl != null)
-                          ? 'Change'
-                          : 'Upload',
+                          ? UiCopy.change(context: context)
+                          : UiCopy.upload(context: context),
                     ),
                   ),
                   if (pendingIconBytes != null ||
@@ -170,7 +174,7 @@ class _OverviewSection extends StatelessWidget {
                     TextButton(
                       onPressed: busy ? null : onRemoveIcon,
                       style: TextButton.styleFrom(foregroundColor: colors.red),
-                      child: const Text('Remove'),
+                      child: Text(UiCopy.remove(context: context)),
                     ),
                 ],
               ),
@@ -182,8 +186,8 @@ class _OverviewSection extends StatelessWidget {
                     TextField(
                       controller: nameController,
                       enabled: !busy,
-                      decoration: const InputDecoration(
-                        labelText: 'Name',
+                      decoration: InputDecoration(
+                        labelText: UiCopy.name(context: context),
                         isDense: true,
                         border: OutlineInputBorder(),
                       ),
@@ -194,8 +198,8 @@ class _OverviewSection extends StatelessWidget {
                       enabled: !busy,
                       minLines: 2,
                       maxLines: 4,
-                      decoration: const InputDecoration(
-                        labelText: 'Description',
+                      decoration: InputDecoration(
+                        labelText: UiCopy.description(context: context),
                         isDense: true,
                         border: OutlineInputBorder(),
                       ),
@@ -250,50 +254,62 @@ class _ModerationSection extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        SectionHeader('Moderation'),
+        SectionHeader(UiCopy.moderation(context: context)),
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
           child: Column(
             children: [
               _SettingsDropdown<String>(
-                label: 'Verification level',
+                label: UiCopy.verificationLevel(context: context),
                 value: verification,
                 items: [
                   for (final v in _verificationLevels)
-                    DropdownMenuItem(value: v.value, child: Text(v.label)),
+                    DropdownMenuItem(
+                      value: v.value,
+                      child: Text(AppStrings.label(v.label, context: context)),
+                    ),
                 ],
                 enabled: !busy,
                 onChanged: onVerificationChanged,
               ),
               const SizedBox(height: 8),
               _SettingsDropdown<String>(
-                label: 'Default notifications',
+                label: UiCopy.defaultNotifications(context: context),
                 value: notifications,
                 items: [
                   for (final v in _notificationLevels)
-                    DropdownMenuItem(value: v.value, child: Text(v.label)),
+                    DropdownMenuItem(
+                      value: v.value,
+                      child: Text(AppStrings.label(v.label, context: context)),
+                    ),
                 ],
                 enabled: !busy,
                 onChanged: onNotificationsChanged,
               ),
               const SizedBox(height: 8),
               _SettingsDropdown<String>(
-                label: 'NSFW level',
+                label: UiCopy.nsfwLevel(context: context),
                 value: nsfw,
                 items: [
                   for (final v in _nsfwLevels)
-                    DropdownMenuItem(value: v.value, child: Text(v.label)),
+                    DropdownMenuItem(
+                      value: v.value,
+                      child: Text(AppStrings.label(v.label, context: context)),
+                    ),
                 ],
                 enabled: !busy,
                 onChanged: onNsfwChanged,
               ),
               const SizedBox(height: 8),
               _SettingsDropdown<String>(
-                label: 'Explicit content filter',
+                label: UiCopy.explicitContentFilter(context: context),
                 value: contentFilter,
                 items: [
                   for (final v in _contentFilters)
-                    DropdownMenuItem(value: v.value, child: Text(v.label)),
+                    DropdownMenuItem(
+                      value: v.value,
+                      child: Text(AppStrings.label(v.label, context: context)),
+                    ),
                 ],
                 enabled: !busy,
                 onChanged: onContentFilterChanged,
@@ -304,14 +320,18 @@ class _ModerationSection extends StatelessWidget {
         SwitchListTile(
           value: isPublic,
           onChanged: busy ? null : onPublicChanged,
-          title: const Text('Public space'),
-          subtitle: const Text('Discoverable and joinable by anyone'),
+          title: Text(UiCopy.publicSpace(context: context)),
+          subtitle: Text(
+            UiCopy.discoverableAndJoinableByAnyone(context: context),
+          ),
         ),
         SwitchListTile(
           value: guestAccess,
           onChanged: busy ? null : onGuestAccessChanged,
-          title: const Text('Allow guest access'),
-          subtitle: const Text('Let unauthenticated users browse'),
+          title: Text(UiCopy.allowGuestAccess(context: context)),
+          subtitle: Text(
+            UiCopy.letUnauthenticatedUsersBrowse(context: context),
+          ),
         ),
       ],
     );
@@ -342,16 +362,19 @@ class _ChannelsSection extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        SectionHeader('Channels'),
+        SectionHeader(UiCopy.channels(context: context)),
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
           child: Column(
             children: [
               _SettingsDropdown<String?>(
-                label: 'Rules channel',
+                label: UiCopy.rulesChannel(context: context),
                 value: rulesValue,
                 items: [
-                  const DropdownMenuItem(value: null, child: Text('None')),
+                  DropdownMenuItem(
+                    value: null,
+                    child: Text(UiCopy.none(context: context)),
+                  ),
                   for (final c in textChannels)
                     DropdownMenuItem(
                       value: c.id,
@@ -363,10 +386,13 @@ class _ChannelsSection extends StatelessWidget {
               ),
               const SizedBox(height: 8),
               _SettingsDropdown<String?>(
-                label: 'System messages channel',
+                label: UiCopy.systemMessagesChannel(context: context),
                 value: systemValue,
                 items: [
-                  const DropdownMenuItem(value: null, child: Text('None')),
+                  DropdownMenuItem(
+                    value: null,
+                    child: Text(UiCopy.none(context: context)),
+                  ),
                   for (final c in textChannels)
                     DropdownMenuItem(
                       value: c.id,
@@ -406,7 +432,7 @@ class _SaveSettingsButton extends StatelessWidget {
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
               : const Icon(Icons.save, size: 18),
-          label: const Text('Save settings'),
+          label: Text(UiCopy.saveSettings(context: context)),
         ),
       ),
     );

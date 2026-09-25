@@ -9,7 +9,7 @@ part of 'accord_auth.dart';
 // GENERATED CODE - DO NOT MODIFY BY HAND
 // ignore_for_file: type=lint, type=warning
 /// Authentication + connection lifecycle against Accord servers. The Accord
-/// replacement for the Bonfire `Auth` provider.
+/// replacement for Bonfire's `Auth` provider.
 ///
 /// In the multi-server model this holds N live [AccordClient]s at once (one per
 /// connected server, keyed by `userId@baseUrl`) and tracks which one is
@@ -24,7 +24,7 @@ part of 'accord_auth.dart';
 const accordAuthProvider = AccordAuthProvider._();
 
 /// Authentication + connection lifecycle against Accord servers. The Accord
-/// replacement for the Bonfire `Auth` provider.
+/// replacement for Bonfire's `Auth` provider.
 ///
 /// In the multi-server model this holds N live [AccordClient]s at once (one per
 /// connected server, keyed by `userId@baseUrl`) and tracks which one is
@@ -37,7 +37,7 @@ const accordAuthProvider = AccordAuthProvider._();
 final class AccordAuthProvider
     extends $NotifierProvider<AccordAuth, AccordAuthState> {
   /// Authentication + connection lifecycle against Accord servers. The Accord
-  /// replacement for the Bonfire `Auth` provider.
+  /// replacement for Bonfire's `Auth` provider.
   ///
   /// In the multi-server model this holds N live [AccordClient]s at once (one per
   /// connected server, keyed by `userId@baseUrl`) and tracks which one is
@@ -74,10 +74,10 @@ final class AccordAuthProvider
   }
 }
 
-String _$accordAuthHash() => r'7f2cb62b497b4f75fb4a24aeabd020b244f29b14';
+String _$accordAuthHash() => r'97472f108d96402b685279f5d6c57dfe31f7b882';
 
 /// Authentication + connection lifecycle against Accord servers. The Accord
-/// replacement for the Bonfire `Auth` provider.
+/// replacement for Bonfire's `Auth` provider.
 ///
 /// In the multi-server model this holds N live [AccordClient]s at once (one per
 /// connected server, keyed by `userId@baseUrl`) and tracks which one is

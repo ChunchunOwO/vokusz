@@ -78,6 +78,11 @@ class Room extends DisposableChangeNotifier with EventsEmittable<RoomEvent> {
 
   /// the current participant
   LocalParticipant? get localParticipant => _localParticipant;
+
+  /// Failure from the fast-connect microphone publish. That publish runs in the
+  /// join-response listener, which [connect] does not await on its own.
+  Object? fastConnectMicError;
+  Completer<void>? _fastConnectMicDone;
   LocalParticipant? _localParticipant;
 
   /// name of the room
@@ -290,6 +295,7 @@ class Room extends DisposableChangeNotifier with EventsEmittable<RoomEvent> {
 
     // configure audio for native platform
     await NativeAudioManagement.start();
+    _armFastConnectMic(fastConnectOptions);
 
     try {
       await engine.connect(
@@ -328,6 +334,27 @@ class Room extends DisposableChangeNotifier with EventsEmittable<RoomEvent> {
       } else {
         rethrow;
       }
+    }
+    await _awaitFastConnectMic();
+  }
+
+  void _armFastConnectMic(FastConnectOptions? options) {
+    fastConnectMicError = null;
+    _fastConnectMicDone = null;
+    final audio = options?.microphone;
+    if (audio == null) return;
+    if (audio.enabled == true || audio.track != null) {
+      _fastConnectMicDone = Completer<void>();
+    }
+  }
+
+  Future<void> _awaitFastConnectMic() async {
+    final done = _fastConnectMicDone;
+    if (done == null || done.isCompleted) return;
+    try {
+      await done.future.timeout(const Duration(seconds: 15));
+    } on TimeoutException {
+      fastConnectMicError ??= Exception('microphone track was not published');
     }
   }
 
@@ -447,16 +474,25 @@ class Room extends DisposableChangeNotifier with EventsEmittable<RoomEvent> {
         final audio = options.microphone;
         final bool audioEnabled = audio.enabled == true || audio.track != null;
 
-        // Only enable microphone if preconnect buffer is not active
+        // Only enable microphone if preconnect buffer is not active.
+        // The Future is also completed so [connect] can observe a publish
+        // failure instead of losing it on this unawaited listener.
         if (audioEnabled && !preConnectAudioBuffer.isRecording) {
-          if (audio.track != null) {
-            await _localParticipant!.publishAudioTrack(audio.track as LocalAudioTrack,
-                publishOptions: roomOptions.defaultAudioPublishOptions);
-          } else {
-            await _localParticipant!
-                .setMicrophoneEnabled(true, audioCaptureOptions: roomOptions.defaultAudioCaptureOptions);
+          try {
+            if (audio.track != null) {
+              await _localParticipant!.publishAudioTrack(audio.track as LocalAudioTrack,
+                  publishOptions: roomOptions.defaultAudioPublishOptions);
+            } else {
+              await _localParticipant!
+                  .setMicrophoneEnabled(true, audioCaptureOptions: roomOptions.defaultAudioCaptureOptions);
+            }
+          } catch (error) {
+            logger.warning('fast-connect microphone publish failed: $error');
+            fastConnectMicError = error;
           }
         }
+        final micDone = _fastConnectMicDone;
+        if (micDone != null && !micDone.isCompleted) micDone.complete();
 
         final video = options.camera;
         final bool videoEnabled = video.enabled == true || video.track != null;

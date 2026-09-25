@@ -1,3 +1,5 @@
+import 'package:bonfire/l10n/app_strings.dart';
+import 'package:bonfire/l10n/ui_copy.dart';
 import 'package:bonfire/theme/theme.dart';
 import 'package:flutter/material.dart';
 
@@ -14,9 +16,9 @@ class BanRequest {
   /// entirely when nothing is being purged, so a ban against an older server
   /// that doesn't know the field looks exactly as it always did.
   Map<String, dynamic> toJson() => {
-        if (deleteMessageSeconds > 0)
-          'delete_message_seconds': deleteMessageSeconds,
-      };
+    if (deleteMessageSeconds > 0)
+      'delete_message_seconds': deleteMessageSeconds,
+  };
 }
 
 /// The purge windows offered in the ban dialog, matching the reference client.
@@ -48,15 +50,20 @@ Future<BanRequest?> showBanDialog(
       var seconds = 0;
       return StatefulBuilder(
         builder: (ctx, setState) => AlertDialog(
-          title: const Text('Ban member'),
+          title: Text(UiCopy.banMember(context: context)),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('$memberName will be banned from the space and removed.'),
+              Text(
+                UiCopy.willBeBannedFromTheSpaceAnd(
+                  context: context,
+                  arg0: memberName,
+                ),
+              ),
               const SizedBox(height: 16),
               Text(
-                'Delete message history',
+                UiCopy.deleteMessageHistory(context: context),
                 style: Theme.of(ctx).textTheme.labelLarge,
               ),
               const SizedBox(height: 8),
@@ -69,7 +76,10 @@ Future<BanRequest?> showBanDialog(
                 ),
                 items: [
                   for (final (label, value) in _windows)
-                    DropdownMenuItem(value: value, child: Text(label)),
+                    DropdownMenuItem(
+                      value: value,
+                      child: Text(AppStrings.label(label, context: context)),
+                    ),
                 ],
                 onChanged: (value) =>
                     setState(() => seconds = value ?? seconds),
@@ -79,13 +89,14 @@ Future<BanRequest?> showBanDialog(
           actions: [
             TextButton(
               onPressed: () => Navigator.of(ctx).pop(),
-              child: const Text('Cancel'),
+              child: Text(UiCopy.cancel(context: context)),
             ),
             FilledButton(
-              onPressed: () => Navigator.of(ctx)
-                  .pop(BanRequest(deleteMessageSeconds: seconds)),
+              onPressed: () => Navigator.of(
+                ctx,
+              ).pop(BanRequest(deleteMessageSeconds: seconds)),
               style: FilledButton.styleFrom(backgroundColor: colors.red),
-              child: const Text('Ban'),
+              child: Text(UiCopy.ban(context: context)),
             ),
           ],
         ),

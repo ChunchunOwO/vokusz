@@ -1,3 +1,4 @@
+import 'package:bonfire/l10n/ui_copy.dart';
 import 'package:accordkit/accordkit.dart';
 import 'package:bonfire/shared/utils/responsive_dialog.dart';
 import 'package:bonfire/features/authentication/models/accord_auth_state.dart';
@@ -43,13 +44,15 @@ Future<bool> confirmNsfwGate(
                 Icon(Icons.warning_amber_rounded, size: 44, color: colors.red),
                 const SizedBox(height: 12),
                 Text(
-                  'Age-restricted channel',
+                  UiCopy.ageRestrictedChannel(context: context),
                   style: theme.textTheme.titleMedium,
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  '#$channelName is marked for content that may not be suitable '
-                  'for everyone. Are you over 18 and willing to view it?',
+                  UiCopy.isMarkedForContentThatMayNot(
+                    context: context,
+                    arg0: channelName,
+                  ),
                   textAlign: TextAlign.center,
                   style: theme.textTheme.bodyMedium!.copyWith(
                     color: colors.gray,
@@ -61,12 +64,12 @@ Future<bool> confirmNsfwGate(
                   children: [
                     TextButton(
                       onPressed: () => Navigator.of(context).pop(false),
-                      child: const Text('Go back'),
+                      child: Text(UiCopy.goBack(context: context)),
                     ),
                     const SizedBox(width: 8),
                     FilledButton(
                       onPressed: () => Navigator.of(context).pop(true),
-                      child: const Text('Continue'),
+                      child: Text(UiCopy.continueAction(context: context)),
                     ),
                   ],
                 ),
@@ -120,7 +123,7 @@ Future<void> maybeShowRulesInterstitial(
       : null;
   final rulesText = (messages != null && messages.isNotEmpty)
       ? messages.first.content
-      : 'Please follow this community\'s rules.';
+      : UiCopy.pleaseFollowThisCommunitySRules(context: context);
 
   await showDialog<void>(
     context: context,
@@ -141,12 +144,14 @@ Future<void> maybeShowRulesInterstitial(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Text(
-                  'Welcome to ${space.name}',
+                  UiCopy.welcomeTo(context: context, arg0: space.name),
                   style: theme.textTheme.titleMedium,
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'Please review the rules before participating.',
+                  UiCopy.pleaseReviewTheRulesBeforeParticipating(
+                    context: context,
+                  ),
                   style: theme.textTheme.bodySmall,
                 ),
                 const SizedBox(height: 16),
@@ -165,7 +170,7 @@ Future<void> maybeShowRulesInterstitial(
                           .acceptRules(serverKey, space.id);
                       Navigator.of(context).pop();
                     },
-                    child: const Text('I agree'),
+                    child: Text(UiCopy.iAgree(context: context)),
                   ),
                 ),
               ],

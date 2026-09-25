@@ -1,4 +1,7 @@
+import 'dart:async';
+
 import 'package:accordkit/accordkit.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
 /// Resolves a member's preferred display name: nickname → user display name →
@@ -94,6 +97,27 @@ String? accordMemberOrigin(AccordMember? member) => member?.homeDomain;
 /// through unchanged.
 String? accordAvatarUrl(AccordUser? user, String? cdnUrl) =>
     _userAvatarUrl(user, cdnUrl, domain: accordUserOrigin(user));
+
+/// The user's profile banner as an absolute URL, or null when none is set.
+/// The server stores a CDN path such as `/cdn/banners/<id>.png`. A remote
+/// user's banner is fetched only from their home server.
+String? accordUserBannerUrl(AccordUser? user, String? cdnUrl) {
+  final banner = user?.banner;
+  if (banner == null || banner.isEmpty) return null;
+  final domain = accordUserOrigin(user);
+  final String cdn;
+  if (domain != null) {
+    final base = cdnBaseForDomain(domain);
+    if (base == null || !_assetAllowedForDomain(banner, domain)) return null;
+    cdn = base;
+  } else {
+    cdn = cdnUrl ?? '';
+  }
+  final path = banner.contains('/') || banner.startsWith('http')
+      ? banner
+      : '/cdn/banners/$banner';
+  return AccordCDN.resolvePath(path, cdnUrl: cdn);
+}
 
 String? _userAvatarUrl(AccordUser? user, String? cdnUrl, {String? domain}) {
   final avatar = user?.avatar;
@@ -323,3 +347,27 @@ AccordRole? memberColorRole(AccordMember member, List<AccordRole> spaceRoles) =>
 /// hoisted role, or null (ungrouped members fall under a default section).
 AccordRole? memberHoistRole(AccordMember member, List<AccordRole> spaceRoles) =>
     _highestRole(member, spaceRoles, (r) => r.hoist);
+
+/// Drops cached copies of [previous] and [next] avatar and banner bytes.
+/// Those files keep a stable CDN path, so a same-type replacement would
+/// otherwise keep showing the old picture.
+void evictUserMedia(AccordUser? previous, AccordUser next, String? cdnUrl) {
+  final urls = <String?>[
+    accordAvatarUrl(previous, cdnUrl),
+    accordAvatarUrl(next, cdnUrl),
+    accordUserBannerUrl(previous, cdnUrl),
+    accordUserBannerUrl(next, cdnUrl),
+  ];
+  for (final url in urls) {
+    if (url == null || url.isEmpty) continue;
+    unawaited(CachedNetworkImage.evictFromCache(url));
+  }
+}
+
+/// Display only: authorization always uses the authenticated server state.
+Color? communityNameColor(AccordUser? user) =>
+    user != null &&
+        accordUserOrigin(user) == null &&
+        (user.communityAdmin || user.isAdmin)
+    ? const Color(0xFFFFB74D)
+    : null;

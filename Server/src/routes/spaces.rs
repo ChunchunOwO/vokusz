@@ -103,7 +103,7 @@ pub async fn get_space(
         let user = auth
             .0
             .ok_or_else(|| AppError::Unauthorized("authentication required".into()))?;
-        if !user.is_guest {
+        if !user.is_guest && !user.is_admin {
             require_membership(&state.db, &space.id, &user.user_id).await?;
         }
     }
@@ -247,7 +247,7 @@ pub async fn list_channels(
             if !space.allow_guest_access {
                 return Err(AppError::Forbidden("guest access is disabled".into()));
             }
-        } else {
+        } else if !user.is_admin {
             require_membership(&state.db, &space_id, &user.user_id).await?;
         }
     } else if !space.public {
@@ -310,8 +310,7 @@ pub async fn create_channel(
     }
 
     let channel = db::channels::create_channel(&state.db, &space_id, &input).await?;
-    // Newly created channel has no overwrites
-    let json = channel_row_to_json_with_overwrites(&channel, &[]);
+    let json = channel_row_to_json_pub(&state.db, &channel).await;
 
     // Broadcast channel.create to space members
     if let Some(ref dispatcher) = *state.gateway_tx.read().await {

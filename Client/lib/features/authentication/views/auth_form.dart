@@ -1,6 +1,8 @@
+import 'package:bonfire/l10n/ui_copy.dart';
 import 'dart:math';
 
 import 'package:bonfire/features/authentication/utils/tos_gate.dart';
+import 'package:bonfire/l10n/app_strings.dart';
 import 'package:bonfire/theme/theme.dart';
 import 'package:flutter/material.dart';
 
@@ -79,6 +81,7 @@ class AuthCredentialsFields extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colors = BonfireThemeExtension.of(context);
+    final text = AppStrings.of(context);
     final isRegister = mode == AuthMode.register;
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -92,7 +95,7 @@ class AuthCredentialsFields extends StatelessWidget {
         if (serverController != null) ...[
           AuthField(
             controller: serverController!,
-            label: 'Server URL',
+            label: UiCopy.serverUrl(context: context),
             hint: 'https://your.accord.server',
             enabled: enabled,
             keyboardType: TextInputType.url,
@@ -104,7 +107,7 @@ class AuthCredentialsFields extends StatelessWidget {
           controller: usernameController,
           // Registration creates a username (the public login id), so don't
           // imply an email is accepted; sign-in keeps the broader label.
-          label: isRegister ? 'Username' : 'Username or email',
+          label: isRegister ? text.username : text.usernameOrEmail,
           enabled: enabled,
           autofillHints: const [AutofillHints.username],
         ),
@@ -120,7 +123,7 @@ class AuthCredentialsFields extends StatelessWidget {
           const SizedBox(height: 12),
           AuthField(
             controller: displayNameController,
-            label: 'Display name (optional)',
+            label: text.displayNameOptional,
             enabled: enabled,
           ),
           if (tosAvailability == TosAvailability.advertised) ...[
@@ -129,14 +132,16 @@ class AuthCredentialsFields extends StatelessWidget {
               children: [
                 Checkbox(
                   value: tosAccepted,
-                  onChanged:
-                      enabled ? (v) => onTosChanged(v ?? false) : null,
+                  onChanged: enabled ? (v) => onTosChanged(v ?? false) : null,
                 ),
-                Text('I agree to the ', style: theme.textTheme.bodyMedium),
+                Text(
+                  UiCopy.iAgreeToThe(context: context),
+                  style: theme.textTheme.bodyMedium,
+                ),
                 GestureDetector(
                   onTap: onTosLinkTap,
                   child: Text(
-                    'Terms of Service',
+                    UiCopy.termsOfService(context: context),
                     style: theme.textTheme.bodyMedium!.copyWith(
                       color: colors.primary,
                     ),
@@ -194,15 +199,18 @@ class AuthModeToggle extends StatelessWidget {
             margin: const EdgeInsets.all(4),
             padding: const EdgeInsets.symmetric(vertical: 10),
             decoration: BoxDecoration(
-              color: selected ? colors.primary : Colors.transparent,
-              borderRadius: BorderRadius.circular(8),
+              color: selected ? colors.foreground : Colors.transparent,
+              borderRadius: BorderRadius.circular(4),
+              border: Border.all(
+                color: selected ? colors.primary : Colors.transparent,
+              ),
             ),
             alignment: Alignment.center,
             child: Text(
               label,
-              style: Theme.of(context).textTheme.titleSmall!.copyWith(
-                color: selected ? Colors.white : colors.dirtyWhite,
-              ),
+              style: Theme.of(
+                context,
+              ).textTheme.titleSmall!.copyWith(color: colors.dirtyWhite),
             ),
           ),
         ),
@@ -211,13 +219,13 @@ class AuthModeToggle extends StatelessWidget {
 
     return Container(
       decoration: BoxDecoration(
-        color: colors.darkGray,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(color: colors.darkGray),
       ),
       child: Row(
         children: [
-          tab('Sign In', AuthMode.signIn),
-          tab('Register', AuthMode.register),
+          tab(AppStrings.of(context).signIn, AuthMode.signIn),
+          tab(AppStrings.of(context).register, AuthMode.register),
         ],
       ),
     );
@@ -265,7 +273,7 @@ class AuthField extends StatelessWidget {
         fillColor: colors.darkGray,
         labelStyle: Theme.of(context).textTheme.bodyMedium,
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(4),
           borderSide: BorderSide.none,
         ),
         contentPadding: const EdgeInsets.symmetric(
@@ -315,12 +323,12 @@ class _AuthPasswordFieldState extends State<AuthPasswordField> {
       onSubmitted: widget.onSubmitted,
       style: Theme.of(context).textTheme.bodyLarge,
       decoration: InputDecoration(
-        labelText: 'Password',
+        labelText: AppStrings.of(context).password,
         filled: true,
         fillColor: colors.darkGray,
         labelStyle: Theme.of(context).textTheme.bodyMedium,
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(4),
           borderSide: BorderSide.none,
         ),
         contentPadding: const EdgeInsets.symmetric(
@@ -332,7 +340,7 @@ class _AuthPasswordFieldState extends State<AuthPasswordField> {
           children: [
             if (widget.onGenerate != null)
               IconButton(
-                tooltip: 'Generate password',
+                tooltip: AppStrings.of(context).generatePassword,
                 icon: Icon(Icons.casino, color: colors.dirtyWhite, size: 20),
                 onPressed: () {
                   widget.onGenerate!();
@@ -340,7 +348,9 @@ class _AuthPasswordFieldState extends State<AuthPasswordField> {
                 },
               ),
             IconButton(
-              tooltip: _obscure ? 'Show' : 'Hide',
+              tooltip: _obscure
+                  ? AppStrings.of(context).showPassword
+                  : AppStrings.of(context).hidePassword,
               icon: Icon(
                 _obscure ? Icons.visibility : Icons.visibility_off,
                 color: colors.dirtyWhite,

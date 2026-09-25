@@ -349,6 +349,12 @@ void main() {
       final socket = makeSocket(factory);
       socket.connectToGateway('wss://x');
       await pump();
+      factory.last.receive(jsonEncode({
+        'op': GatewayOpcodes.event,
+        'type': 'ready',
+        'data': {'session_id': 'SESSION'},
+      }));
+      await pump();
       final conn = factory.last;
 
       socket.updatePresence('online', activity: {'name': 'g'});
@@ -373,6 +379,41 @@ void main() {
       expect(lastSent(conn)['data']['self_mute'], true);
       expect(lastSent(conn)['data']['self_deaf'], true);
 
+      await socket.dispose();
+    });
+
+    test('presence update before READY is sent once the session is live',
+        () async {
+      final factory = FakeConnectionFactory();
+      final socket = makeSocket(factory);
+      socket.connectToGateway('wss://x');
+      await pump();
+      factory.last.receive(jsonEncode({
+        'op': GatewayOpcodes.hello,
+        'data': {'heartbeat_interval': 60000},
+      }));
+      await pump();
+
+      socket.updatePresence('online', activity: {'name': 'Epilogue'});
+      expect(socket.sessionLive, isFalse);
+      expect(
+        factory.last.sent.where((text) {
+          return (jsonDecode(text) as Map)['op'] ==
+              GatewayOpcodes.presenceUpdate;
+        }),
+        isEmpty,
+      );
+
+      factory.last.receive(jsonEncode({
+        'op': GatewayOpcodes.event,
+        'type': 'ready',
+        'data': {'session_id': 'SESSION'},
+      }));
+      await pump();
+
+      expect(socket.sessionLive, isTrue);
+      expect(lastSent(factory.last)['op'], GatewayOpcodes.presenceUpdate);
+      expect(lastSent(factory.last)['data']['activity'], {'name': 'Epilogue'});
       await socket.dispose();
     });
   });

@@ -1,3 +1,5 @@
+import 'package:bonfire/l10n/app_strings.dart';
+import 'package:bonfire/l10n/ui_copy.dart';
 import 'package:accordkit/accordkit.dart';
 import 'package:bonfire/shared/components/async_state_views.dart';
 import 'package:bonfire/shared/utils/rest_result_ext.dart';
@@ -83,12 +85,12 @@ class _AccountSettingsDialogState
                 children: [
                   Expanded(
                     child: Text(
-                      'Password & Security',
+                      UiCopy.passwordSecurity(context: context),
                       style: theme.textTheme.titleMedium,
                     ),
                   ),
                   IconButton(
-                    tooltip: 'Close',
+                    tooltip: UiCopy.close(context: context),
                     onPressed: () => Navigator.of(context).pop(),
                     icon: Icon(Icons.close, size: 20, color: colors.gray),
                   ),
@@ -96,7 +98,7 @@ class _AccountSettingsDialogState
               ),
               const SizedBox(height: 12),
               Text(
-                'PASSWORD',
+                UiCopy.password(context: context),
                 style: theme.textTheme.labelSmall!.copyWith(
                   color: colors.gray,
                   fontWeight: FontWeight.bold,
@@ -108,7 +110,7 @@ class _AccountSettingsDialogState
               Divider(height: 1, color: colors.background),
               const SizedBox(height: 16),
               Text(
-                'TWO-FACTOR AUTHENTICATION',
+                UiCopy.twoFactorAuthentication2(context: context),
                 style: theme.textTheme.labelSmall!.copyWith(
                   color: colors.gray,
                   fontWeight: FontWeight.bold,
@@ -116,10 +118,7 @@ class _AccountSettingsDialogState
               ),
               const SizedBox(height: 8),
               if (_mfaEnabled == null)
-                const Padding(
-                  padding: EdgeInsets.all(8),
-                  child: LoadingView(),
-                )
+                const Padding(padding: EdgeInsets.all(8), child: LoadingView())
               else
                 _TwoFactorSection(
                   enabled: _mfaEnabled!,
@@ -129,7 +128,7 @@ class _AccountSettingsDialogState
               Divider(height: 1, color: colors.background),
               const SizedBox(height: 16),
               Text(
-                'DANGER ZONE',
+                UiCopy.dangerZone2(context: context),
                 style: theme.textTheme.labelSmall!.copyWith(
                   color: colors.red,
                   fontWeight: FontWeight.bold,
@@ -174,11 +173,11 @@ class _DangerZoneSectionState extends ConsumerState<_DangerZoneSection> {
     final client = _client;
     if (client == null || _busy) return;
     if (_password.text.isEmpty) {
-      setState(() => _error = 'Password is required');
+      setState(() => _error = UiCopy.passwordIsRequired());
       return;
     }
     if (_confirm.text.trim() != 'DELETE') {
-      setState(() => _error = "Type DELETE to confirm");
+      setState(() => _error = UiCopy.typeDeleteToConfirm());
       return;
     }
     final session = ref.read(accordAuthProvider);
@@ -192,7 +191,7 @@ class _DangerZoneSectionState extends ConsumerState<_DangerZoneSection> {
     if (!result.ok) {
       setState(() {
         _busy = false;
-        _error = result.errorOr('Failed to delete account');
+        _error = result.errorOr(UiCopy.failedToDeleteAccount());
       });
       return;
     }
@@ -210,8 +209,7 @@ class _DangerZoneSectionState extends ConsumerState<_DangerZoneSection> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Text(
-          'Permanently deletes your account on this server, including your '
-          'profile, messages, and memberships. This cannot be undone.',
+          UiCopy.permanentlyDeletesYourAccountOnThisServer(context: context),
           style: theme.textTheme.bodySmall!.copyWith(color: colors.gray),
         ),
         const SizedBox(height: 8),
@@ -219,9 +217,9 @@ class _DangerZoneSectionState extends ConsumerState<_DangerZoneSection> {
           controller: _password,
           enabled: !_busy,
           obscureText: true,
-          decoration: const InputDecoration(
+          decoration: InputDecoration(
             isDense: true,
-            labelText: 'Password',
+            labelText: UiCopy.password2(context: context),
             border: OutlineInputBorder(),
           ),
         ),
@@ -229,9 +227,9 @@ class _DangerZoneSectionState extends ConsumerState<_DangerZoneSection> {
         TextField(
           controller: _confirm,
           enabled: !_busy,
-          decoration: const InputDecoration(
+          decoration: InputDecoration(
             isDense: true,
-            labelText: "Type DELETE to confirm",
+            labelText: UiCopy.typeDeleteToConfirm(context: context),
             border: OutlineInputBorder(),
           ),
         ),
@@ -254,7 +252,7 @@ class _DangerZoneSectionState extends ConsumerState<_DangerZoneSection> {
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
                 : const Icon(Icons.delete_forever, size: 18),
-            label: const Text('Delete my account'),
+            label: Text(UiCopy.deleteMyAccount(context: context)),
           ),
         ),
       ],
@@ -292,10 +290,10 @@ class _PasswordSectionState extends ConsumerState<_PasswordSection> {
     if (client == null) return;
     final oldPw = _old.text;
     final newPw = _new.text;
-    if (oldPw.isEmpty || newPw.length < 6) {
+    if (oldPw.isEmpty || newPw.length < 8 || newPw.length > 128) {
       setState(() {
         _success = false;
-        _message = 'Enter your current password and a new one (6+ chars)';
+        _message = UiCopy.enterYourCurrentPasswordAndANew();
       });
       return;
     }
@@ -312,8 +310,8 @@ class _PasswordSectionState extends ConsumerState<_PasswordSection> {
       _busy = false;
       _success = result.ok;
       _message = result.ok
-          ? 'Password updated'
-          : result.errorOr('Failed to change password');
+          ? UiCopy.passwordUpdated()
+          : result.errorOr(UiCopy.failedToChangePassword());
       if (result.ok) {
         _old.clear();
         _new.clear();
@@ -332,8 +330,8 @@ class _PasswordSectionState extends ConsumerState<_PasswordSection> {
           controller: _old,
           enabled: !_busy,
           obscureText: true,
-          decoration: const InputDecoration(
-            labelText: 'Current password',
+          decoration: InputDecoration(
+            labelText: UiCopy.currentPassword(context: context),
             isDense: true,
             border: OutlineInputBorder(),
           ),
@@ -343,8 +341,8 @@ class _PasswordSectionState extends ConsumerState<_PasswordSection> {
           controller: _new,
           enabled: !_busy,
           obscureText: true,
-          decoration: const InputDecoration(
-            labelText: 'New password',
+          decoration: InputDecoration(
+            labelText: UiCopy.newPassword(context: context),
             isDense: true,
             border: OutlineInputBorder(),
           ),
@@ -363,7 +361,7 @@ class _PasswordSectionState extends ConsumerState<_PasswordSection> {
           alignment: Alignment.centerRight,
           child: FilledButton(
             onPressed: _busy ? null : _submit,
-            child: const Text('Change password'),
+            child: Text(UiCopy.changePassword2(context: context)),
           ),
         ),
       ],
@@ -406,7 +404,7 @@ class _TwoFactorSectionState extends ConsumerState<_TwoFactorSection> {
     final client = _client;
     if (client == null) return;
     if (_password.text.isEmpty) {
-      setState(() => _error = 'Enter your password');
+      setState(() => _error = UiCopy.enterYourPassword());
       return;
     }
     setState(() {
@@ -422,7 +420,7 @@ class _TwoFactorSectionState extends ConsumerState<_TwoFactorSection> {
         _secret = data['secret']?.toString();
         _otpauth = data['otpauth_uri']?.toString() ?? data['uri']?.toString();
       } else {
-        _error = result.errorOr('Failed to start 2FA setup');
+        _error = result.errorOr(UiCopy.failedToStart2faSetup());
       }
     });
   }
@@ -431,7 +429,7 @@ class _TwoFactorSectionState extends ConsumerState<_TwoFactorSection> {
     final client = _client;
     if (client == null) return;
     if (_code.text.trim().isEmpty) {
-      setState(() => _error = 'Enter the 6-digit code');
+      setState(() => _error = UiCopy.enterThe6DigitCode());
       return;
     }
     setState(() {
@@ -453,7 +451,7 @@ class _TwoFactorSectionState extends ConsumerState<_TwoFactorSection> {
         _code.clear();
         widget.onChanged(true);
       } else {
-        _error = result.errorOr('Invalid code');
+        _error = result.errorOr(UiCopy.invalidCode());
       }
     });
   }
@@ -462,7 +460,7 @@ class _TwoFactorSectionState extends ConsumerState<_TwoFactorSection> {
     final client = _client;
     if (client == null) return;
     if (_password.text.isEmpty) {
-      setState(() => _error = 'Enter your password to disable 2FA');
+      setState(() => _error = UiCopy.enterYourPasswordToDisable2fa());
       return;
     }
     setState(() {
@@ -478,7 +476,7 @@ class _TwoFactorSectionState extends ConsumerState<_TwoFactorSection> {
         _backupCodes = null;
         widget.onChanged(false);
       } else {
-        _error = result.errorOr('Failed to disable 2FA');
+        _error = result.errorOr(UiCopy.failedToDisable2fa());
       }
     });
   }
@@ -526,7 +524,7 @@ class _BackupCodesView extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Text(
-          '2FA is now enabled. Save these backup codes:',
+          UiCopy.message2faIsNowEnabledSaveTheseBackup(context: context),
           style: theme.textTheme.bodyMedium,
         ),
         const SizedBox(height: 8),
@@ -538,20 +536,17 @@ class _BackupCodesView extends StatelessWidget {
           ),
           child: SelectableText(
             codes.join('\n'),
-            style: theme.textTheme.bodyMedium!.copyWith(
-              fontFeatures: const [],
-            ),
+            style: theme.textTheme.bodyMedium!.copyWith(fontFeatures: const []),
           ),
         ),
         const SizedBox(height: 8),
         Align(
           alignment: Alignment.centerRight,
           child: TextButton.icon(
-            onPressed: () => Clipboard.setData(
-              ClipboardData(text: codes.join('\n')),
-            ),
+            onPressed: () =>
+                Clipboard.setData(ClipboardData(text: codes.join('\n'))),
             icon: const Icon(Icons.copy, size: 16),
-            label: const Text('Copy codes'),
+            label: Text(UiCopy.copyCodes(context: context)),
           ),
         ),
       ],
@@ -584,7 +579,10 @@ class _TwoFactorEnabledView extends StatelessWidget {
           children: [
             Icon(Icons.verified_user, size: 18, color: colors.green),
             const SizedBox(width: 8),
-            Text('2FA is enabled', style: theme.textTheme.bodyMedium),
+            Text(
+              UiCopy.message2faIsEnabled(context: context),
+              style: theme.textTheme.bodyMedium,
+            ),
           ],
         ),
         const SizedBox(height: 10),
@@ -592,8 +590,8 @@ class _TwoFactorEnabledView extends StatelessWidget {
           controller: password,
           enabled: !busy,
           obscureText: true,
-          decoration: const InputDecoration(
-            labelText: 'Password',
+          decoration: InputDecoration(
+            labelText: UiCopy.password2(context: context),
             isDense: true,
             border: OutlineInputBorder(),
           ),
@@ -608,7 +606,7 @@ class _TwoFactorEnabledView extends StatelessWidget {
           child: TextButton(
             onPressed: busy ? null : onDisable,
             style: TextButton.styleFrom(foregroundColor: colors.red),
-            child: const Text('Disable 2FA'),
+            child: Text(AppStrings.label('Disable 2FA', context: context)),
           ),
         ),
       ],
@@ -649,7 +647,7 @@ class _TwoFactorSetupView extends StatelessWidget {
       children: [
         if (!setupStarted) ...[
           Text(
-            'Protect your account with an authenticator app.',
+            UiCopy.protectYourAccountWithAnAuthenticatorApp(context: context),
             style: theme.textTheme.bodySmall!.copyWith(color: colors.gray),
           ),
           const SizedBox(height: 10),
@@ -657,8 +655,8 @@ class _TwoFactorSetupView extends StatelessWidget {
             controller: password,
             enabled: !busy,
             obscureText: true,
-            decoration: const InputDecoration(
-              labelText: 'Password',
+            decoration: InputDecoration(
+              labelText: UiCopy.password2(context: context),
               isDense: true,
               border: OutlineInputBorder(),
             ),
@@ -672,13 +670,12 @@ class _TwoFactorSetupView extends StatelessWidget {
             alignment: Alignment.centerRight,
             child: FilledButton(
               onPressed: busy ? null : onEnable,
-              child: const Text('Enable 2FA'),
+              child: Text(AppStrings.label('Enable 2FA', context: context)),
             ),
           ),
         ] else ...[
           Text(
-            'Scan this QR code with your authenticator app, or enter the '
-            'secret manually, then type the 6-digit code:',
+            UiCopy.scanThisQrCodeWithYourAuthenticator(context: context),
             style: theme.textTheme.bodySmall!.copyWith(color: colors.gray),
           ),
           if (otpauth != null) ...[
@@ -717,7 +714,7 @@ class _TwoFactorSetupView extends StatelessWidget {
                   ),
                 ),
                 IconButton(
-                  tooltip: 'Copy secret',
+                  tooltip: UiCopy.copySecret(context: context),
                   icon: const Icon(Icons.copy, size: 16),
                   onPressed: () => Clipboard.setData(
                     ClipboardData(
@@ -738,8 +735,8 @@ class _TwoFactorSetupView extends StatelessWidget {
             onSubmitted: (_) {
               if (!busy) onVerify();
             },
-            decoration: const InputDecoration(
-              labelText: '6-digit code',
+            decoration: InputDecoration(
+              labelText: UiCopy.message6DigitCode(context: context),
               isDense: true,
               border: OutlineInputBorder(),
               counterText: '',
@@ -754,7 +751,7 @@ class _TwoFactorSetupView extends StatelessWidget {
             alignment: Alignment.centerRight,
             child: FilledButton(
               onPressed: busy ? null : onVerify,
-              child: const Text('Verify & activate'),
+              child: Text(UiCopy.verifyActivate(context: context)),
             ),
           ),
         ],

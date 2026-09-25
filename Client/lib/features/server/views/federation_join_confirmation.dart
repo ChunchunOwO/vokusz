@@ -1,3 +1,4 @@
+import 'package:bonfire/l10n/ui_copy.dart';
 import 'package:bonfire/features/server/services/federation_join.dart';
 import 'package:bonfire/shared/utils/confirm_dialog.dart';
 import 'package:flutter/material.dart';
@@ -19,12 +20,14 @@ Future<FederatedJoinResult?> confirmFederatedDeepLinkJoin(
 }) async {
   final confirmed = await showConfirmDialog(
     context,
-    title: 'Join federated space?',
-    message:
-        'Active account: $activeAccount\n'
-        'Destination domain: $domain\n'
-        'Space: $spaceId',
-    confirmLabel: 'Join space',
+    title: UiCopy.joinFederatedSpace(context: context),
+    message: UiCopy.activeAccountNDestinationDomainNSpace(
+      context: context,
+      arg0: activeAccount,
+      arg1: domain,
+      arg2: spaceId,
+    ),
+    confirmLabel: UiCopy.joinSpace(context: context),
   );
   if (confirmed != true) return null;
   return join();

@@ -24,6 +24,9 @@ class VoiceApi extends EndpointBase {
     return result.deserialize(AccordVoiceServerUpdate.fromJson);
   }
 
+  Future<RestResult> moveMember(String channelId, String userId, String sourceChannelId) =>
+      rest.makeRequest('POST', '/channels/$channelId/voice/move', body: {'user_id': userId, 'source_channel_id': sourceChannelId});
+
   /// Leaves the current voice channel.
   Future<RestResult> leave(String channelId) {
     return rest.makeRequest('DELETE', '/channels/$channelId/voice/leave');

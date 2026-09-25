@@ -92,11 +92,13 @@ class _DmListTabState extends ConsumerState<_DmListTab> {
     final group = _isGroup(channel, widget.selfId);
     final confirmed = await showConfirmDialog(
       context,
-      title: group ? 'Leave group' : 'Close direct message',
+      title: group ? UiCopy.leaveGroup() : UiCopy.closeDirectMessage(),
       message: group
-          ? 'Leave ${_channelTitle(channel, widget.selfId)}? You can be re-added later.'
-          : 'Remove this conversation from your direct-message list? Its history is retained if you message this user again.',
-      confirmLabel: group ? 'Leave' : 'Close',
+          ? UiCopy.leaveYouCanBeReAddedLater(
+              arg0: _channelTitle(channel, widget.selfId),
+            )
+          : UiCopy.removeThisConversationFromYourDirectMessage(),
+      confirmLabel: group ? UiCopy.leave() : UiCopy.close(),
       danger: true,
     );
     if (confirmed != true || !mounted) return;
@@ -113,7 +115,9 @@ class _DmListTabState extends ConsumerState<_DmListTab> {
       showInfoSnack(
         context,
         result.errorMessageOr(
-          group ? 'Failed to leave group' : 'Failed to close conversation',
+          group
+              ? UiCopy.failedToLeaveGroup()
+              : UiCopy.failedToCloseConversation(),
         ),
       );
       return;
@@ -131,7 +135,7 @@ class _DmListTabState extends ConsumerState<_DmListTab> {
     final others = _others(channel, widget.selfId);
     final user = !group && others.isNotEmpty ? others.first : null;
     final closeEntry = AccordMenuEntry(
-      label: group ? 'Leave group' : 'Close direct message',
+      label: group ? UiCopy.leaveGroup() : UiCopy.closeDirectMessage(),
       icon: group ? Icons.logout : Icons.close,
       destructive: true,
       onSelected: () => _closeConversation(channel),
@@ -192,10 +196,10 @@ class _DmListTabState extends ConsumerState<_DmListTab> {
               TextField(
                 controller: _search,
                 onChanged: (_) => setState(() {}),
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   isDense: true,
                   prefixIcon: Icon(Icons.search, size: 20),
-                  hintText: 'Search conversations',
+                  hintText: UiCopy.searchConversations(context: context),
                   border: OutlineInputBorder(),
                 ),
               ),
@@ -209,12 +213,12 @@ class _DmListTabState extends ConsumerState<_DmListTab> {
                     FilledButton.icon(
                       onPressed: _createGroup,
                       icon: const Icon(Icons.group_add, size: 18),
-                      label: const Text('New group'),
+                      label: Text(UiCopy.newGroup(context: context)),
                     ),
                     OutlinedButton.icon(
                       onPressed: _messageRemoteUser,
                       icon: const Icon(Icons.alternate_email, size: 18),
-                      label: const Text('Message remote user'),
+                      label: Text(UiCopy.messageRemoteUser(context: context)),
                     ),
                   ],
                 ),
@@ -229,8 +233,8 @@ class _DmListTabState extends ConsumerState<_DmListTab> {
               ? Center(
                   child: Text(
                     query.isEmpty
-                        ? 'No direct messages yet'
-                        : 'No matching conversations',
+                        ? UiCopy.noDirectMessagesYet(context: context)
+                        : UiCopy.noMatchingConversations(context: context),
                     style: theme.textTheme.bodyMedium,
                   ),
                 )
@@ -469,7 +473,7 @@ class _DmConversationState extends ConsumerState<_DmConversation> {
     final user = await showDialog<AccordUser>(
       context: context,
       builder: (_) => _PickUserDialog(
-        title: 'Add to group',
+        title: UiCopy.addToGroup(),
         excludeIds: {
           if (widget.selfId != null) widget.selfId!,
           ..._others(_channel, widget.selfId).map((u) => u.id),
@@ -484,7 +488,7 @@ class _DmConversationState extends ConsumerState<_DmConversation> {
     if (result.ok) {
       await _refreshChannel();
     } else {
-      showInfoSnack(context, 'Failed to add member');
+      showInfoSnack(context, UiCopy.failedToAddMember());
     }
   }
 
@@ -492,9 +496,9 @@ class _DmConversationState extends ConsumerState<_DmConversation> {
     final client = _client;
     if (client == null) return;
     final ok = await _confirm(
-      'Remove member',
-      'Remove ${_userName(user)} from this group?',
-      'Remove',
+      UiCopy.removeMember(),
+      UiCopy.removeFromThisGroup(arg0: _userName(user)),
+      UiCopy.remove(),
     );
     if (ok != true) return;
     final result = await client.channels.removeRecipient(_channel.id, user.id);
@@ -502,15 +506,15 @@ class _DmConversationState extends ConsumerState<_DmConversation> {
     if (result.ok) {
       await _refreshChannel();
     } else {
-      showInfoSnack(context, 'Failed to remove member');
+      showInfoSnack(context, UiCopy.failedToRemoveMember());
     }
   }
 
   Future<void> _rename() async {
     final name = await showTextPromptDialog(
       context,
-      title: 'Rename group',
-      label: 'Group name',
+      title: UiCopy.renameGroup(),
+      label: UiCopy.groupName(),
       initial: _channel.name ?? '',
     );
     if (name == null) return;
@@ -526,7 +530,7 @@ class _DmConversationState extends ConsumerState<_DmConversation> {
     } else if (result.ok) {
       await _refreshChannel();
     } else {
-      showInfoSnack(context, 'Failed to rename group');
+      showInfoSnack(context, UiCopy.failedToRenameGroup());
     }
   }
 
@@ -535,9 +539,9 @@ class _DmConversationState extends ConsumerState<_DmConversation> {
     final client = _client;
     if (client == null || selfId == null) return;
     final ok = await _confirm(
-      'Leave group',
-      'Leave this group? You can be re-added later.',
-      'Leave',
+      UiCopy.leaveGroup(),
+      UiCopy.leaveThisGroupYouCanBeRe(),
+      UiCopy.leave(),
     );
     if (ok != true) return;
     final result = await client.channels.removeRecipient(_channel.id, selfId);
@@ -552,7 +556,7 @@ class _DmConversationState extends ConsumerState<_DmConversation> {
           .remove(_channel.id);
       widget.onBack();
     } else {
-      showInfoSnack(context, 'Failed to leave group');
+      showInfoSnack(context, UiCopy.failedToLeaveGroup());
     }
   }
 
@@ -644,7 +648,7 @@ class _DmConversationState extends ConsumerState<_DmConversation> {
         mainAxisSize: MainAxisSize.min,
         children: [
           IconButton(
-            tooltip: 'Back',
+            tooltip: UiCopy.back(context: context),
             onPressed: widget.onBack,
             icon: Icon(Icons.arrow_back, size: 20, color: colors.dirtyWhite),
           ),
@@ -683,12 +687,12 @@ class _DmConversationState extends ConsumerState<_DmConversation> {
       ),
       headerActions: [
         IconButton(
-          tooltip: 'Start voice call',
+          tooltip: UiCopy.startVoiceCall(context: context),
           onPressed: () => _startCall(video: false),
           icon: Icon(Icons.call, size: 20, color: colors.dirtyWhite),
         ),
         IconButton(
-          tooltip: 'Start video call',
+          tooltip: UiCopy.startVideoCall(context: context),
           onPressed: () => _startCall(video: true),
           icon: Icon(Icons.videocam, size: 20, color: colors.dirtyWhite),
         ),
@@ -699,7 +703,7 @@ class _DmConversationState extends ConsumerState<_DmConversation> {
         // around a DM (App Review 1.2, #290).
         else if (directUser != null)
           IconButton(
-            tooltip: 'Conversation options',
+            tooltip: UiCopy.conversationOptions(context: context),
             onPressed: () => _showUserMenu(directUser),
             icon: Icon(Icons.more_vert, size: 20, color: colors.gray),
           ),
@@ -725,7 +729,7 @@ class _DmConversationState extends ConsumerState<_DmConversation> {
   }
 
   Widget _groupOptions(BonfireThemeExtension colors) => PopupMenuButton<String>(
-    tooltip: 'Group options',
+    tooltip: UiCopy.groupOptions(),
     icon: Icon(Icons.more_vert, size: 20, color: colors.gray),
     onSelected: (value) {
       switch (value) {
@@ -740,12 +744,12 @@ class _DmConversationState extends ConsumerState<_DmConversation> {
       }
     },
     itemBuilder: (context) => [
-      const PopupMenuItem(value: 'members', child: Text('View members')),
-      const PopupMenuItem(value: 'add', child: Text('Add member')),
-      const PopupMenuItem(value: 'rename', child: Text('Rename group')),
+      PopupMenuItem(value: 'members', child: Text(UiCopy.viewMembers())),
+      PopupMenuItem(value: 'add', child: Text(UiCopy.addMember2())),
+      PopupMenuItem(value: 'rename', child: Text(UiCopy.renameGroup())),
       PopupMenuItem(
         value: 'leave',
-        child: Text('Leave group', style: TextStyle(color: colors.red)),
+        child: Text(UiCopy.leaveGroup(), style: TextStyle(color: colors.red)),
       ),
     ],
   );
@@ -851,9 +855,7 @@ class _RemoteDmDialogState extends State<_RemoteDmDialog> {
   void _submit() {
     final value = _controller.text.trim();
     if (!isValidRemoteHandle(value)) {
-      setState(
-        () => _error = 'Enter a qualified handle, e.g. 123@server.example',
-      );
+      setState(() => _error = UiCopy.enterAQualifiedHandleEG123());
       return;
     }
     Navigator.of(context).pop(value);
@@ -862,14 +864,12 @@ class _RemoteDmDialogState extends State<_RemoteDmDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('Message a remote user'),
+      title: Text(UiCopy.messageARemoteUser(context: context)),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'Enter the user\'s qualified handle on their home server.',
-          ),
+          Text(UiCopy.enterTheUserSQualifiedHandleOn(context: context)),
           const SizedBox(height: 12),
           TextField(
             controller: _controller,
@@ -890,9 +890,12 @@ class _RemoteDmDialogState extends State<_RemoteDmDialog> {
       actions: [
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
+          child: Text(UiCopy.cancel(context: context)),
         ),
-        FilledButton(onPressed: _submit, child: const Text('Message')),
+        FilledButton(
+          onPressed: _submit,
+          child: Text(UiCopy.message(context: context)),
+        ),
       ],
     );
   }

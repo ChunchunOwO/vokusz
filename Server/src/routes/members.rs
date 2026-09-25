@@ -73,7 +73,9 @@ pub async fn list_members(
             ));
         }
     } else {
-        require_membership(&state.db, &space_id, &auth.user_id).await?;
+        if !auth.is_admin {
+            require_membership(&state.db, &space_id, &auth.user_id).await?;
+        }
     }
     let limit = params.limit.unwrap_or(50).clamp(1, 1000);
     let mut rows =
@@ -113,7 +115,9 @@ pub async fn search_members(
     auth: AuthUser,
     Query(params): Query<SearchMembersQuery>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    require_membership(&state.db, &space_id, &auth.user_id).await?;
+    if !auth.is_admin {
+        require_membership(&state.db, &space_id, &auth.user_id).await?;
+    }
     let limit = params.limit.unwrap_or(25).clamp(1, 100);
     let rows = db::members::search_members(&state.db, &space_id, &params.query, limit).await?;
 
@@ -137,7 +141,9 @@ pub async fn get_member(
     Path((space_id, user_id)): Path<(String, String)>,
     auth: AuthUser,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    require_membership(&state.db, &space_id, &auth.user_id).await?;
+    if !auth.is_admin {
+        require_membership(&state.db, &space_id, &auth.user_id).await?;
+    }
     let row = db::members::get_member_row(&state.db, &space_id, &user_id).await?;
     let role_ids = db::members::get_member_role_ids(&state.db, &space_id, &user_id).await?;
     Ok(Json(
@@ -171,8 +177,14 @@ pub async fn update_member(
             if role.space_id != space_id {
                 return Err(AppError::NotFound("role not found in this space".into()));
             }
-            require_role_hierarchy(&state.db, &space_id, &auth.user_id, role.position).await?;
+            if !auth.is_admin {
+                require_role_hierarchy(&state.db, &space_id, &auth.user_id, role.position).await?;
+            }
         }
+    }
+
+    if input.mute.is_some() || input.deaf.is_some() {
+        require_hierarchy(&state.db, &space_id, &auth, &user_id).await?;
     }
 
     // Mute/deafen require their respective permissions
@@ -238,6 +250,10 @@ pub async fn update_member(
     }
 
     let row = db::members::update_member(&state.db, &space_id, &user_id, &input).await?;
+    if input.roles.is_some() || input.mute.is_some() || input.communication_disabled_until.is_some()
+    {
+        crate::security::refresh_domain_voice_permissions(&state, &space_id).await;
+    }
     let role_ids = db::members::get_member_role_ids(&state.db, &space_id, &user_id).await?;
     let member_json = member_row_to_json(&row, &role_ids);
 
@@ -331,7 +347,9 @@ pub async fn leave_space(
     auth: AuthUser,
     Query(params): Query<LeaveQuery>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    require_membership(&state.db, &space_id, &auth.user_id).await?;
+    if !auth.is_admin {
+        require_membership(&state.db, &space_id, &auth.user_id).await?;
+    }
 
     // Prevent the space owner from leaving without transferring ownership
     let space = db::spaces::get_space_row(&state.db, &space_id).await?;
@@ -493,11 +511,16 @@ pub async fn add_role(
     auth: AuthUser,
 ) -> Result<Json<serde_json::Value>, AppError> {
     require_permission(&state.db, &space_id, &auth, "manage_roles").await?;
+    if user_id != auth.user_id {
+        require_hierarchy(&state.db, &space_id, &auth, &user_id).await?;
+    }
     let role = db::roles::get_role_row(&state.db, &role_id).await?;
     if role.space_id != space_id {
         return Err(AppError::NotFound("role not found in this space".into()));
     }
-    require_role_hierarchy(&state.db, &space_id, &auth.user_id, role.position).await?;
+    if !auth.is_admin {
+        require_role_hierarchy(&state.db, &space_id, &auth.user_id, role.position).await?;
+    }
     db::members::add_role_to_member(
         &state.db,
         &space_id,
@@ -506,6 +529,8 @@ pub async fn add_role(
         state.db_is_postgres,
     )
     .await?;
+
+    crate::security::refresh_domain_voice_permissions(&state, &space_id).await;
 
     // Broadcast member.update to the space
     let row = db::members::get_member_row(&state.db, &space_id, &user_id).await?;
@@ -534,12 +559,19 @@ pub async fn remove_role(
     auth: AuthUser,
 ) -> Result<Json<serde_json::Value>, AppError> {
     require_permission(&state.db, &space_id, &auth, "manage_roles").await?;
+    if user_id != auth.user_id {
+        require_hierarchy(&state.db, &space_id, &auth, &user_id).await?;
+    }
     let role = db::roles::get_role_row(&state.db, &role_id).await?;
     if role.space_id != space_id {
         return Err(AppError::NotFound("role not found in this space".into()));
     }
-    require_role_hierarchy(&state.db, &space_id, &auth.user_id, role.position).await?;
+    if !auth.is_admin {
+        require_role_hierarchy(&state.db, &space_id, &auth.user_id, role.position).await?;
+    }
     db::members::remove_role_from_member(&state.db, &space_id, &user_id, &role_id).await?;
+
+    crate::security::refresh_domain_voice_permissions(&state, &space_id).await;
 
     // Broadcast member.update to the space
     let row = db::members::get_member_row(&state.db, &space_id, &user_id).await?;

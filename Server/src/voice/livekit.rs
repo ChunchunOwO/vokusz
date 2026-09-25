@@ -1,6 +1,7 @@
 use crate::error::AppError;
+use futures_util::StreamExt;
 use livekit_api::access_token::{AccessToken, VideoGrants};
-use livekit_api::services::room::{CreateRoomOptions, RoomClient};
+use livekit_api::services::room::{CreateRoomOptions, RoomClient, UpdateParticipantOptions};
 use std::sync::Arc;
 
 #[derive(Clone)]
@@ -35,27 +36,84 @@ impl LiveKitClient {
         format!("channel_{channel_id}")
     }
 
-    pub fn generate_token(
+    pub async fn generate_token(
         &self,
-        user_id: &str,
+        pool: &sqlx::AnyPool,
+        auth: &crate::middleware::auth::AuthUser,
         display_name: &str,
         channel_id: &str,
     ) -> Result<String, AppError> {
+        let (speak, stream) = publishing_permissions(pool, channel_id, auth).await;
+        let sources = publishing_sources(speak, stream);
         let room_name = Self::room_name(channel_id);
         AccessToken::with_api_key(&self.api_key, &self.api_secret)
-            .with_ttl(std::time::Duration::from_secs(60))
-            .with_identity(user_id)
+            .with_ttl(std::time::Duration::from_secs(6 * 60 * 60))
+            .with_identity(&auth.user_id)
             .with_name(display_name)
             .with_grants(VideoGrants {
                 room_join: true,
                 room: room_name,
-                can_publish: true,
+                can_publish: !sources.is_empty(),
+                can_publish_sources: sources.iter().map(|(_, name)| name.to_string()).collect(),
                 can_subscribe: true,
                 can_publish_data: true,
                 ..Default::default()
             })
             .to_jwt()
             .map_err(|e| AppError::Internal(format!("failed to generate livekit token: {}", e)))
+    }
+
+    pub async fn refresh_channel_permissions(
+        &self,
+        state: &crate::state::AppState,
+        channel_id: &str,
+    ) {
+        let users: Vec<String> = state
+            .voice_states
+            .iter()
+            .filter(|v| v.channel_id.as_deref() == Some(channel_id))
+            .map(|v| v.user_id.clone())
+            .collect();
+        futures_util::stream::iter(users)
+            .for_each_concurrent(8, |user_id| async move {
+                let is_admin = crate::db::users::get_user(&state.db, &user_id)
+                    .await
+                    .map(|user| user.is_admin && !user.disabled)
+                    .unwrap_or(false);
+                let auth = crate::middleware::auth::AuthUser {
+                    user_id: user_id.clone(),
+                    is_admin,
+                    is_bot: false,
+                    is_guest: false,
+                    guest_space_id: None,
+                };
+                let (speak, stream) = publishing_permissions(&state.db, channel_id, &auth).await;
+                let sources = publishing_sources(speak, stream);
+                let mut options = UpdateParticipantOptions::default();
+                let permission = options.permission.get_or_insert_with(Default::default);
+                permission.can_subscribe = true;
+                permission.can_publish_data = true;
+                permission.can_publish = !sources.is_empty();
+                permission.can_publish_sources =
+                    sources.iter().map(|(source, _)| *source).collect();
+                if !matches!(
+                    tokio::time::timeout(
+                        std::time::Duration::from_secs(5),
+                        self.room_client.update_participant(
+                            &Self::room_name(channel_id),
+                            &user_id,
+                            options
+                        )
+                    )
+                    .await,
+                    Ok(Ok(_))
+                ) {
+                    // Fail closed: reconnecting obtains a fresh token with the new grants.
+                    crate::security::revoke_channel_voice_access(state, channel_id, Some(&user_id))
+                        .await;
+                }
+            })
+            .await;
     }
 
     /// Preflight connectivity check — called at startup to verify the server
@@ -131,4 +189,47 @@ impl LiveKitClient {
             }
         }
     }
+}
+
+async fn publishing_permissions(
+    pool: &sqlx::AnyPool,
+    channel_id: &str,
+    auth: &crate::middleware::auth::AuthUser,
+) -> (bool, bool) {
+    use crate::middleware::permissions::require_channel_permission;
+    let speak = require_channel_permission(pool, channel_id, auth, "speak")
+        .await
+        .is_ok();
+    let stream = require_channel_permission(pool, channel_id, auth, "stream")
+        .await
+        .is_ok();
+    if let Ok(channel) = crate::db::channels::get_channel_row(pool, channel_id).await {
+        if let Some(space_id) = channel.space_id {
+            if let Ok(member) =
+                crate::db::members::get_member_row(pool, &space_id, &auth.user_id).await
+            {
+                if crate::middleware::permissions::is_timed_out(member.timed_out_until.as_deref()) {
+                    return (false, false);
+                }
+                return (speak && !member.mute, stream);
+            }
+        }
+    }
+    (speak, stream)
+}
+
+// LiveKit TrackSource values and JWT source names from the LiveKit protocol.
+fn publishing_sources(speak: bool, stream: bool) -> Vec<(i32, &'static str)> {
+    let mut sources = Vec::new();
+    if speak {
+        sources.push((2, "microphone"));
+    }
+    if stream {
+        sources.extend([
+            (1, "camera"),
+            (3, "screen_share"),
+            (4, "screen_share_audio"),
+        ]);
+    }
+    sources
 }

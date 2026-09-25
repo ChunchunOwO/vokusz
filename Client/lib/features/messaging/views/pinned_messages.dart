@@ -1,3 +1,4 @@
+import 'package:bonfire/l10n/ui_copy.dart';
 import 'package:bonfire/shared/utils/client_access.dart';
 import 'package:accordkit/accordkit.dart';
 import 'package:bonfire/features/authentication/models/accord_auth_state.dart';
@@ -124,13 +125,13 @@ class _PinnedMessagesDialogState extends ConsumerState<_PinnedMessagesDialog> {
     final actions = <Widget>[
       if (message.authorId != currentUserId)
         IconButton(
-          tooltip: 'Report',
+          tooltip: UiCopy.report(),
           onPressed: () => _report(message, authorName),
           icon: const Icon(Icons.flag_outlined, size: 18),
         ),
       if (widget.canManage)
         IconButton(
-          tooltip: 'Unpin',
+          tooltip: UiCopy.unpin(),
           onPressed: () => _unpin(message),
           icon: const Icon(Icons.push_pin_outlined, size: 18),
         ),
@@ -178,7 +179,7 @@ class _PinnedMessagesDialogState extends ConsumerState<_PinnedMessagesDialog> {
                   Icon(Icons.push_pin, size: 18, color: colors.dirtyWhite),
                   const SizedBox(width: 8),
                   Text(
-                    'Pinned messages',
+                    UiCopy.pinnedMessages(context: context),
                     style: Theme.of(context).textTheme.titleMedium,
                   ),
                   const Spacer(),
@@ -208,7 +209,7 @@ class _PinnedMessagesDialogState extends ConsumerState<_PinnedMessagesDialog> {
                       padding: const EdgeInsets.all(32),
                       child: Center(
                         child: Text(
-                          'No pinned messages',
+                          UiCopy.noPinnedMessages(context: context),
                           style: Theme.of(context).textTheme.bodyMedium,
                         ),
                       ),

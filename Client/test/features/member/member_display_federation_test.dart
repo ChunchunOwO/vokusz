@@ -170,4 +170,43 @@ void main() {
       expect(url, 'https://b.example/cdn/avatars/spaceavatar');
     });
   });
+
+  group('profile banner', () {
+    test('an unset banner is not a URL', () {
+      final user = AccordUser(id: '123', username: 'a');
+      expect(accordUserBannerUrl(user, 'https://home.example/cdn'), isNull);
+    });
+
+    test('a stored CDN path resolves on the connected server', () {
+      final user = AccordUser(
+        id: '123',
+        username: 'a',
+        banner: '/cdn/banners/123.png',
+      );
+      expect(
+        accordUserBannerUrl(user, 'https://home.example/cdn'),
+        'https://home.example/cdn/banners/123.png',
+      );
+    });
+
+    test('a remote banner resolves on the home server and rejects other hosts', () {
+      final home = AccordUser(
+        id: '123@b.example',
+        username: 'a',
+        banner: '/cdn/banners/123.png',
+        origin: 'b.example',
+      );
+      expect(
+        accordUserBannerUrl(home, 'https://a.example/cdn'),
+        'https://b.example/cdn/banners/123.png',
+      );
+      final elsewhere = AccordUser(
+        id: '123@b.example',
+        username: 'a',
+        banner: 'https://evil.example/cdn/banners/123.png',
+        origin: 'b.example',
+      );
+      expect(accordUserBannerUrl(elsewhere, 'https://a.example/cdn'), isNull);
+    });
+  });
 }

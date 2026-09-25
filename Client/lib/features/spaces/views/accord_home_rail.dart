@@ -39,7 +39,6 @@ class _SpaceRail extends ConsumerWidget {
     required this.selectedSpaceId,
     required this.onSelect,
     required this.onAddServer,
-    required this.onSwitchAccount,
     required this.onOpenSettings,
     required this.onLogout,
   });
@@ -49,7 +48,6 @@ class _SpaceRail extends ConsumerWidget {
   /// Called with the owning server's connection key and the selected space id.
   final void Function(String serverKey, String spaceId) onSelect;
   final VoidCallback onAddServer;
-  final VoidCallback onSwitchAccount;
   final VoidCallback onOpenSettings;
   final VoidCallback onLogout;
 
@@ -227,28 +225,14 @@ class _SpaceRail extends ConsumerWidget {
               children: railItems,
             ),
           ),
-          IconButton(
-            tooltip: 'Explore public spaces',
-            onPressed: () => showAccordDiscovery(context),
-            icon: Icon(Icons.explore, size: 22, color: colors.dirtyWhite),
-          ),
           const SelfStatusButton(),
           IconButton(
-            tooltip: 'Switch account',
-            onPressed: onSwitchAccount,
-            icon: Icon(
-              Icons.switch_account,
-              color: colors.dirtyWhite,
-              size: 20,
-            ),
-          ),
-          IconButton(
-            tooltip: 'Settings',
+            tooltip: AppStrings.of(context).settings,
             onPressed: onOpenSettings,
             icon: Icon(Icons.settings, color: colors.dirtyWhite, size: 20),
           ),
           IconButton(
-            tooltip: 'Log out',
+            tooltip: AppStrings.of(context).logOut,
             onPressed: onLogout,
             icon: Icon(Icons.logout, color: colors.dirtyWhite, size: 20),
           ),
@@ -411,20 +395,23 @@ class _SpaceRail extends ConsumerWidget {
     final entries = <AccordMenuEntry>[
       ..._serverActionEntries(context, ref, space, serverKey),
       AccordMenuEntry(
-        label: 'New folder with this space',
+        label: UiCopy.newFolderWithThisSpace(context: context),
         icon: Icons.create_new_folder_outlined,
         onSelected: () => ctl.createFolder(spaces: [entityKey]),
       ),
       for (final f in settings.spaceFolders)
         if (!f.spaceIds.contains(entityKey.encoded))
           AccordMenuEntry(
-            label: 'Move to "${f.name.isEmpty ? 'Folder' : f.name}"',
+            label: UiCopy.moveTo(
+              context: context,
+              arg0: f.name.isEmpty ? 'Folder' : f.name,
+            ),
             icon: Icons.folder_outlined,
             onSelected: () => ctl.moveSpaceToFolder(entityKey, f.id),
           ),
       if (inFolder)
         AccordMenuEntry(
-          label: 'Remove from folder',
+          label: UiCopy.removeFromFolder(context: context),
           icon: Icons.folder_off_outlined,
           onSelected: () => ctl.moveSpaceToFolder(entityKey, null),
         ),
@@ -454,11 +441,11 @@ class _SpaceRail extends ConsumerWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Padding(
+            Padding(
               padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
               child: Align(
                 alignment: Alignment.centerLeft,
-                child: Text('Hidden servers'),
+                child: Text(UiCopy.hiddenServers(context: context)),
               ),
             ),
             const Divider(height: 1),
@@ -478,7 +465,7 @@ class _SpaceRail extends ConsumerWidget {
                 ),
                 trailing: TextButton.icon(
                   icon: const Icon(Icons.visibility_outlined, size: 18),
-                  label: const Text('Unhide'),
+                  label: Text(UiCopy.unhide(context: context)),
                   onPressed: () {
                     final key = ServerEntityKey.tryDecode(railSpace.key)!;
                     ctl.setSpaceHidden(key.serverKey, key.entityId, false);

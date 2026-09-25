@@ -1,3 +1,5 @@
+import 'package:bonfire/l10n/app_strings.dart';
+import 'package:bonfire/l10n/ui_copy.dart';
 import 'dart:typed_data';
 
 import 'package:bonfire/shared/utils/cropped_image.dart';
@@ -80,11 +82,11 @@ class _ImageCropDialogState extends State<_ImageCropDialog> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text(widget.title, style: theme.textTheme.titleMedium),
+              Text(AppStrings.label(widget.title, context: context), style: theme.textTheme.titleMedium),
               const SizedBox(height: 12),
               Expanded(
                 child: ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: BorderRadius.circular(4),
                   child: Crop(
                     image: widget.imageBytes,
                     controller: _controller,
@@ -117,16 +119,18 @@ class _ImageCropDialogState extends State<_ImageCropDialog> {
                           case CropFailure():
                             setState(() {
                               _busy = false;
-                              _error =
-                                  'Could not crop this image. Try another image.';
+                              _error = UiCopy.couldNotCropThisImageTryAnother(
+                                context: context,
+                              );
                             });
                         }
                       } catch (_) {
                         if (!mounted) return;
                         setState(() {
                           _busy = false;
-                          _error =
-                              'Could not prepare this image. Try another image.';
+                          _error = UiCopy.couldNotPrepareThisImageTryAnother(
+                            context: context,
+                          );
                         });
                       }
                     },
@@ -135,7 +139,7 @@ class _ImageCropDialogState extends State<_ImageCropDialog> {
               ),
               const SizedBox(height: 8),
               Text(
-                'Drag to reposition · scroll or pinch to zoom',
+                UiCopy.dragToRepositionScrollOrPinchTo(context: context),
                 style: theme.textTheme.bodySmall!.copyWith(color: colors.gray),
               ),
               if (_error != null)
@@ -146,7 +150,7 @@ class _ImageCropDialogState extends State<_ImageCropDialog> {
                 children: [
                   TextButton(
                     onPressed: _busy ? null : () => Navigator.of(context).pop(),
-                    child: const Text('Cancel'),
+                    child: Text(UiCopy.cancel(context: context)),
                   ),
                   const SizedBox(width: 8),
                   FilledButton(
@@ -157,7 +161,7 @@ class _ImageCropDialogState extends State<_ImageCropDialog> {
                             height: 18,
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
-                        : const Text('Apply'),
+                        : Text(UiCopy.apply(context: context)),
                   ),
                 ],
               ),

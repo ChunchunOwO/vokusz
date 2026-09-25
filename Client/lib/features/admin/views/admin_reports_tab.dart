@@ -1,3 +1,5 @@
+import 'package:bonfire/l10n/app_strings.dart';
+import 'package:bonfire/l10n/ui_copy.dart';
 import 'package:accordkit/accordkit.dart';
 import 'package:bonfire/features/admin/views/admin_list_scaffold.dart';
 import 'package:bonfire/shared/components/moderation_report_row.dart';
@@ -112,7 +114,7 @@ class _AdminReportsTabState extends ConsumerState<AdminReportsTab> {
     });
     if (!mounted) return;
     if (!result.ok) {
-      setState(() => _error = result.errorOr('Failed to resolve'));
+      setState(() => _error = result.errorOr(UiCopy.failedToResolve()));
       return;
     }
     setState(() => _reports.removeWhere((e) => e.id == id));
@@ -134,9 +136,9 @@ class _AdminReportsTabState extends ConsumerState<AdminReportsTab> {
     final userId = report.reportedUserId;
     if (client == null || spaceId.isEmpty || userId == null) return;
     if (!await _confirm(
-      'Kick member',
-      'Kick the reported member and action this report?',
-      'Kick',
+      UiCopy.kickMember(),
+      UiCopy.kickTheReportedMemberAndActionThis(),
+      UiCopy.kick(),
     )) {
       return;
     }
@@ -145,7 +147,7 @@ class _AdminReportsTabState extends ConsumerState<AdminReportsTab> {
     if (!mounted) return;
     setState(() => _busy = false);
     if (!result.ok) {
-      setState(() => _error = result.errorOr('Failed to kick'));
+      setState(() => _error = result.errorOr(UiCopy.failedToKick()));
       return;
     }
     await _resolve(report, 'actioned', actionTaken: 'kick_member');
@@ -158,7 +160,7 @@ class _AdminReportsTabState extends ConsumerState<AdminReportsTab> {
     if (client == null || spaceId.isEmpty || userId == null) return;
     final request = await showBanDialog(
       context,
-      memberName: 'The reported member',
+      memberName: UiCopy.theReportedMember(),
     );
     if (request == null || !mounted) return;
     setState(() => _busy = true);
@@ -170,7 +172,7 @@ class _AdminReportsTabState extends ConsumerState<AdminReportsTab> {
     if (!mounted) return;
     setState(() => _busy = false);
     if (!result.ok) {
-      setState(() => _error = result.errorOr('Failed to ban'));
+      setState(() => _error = result.errorOr(UiCopy.failedToBan()));
       return;
     }
     await _resolve(report, 'actioned', actionTaken: 'ban_member');
@@ -182,9 +184,9 @@ class _AdminReportsTabState extends ConsumerState<AdminReportsTab> {
     final messageId = report.targetId;
     if (client == null || channelId == null || messageId.isEmpty) return;
     if (!await _confirm(
-      'Delete message',
-      'Delete the reported message and action this report?',
-      'Delete',
+      UiCopy.deleteMessage(),
+      UiCopy.deleteTheReportedMessageAndActionThis(),
+      UiCopy.delete(),
     )) {
       return;
     }
@@ -193,7 +195,7 @@ class _AdminReportsTabState extends ConsumerState<AdminReportsTab> {
     if (!mounted) return;
     setState(() => _busy = false);
     if (!result.ok) {
-      setState(() => _error = result.errorOr('Failed to delete message'));
+      setState(() => _error = result.errorOr(UiCopy.failedToDeleteMessage()));
       return;
     }
     await _resolve(report, 'actioned', actionTaken: 'delete_message');
@@ -206,7 +208,7 @@ class _AdminReportsTabState extends ConsumerState<AdminReportsTab> {
       error: _error,
       loading: _loading,
       isEmpty: _reports.isEmpty,
-      emptyMessage: 'No reports',
+      emptyMessage: UiCopy.noReports(context: context),
       header: Padding(
         padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
         child: Row(
@@ -217,7 +219,7 @@ class _AdminReportsTabState extends ConsumerState<AdminReportsTab> {
                 children: [
                   for (final s in moderationReportStatuses)
                     ChoiceChip(
-                      label: Text(s.label),
+                      label: Text(AppStrings.label(s.label, context: context)),
                       selected: _status == s.value,
                       onSelected: _loading
                           ? null
@@ -230,7 +232,7 @@ class _AdminReportsTabState extends ConsumerState<AdminReportsTab> {
               ),
             ),
             IconButton(
-              tooltip: 'Refresh',
+              tooltip: UiCopy.refresh(context: context),
               onPressed: _loading ? null : _load,
               icon: const Icon(Icons.refresh, size: 18),
             ),

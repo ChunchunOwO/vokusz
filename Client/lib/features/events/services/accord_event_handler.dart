@@ -10,6 +10,9 @@ import 'package:bonfire/features/events/controllers/presence.dart';
 import 'package:bonfire/features/events/services/accord_message_events.dart';
 import 'package:bonfire/features/events/services/accord_ready_sync.dart';
 import 'package:bonfire/features/member/controllers/accord_members.dart';
+import 'package:bonfire/features/member/utils/member_display.dart';
+import 'package:bonfire/features/messaging/controllers/accord_emojis.dart';
+import 'package:bonfire/features/user/controllers/relationship_epoch.dart';
 import 'package:bonfire/features/messaging/controllers/accord_messages.dart';
 import 'package:bonfire/features/messaging/controllers/forum_posts.dart';
 import 'package:bonfire/features/messaging/controllers/pending_uploads.dart';
@@ -123,6 +126,21 @@ VoidCallback handleAccordEvents(
       // `resumed`, not `ready`). Nothing replays what was missed while
       // disconnected, so re-fetch the history of every open message pane.
       // Active server only: the open panes are its channels.
+      // Channels and rosters are reloaded for this connection either way:
+      // they are not in the open-pane list, and a gap would otherwise stick.
+      if (hadReady) {
+        final spaces = ref
+                .read(connectionsControllerProvider)
+                .connectionFor(serverKey)
+                ?.spaces ??
+            const <AccordSpace>[];
+        for (final space in spaces) {
+          ref.invalidate(accordChannelsControllerProvider(serverKey, space.id));
+          ref.invalidate(
+            accordMembersControllerProvider(serverKey, space.id),
+          );
+        }
+      }
       if (hadReady && isActive()) {
         for (final key in [...activeMessageChannels]) {
           if (key.serverKey != serverKey) continue;
@@ -199,6 +217,7 @@ VoidCallback handleAccordEvents(
           .read(blockedUsersControllerProvider(serverKey).notifier)
           .refresh(client),
     );
+    ref.read(relationshipEpochProvider.notifier).bump();
   }
 
   subs.add(client.onRelationshipAdd.listen((_) => refreshBlocked()));
@@ -222,9 +241,11 @@ VoidCallback handleAccordEvents(
   subs.add(
     client.onUserUpdate.listen((user) {
       if (user.id.isEmpty) return;
-      ref
-          .read(accordUsersControllerProvider(serverKey).notifier)
-          .upsert(user, client: client);
+      final users = ref.read(
+        accordUsersControllerProvider(serverKey).notifier,
+      );
+      evictUserMedia(users.cached(user.id, client: client), user, client.config.cdnUrl);
+      users.upsert(user, client: client);
       for (final key in [...activeMemberSpaces]) {
         if (key.serverKey != serverKey) continue;
         ref
@@ -249,6 +270,12 @@ VoidCallback handleAccordEvents(
       final me = currentUserId;
       final voice = ref.read(voiceControllerProvider);
       final isVoiceServer = serverKey == voice.serverKey;
+
+      // A moderator moved our active session to another voice channel.
+      if (isVoiceServer && vs.userId == me && voice.channelId != null &&
+          vs.channelId != null && vs.channelId != voice.channelId && vs.spaceId != null) {
+        ref.read(voiceControllerProvider.notifier).handleMemberMove(vs.channelId!, vs.spaceId!, serverKey);
+      }
 
       // A peer joining the DM channel we're ringing means our call connected;
       // drop the "Calling…" state. No-ops unless this matches our outgoing call,
@@ -444,20 +471,55 @@ VoidCallback handleAccordEvents(
   String? roleSpaceId(Map<String, dynamic> data) =>
       data['space_id']?.toString() ?? data['guild_id']?.toString();
 
-  void cacheRole(Map<String, dynamic> data) {
+  void rememberRole(String spaceId, void Function(List<AccordRole>) mutate) {
+    final connections = ref.read(connectionsControllerProvider);
+    final space = connections
+        .connectionFor(serverKey)
+        ?.spaces
+        .where((item) => item.id == spaceId)
+        .firstOrNull;
+    if (space != null) {
+      final roles = [...space.roles];
+      mutate(roles);
+      space.roles = roles;
+      ref
+          .read(connectionsControllerProvider.notifier)
+          .upsertSpace(serverKey, space);
+      if (isActive()) {
+        ref.read(spacesControllerProvider.notifier).setRoles(spaceId, roles);
+      }
+      return;
+    }
     if (!isActive()) return;
+    final live = ref
+        .read(spacesControllerProvider)
+        ?.where((item) => item.id == spaceId)
+        .firstOrNull;
+    if (live == null) return;
+    final roles = [...live.roles];
+    mutate(roles);
+    ref.read(spacesControllerProvider.notifier).setRoles(spaceId, roles);
+  }
+
+  void cacheRole(Map<String, dynamic> data) {
     final spaceId = roleSpaceId(data);
     final raw = data['role'];
     if (spaceId == null || raw is! Map) return;
     final role = AccordRole.fromJson(Map<String, dynamic>.from(raw));
-    ref.read(spacesControllerProvider.notifier).upsertRole(spaceId, role);
+    rememberRole(spaceId, (roles) {
+      final index = roles.indexWhere((item) => item.id == role.id);
+      if (index >= 0) {
+        roles[index] = role;
+      } else {
+        roles.add(role);
+      }
+    });
   }
 
   subs.add(client.onRoleCreate.listen(cacheRole));
   subs.add(client.onRoleUpdate.listen(cacheRole));
   subs.add(
     client.onRoleDelete.listen((data) {
-      if (!isActive()) return;
       final spaceId = roleSpaceId(data);
       final roleId =
           data['role_id']?.toString() ??
@@ -465,9 +527,35 @@ VoidCallback handleAccordEvents(
               ? (data['role'] as Map)['id']?.toString()
               : null);
       if (spaceId == null || roleId == null) return;
-      ref.read(spacesControllerProvider.notifier).removeRole(spaceId, roleId);
+      rememberRole(
+        spaceId,
+        (roles) => roles.removeWhere((item) => item.id == roleId),
+      );
     }),
   );
+
+  void cacheEmoji(Map<String, dynamic> data, {required bool remove}) {
+    final spaceId = data['space_id']?.toString();
+    if (spaceId == null) return;
+    final notifier = ref.read(
+      accordEmojisControllerProvider(serverKey, spaceId).notifier,
+    );
+    if (remove) {
+      final id = data['emoji_id']?.toString() ??
+          (data['emoji'] is Map
+              ? (data['emoji'] as Map)['id']?.toString()
+              : null);
+      if (id != null) notifier.remove(id);
+      return;
+    }
+    final raw = data['emoji'];
+    if (raw is! Map) return;
+    notifier.upsert(AccordEmoji.fromJson(Map<String, dynamic>.from(raw)));
+  }
+
+  subs.add(client.onEmojiCreate.listen((data) => cacheEmoji(data, remove: false)));
+  subs.add(client.onEmojiUpdate.listen((data) => cacheEmoji(data, remove: false)));
+  subs.add(client.onEmojiDelete.listen((data) => cacheEmoji(data, remove: true)));
 
   subs.add(client.onMemberJoin.listen(cacheMember));
   subs.add(client.onMemberUpdate.listen(cacheMember));

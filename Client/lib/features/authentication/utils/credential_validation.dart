@@ -1,3 +1,5 @@
+import 'package:bonfire/l10n/ui_copy.dart';
+
 /// Client-side registration credential rules, shared by the login screen
 /// (`accord_login.dart`) and the Add-a-Server dialog (`add_server_dialog.dart`).
 /// Rules are checked in order and the first failing rule's message is
@@ -17,10 +19,10 @@ String? validateRegistrationCredentials({
   final usernameError = validateRegistrationUsername(username);
   if (usernameError != null) return usernameError;
   if (password.length < 8) {
-    return 'Password must be at least 8 characters.';
+    return UiCopy.passwordMustBeAtLeast8Characters2();
   }
   if (tosRequired && !tosAccepted) {
-    return 'You must accept the Terms of Service.';
+    return UiCopy.youMustAcceptTheTermsOfService();
   }
   return null;
 }
@@ -31,7 +33,7 @@ String? validateRegistrationCredentials({
 /// email), so email-like input is rejected rather than silently accepted as a
 /// misleading account name.
 String? validateRegistrationUsername(String username) =>
-    username.contains('@') ? "Username can't be an email address." : null;
+    username.contains('@') ? UiCopy.usernameCanTBeAnEmailAddress() : null;
 
 /// Client-side validation shared by both forced-password-reset surfaces.
 String? validatePasswordChangeCredentials({
@@ -40,11 +42,11 @@ String? validatePasswordChangeCredentials({
   required String confirmation,
 }) {
   if (oldPassword.isEmpty || newPassword.isEmpty) {
-    return 'Enter your current and new password.';
+    return UiCopy.enterYourCurrentAndNewPassword();
   }
   if (newPassword.length < 8) {
-    return 'New password must be at least 8 characters.';
+    return UiCopy.newPasswordMustBeAtLeast8();
   }
-  if (newPassword != confirmation) return 'Passwords do not match.';
+  if (newPassword != confirmation) return UiCopy.passwordsDoNotMatch2();
   return null;
 }

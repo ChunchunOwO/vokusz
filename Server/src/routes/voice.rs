@@ -98,15 +98,17 @@ pub async fn join_voice(
         .as_ref()
         .ok_or_else(|| AppError::BadRequest("voice_not_configured".to_string()))?;
 
-    // Clean up old LiveKit room if the user moved channels
-    if let Some(ref prev_ch) = previous_channel {
+    // The previous room is already gone from voice state. Cleaning it up
+    // must not sit on the join response — that HTTP round trip is what
+    // makes switching channels feel slow.
+    if let Some(prev_ch) = previous_channel.filter(|previous| previous != &channel_id) {
         if !state.test_mode {
-            if let Err(err) =
-                crate::security::evict_voice_participant(&state, prev_ch, &auth.user_id).await
-            {
-                tracing::warn!("voice eviction could not be queued: {err}");
-            }
-            lk.delete_room_if_empty(prev_ch).await;
+            let lk = lk.clone();
+            let user_id = auth.user_id.clone();
+            tokio::spawn(async move {
+                lk.try_remove_participant(&prev_ch, &user_id).await;
+                lk.delete_room_if_empty(&prev_ch).await;
+            });
         }
     }
 
@@ -114,12 +116,16 @@ pub async fn join_voice(
     // participants (DM/group DM calls).
     broadcast_voice_state_update(&state, &channel_id, space_id.as_deref(), &voice_state).await;
 
-    if !state.test_mode {
-        lk.ensure_room(&channel_id).await?;
-    }
-    let user = db::users::get_user(&state.db, &auth.user_id).await?;
+    let user_fut = db::users::get_user(&state.db, &auth.user_id);
+    let user = if state.test_mode {
+        user_fut.await?
+    } else {
+        let (room, user) = tokio::join!(lk.ensure_room(&channel_id), user_fut);
+        room?;
+        user?
+    };
     let display_name = user.display_name.as_deref().unwrap_or(&user.username);
-    let token = lk.generate_token(&auth.user_id, display_name, &channel_id)?;
+    let token = lk.generate_token(&state.db, &auth, display_name, &channel_id).await?;
     Ok(Json(serde_json::json!({
         "data": {
             "voice_state": voice_state,
@@ -136,7 +142,8 @@ pub async fn leave_voice(
     auth: AuthUser,
 ) -> Result<Json<serde_json::Value>, AppError> {
     require_channel_permission(&state.db, &channel_id, &auth, "connect").await?;
-    let old_state = voice::state::leave_voice_channel(&state, &auth.user_id);
+    let old_state =
+        voice::state::leave_voice_channel_if_current(&state, &auth.user_id, &channel_id);
 
     if let Some(ref vs) = old_state {
         if let Some(ref left_channel) = vs.channel_id {
@@ -157,19 +164,16 @@ pub async fn leave_voice(
             broadcast_voice_state_update(&state, left_channel, vs.space_id.as_deref(), &left_state)
                 .await;
 
-            // LiveKit cleanup
+            // Drop the participant after the client has already been told
+            // the leave succeeded.
             if !state.test_mode {
-                if let Some(ref lk) = state.livekit_client {
-                    if let Err(err) = crate::security::evict_voice_participant(
-                        &state,
-                        left_channel,
-                        &auth.user_id,
-                    )
-                    .await
-                    {
-                        tracing::warn!("voice eviction could not be queued: {err}");
-                    }
-                    lk.delete_room_if_empty(left_channel).await;
+                if let Some(lk) = state.livekit_client.clone() {
+                    let channel = left_channel.clone();
+                    let user_id = auth.user_id.clone();
+                    tokio::spawn(async move {
+                        lk.try_remove_participant(&channel, &user_id).await;
+                        lk.delete_room_if_empty(&channel).await;
+                    });
                 }
             }
 
@@ -354,4 +358,41 @@ pub(crate) async fn broadcast_voice_state_update(
             required_permission: None,
         });
     }
+}
+
+#[derive(serde::Deserialize)]
+pub struct MoveMemberRequest {
+    pub user_id: String,
+    pub source_channel_id: String,
+}
+
+pub async fn move_member(
+    state: State<AppState>, Path(channel_id): Path<String>, auth: AuthUser,
+    Json(input): Json<MoveMemberRequest>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    if state.livekit_client.is_none() {
+        return Err(AppError::BadRequest("voice_not_configured".into()));
+    }
+    let space_id = require_channel_permission(&state.db, &channel_id, &auth, "move_members").await?;
+    let destination = db::channels::get_channel_row(&state.db, &channel_id).await?;
+    if destination.channel_type != "voice" || space_id.is_empty() {
+        return Err(AppError::BadRequest("destination must be a domain voice channel".into()));
+    }
+    let source = state.voice_states.get(&input.user_id).map(|v| v.value().clone())
+        .ok_or_else(|| AppError::BadRequest("member is not in voice".into()))?;
+    if source.space_id.as_deref() != Some(&space_id) || source.channel_id.as_deref() != Some(&input.source_channel_id) {
+        return Err(AppError::BadRequest("member moved or belongs to another domain".into()));
+    }
+    require_channel_permission(&state.db, &input.source_channel_id, &auth, "move_members").await?;
+    if input.user_id != auth.user_id {
+        crate::middleware::permissions::require_hierarchy(&state.db, &space_id, &auth, &input.user_id).await?;
+    }
+    let user = db::users::get_user(&state.db, &input.user_id).await?;
+    if user.disabled { return Err(AppError::Forbidden("account disabled".into())); }
+    let target = AuthUser { user_id: input.user_id, is_admin: user.is_admin, is_bot: user.bot, is_guest: false, guest_space_id: None };
+    // Reuse normal join authorization, timeout checks, room cleanup and broadcasting.
+    let _ = join_voice(state, Path(channel_id), target, Json(JoinVoiceRequest {
+        self_mute: Some(source.self_mute), self_deaf: Some(source.self_deaf),
+    })).await?;
+    Ok(Json(serde_json::json!({"data": null})))
 }

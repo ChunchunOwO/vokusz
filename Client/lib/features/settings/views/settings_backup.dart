@@ -1,3 +1,4 @@
+import 'package:bonfire/l10n/ui_copy.dart';
 import 'dart:convert';
 import 'dart:typed_data';
 
@@ -23,7 +24,7 @@ class SettingsBackupSection extends ConsumerWidget {
     String? path;
     try {
       path = await FilePicker.platform.saveFile(
-        dialogTitle: 'Export settings',
+        dialogTitle: UiCopy.exportSettings(context: context),
         fileName: 'vokusz-settings.json',
         type: FileType.custom,
         allowedExtensions: const ['json'],
@@ -31,12 +32,15 @@ class SettingsBackupSection extends ConsumerWidget {
       );
     } catch (_) {
       if (context.mounted) {
-        showInfoSnack(context, 'Could not save the settings file.');
+        showInfoSnack(
+          context,
+          UiCopy.couldNotSaveTheSettingsFile(context: context),
+        );
       }
       return;
     }
     if (path != null && context.mounted) {
-      showInfoSnack(context, 'Settings exported.');
+      showInfoSnack(context, UiCopy.settingsExported(context: context));
     }
   }
 
@@ -44,14 +48,17 @@ class SettingsBackupSection extends ConsumerWidget {
     FilePickerResult? picked;
     try {
       picked = await FilePicker.platform.pickFiles(
-        dialogTitle: 'Import settings',
+        dialogTitle: UiCopy.importSettings(context: context),
         type: FileType.custom,
         allowedExtensions: const ['json'],
         withData: true,
       );
     } catch (_) {
       if (context.mounted) {
-        showInfoSnack(context, 'Could not open the settings file.');
+        showInfoSnack(
+          context,
+          UiCopy.couldNotOpenTheSettingsFile(context: context),
+        );
       }
       return;
     }
@@ -67,7 +74,10 @@ class SettingsBackupSection extends ConsumerWidget {
     }
     if (map == null) {
       if (context.mounted) {
-        showInfoSnack(context, 'That file is not a valid settings export.');
+        showInfoSnack(
+          context,
+          UiCopy.thatFileIsNotAValidSettings(context: context),
+        );
       }
       return;
     }
@@ -75,7 +85,9 @@ class SettingsBackupSection extends ConsumerWidget {
     if (context.mounted) {
       showInfoSnack(
         context,
-        ok ? 'Settings imported.' : 'Could not import settings.',
+        ok
+            ? UiCopy.settingsImported(context: context)
+            : UiCopy.couldNotImportSettings(context: context),
       );
     }
   }
@@ -87,8 +99,10 @@ class SettingsBackupSection extends ConsumerWidget {
       children: [
         ListTile(
           leading: Icon(Icons.upload_file, color: colors.dirtyWhite),
-          title: const Text('Export settings'),
-          subtitle: const Text('Save your preferences to a JSON file'),
+          title: Text(UiCopy.exportSettings(context: context)),
+          subtitle: Text(
+            UiCopy.saveYourPreferencesToAJsonFile(context: context),
+          ),
           onTap: () => _export(context, ref),
         ),
         ListTile(
@@ -96,8 +110,10 @@ class SettingsBackupSection extends ConsumerWidget {
             Icons.download_for_offline_outlined,
             color: colors.dirtyWhite,
           ),
-          title: const Text('Import settings'),
-          subtitle: const Text('Restore preferences from a JSON file'),
+          title: Text(UiCopy.importSettings(context: context)),
+          subtitle: Text(
+            UiCopy.restorePreferencesFromAJsonFile(context: context),
+          ),
           onTap: () => _import(context, ref),
         ),
       ],

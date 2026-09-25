@@ -132,17 +132,20 @@ void main() {
   });
 
   group('AccordSettings screen-share quality', () {
-    test('defaults are motion-friendly and independent of the camera', () {
-      const settings = AccordSettings();
-      // Camera stays where it was: 720p30.
-      expect(settings.videoDimensions, (1280, 720));
-      expect(settings.videoFps, 30);
-      // Screen share gets its own, 60 fps ladder.
-      expect(settings.screenShareResolution, 0);
-      expect(settings.screenShareDimensions, (1280, 720));
-      expect(settings.screenShareFps, 60);
-      expect(settings.screenShareMotionPriority, isTrue);
-    });
+    test(
+      'defaults balance resource use and remain independent of the camera',
+      () {
+        const settings = AccordSettings();
+        // Camera stays where it was: 720p30.
+        expect(settings.videoDimensions, (1280, 720));
+        expect(settings.videoFps, 30);
+        // Screen share has its own quality settings.
+        expect(settings.screenShareResolution, 0);
+        expect(settings.screenShareDimensions, (1280, 720));
+        expect(settings.screenShareFps, 30);
+        expect(settings.screenShareMotionPriority, isTrue);
+      },
+    );
 
     test('installs saved before the setting existed get the new defaults, '
         'not the camera values', () {
@@ -215,9 +218,15 @@ void main() {
     });
 
     test('bitrate ceilings sit in the live-streaming range for 60 fps', () {
-      const p720 = AccordSettings(screenShareResolution: 0);
-      const p1080 = AccordSettings(screenShareResolution: 1);
-      const p1440 = AccordSettings(screenShareResolution: 2);
+      const p720 = AccordSettings(screenShareResolution: 0, screenShareFps: 60);
+      const p1080 = AccordSettings(
+        screenShareResolution: 1,
+        screenShareFps: 60,
+      );
+      const p1440 = AccordSettings(
+        screenShareResolution: 2,
+        screenShareFps: 60,
+      );
       expect(p720.screenShareBitrate, 3000000);
       expect(p1080.screenShareBitrate, 6000000);
       expect(p1440.screenShareBitrate, 9000000);
@@ -226,7 +235,7 @@ void main() {
     });
 
     test('bitrate scales down sub-linearly with frame rate', () {
-      const base = AccordSettings(screenShareResolution: 0);
+      const base = AccordSettings(screenShareResolution: 0, screenShareFps: 60);
       const at30 = AccordSettings(screenShareResolution: 0, screenShareFps: 30);
       const at15 = AccordSettings(screenShareResolution: 0, screenShareFps: 15);
       expect(at30.screenShareBitrate, 2100000);

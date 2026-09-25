@@ -84,7 +84,7 @@ pub async fn create_space(
         serde_json::to_string(&crate::middleware::permissions::DEFAULT_EVERYONE_PERMISSIONS)
             .unwrap();
     sqlx::query(&super::q(
-        "INSERT INTO roles (id, space_id, name, position, permissions) VALUES (?, ?, '@everyone', 0, ?)"
+        "INSERT INTO roles (id, space_id, name, position, permissions) VALUES (?, ?, '普通成员', 0, ?)"
     ))
     .bind(&role_id)
     .bind(&id)
@@ -92,12 +92,15 @@ pub async fn create_space(
     .execute(pool)
     .await?;
 
+    sqlx::query(&super::q("INSERT INTO roles (id, space_id, name, color, hoist, position, permissions) VALUES (?, ?, '嘉宾', 10181046, ?, 1, '[]')"))
+        .bind(snowflake::generate()).bind(&id).bind(true).execute(pool).await?;
+
     // Create Moderator role at position 1
     let mod_role_id = snowflake::generate();
     let mod_perms =
         serde_json::to_string(&crate::middleware::permissions::MODERATOR_PERMISSIONS).unwrap();
     sqlx::query(&super::q(
-        "INSERT INTO roles (id, space_id, name, color, hoist, position, permissions) VALUES (?, ?, 'Moderator', 3447003, ?, 1, ?)"
+        "INSERT INTO roles (id, space_id, name, color, hoist, position, permissions) VALUES (?, ?, '管理员', 3447003, ?, 2, ?)"
     ))
     .bind(&mod_role_id)
     .bind(&id)
@@ -111,7 +114,7 @@ pub async fn create_space(
     let admin_perms =
         serde_json::to_string(&crate::middleware::permissions::ADMIN_PERMISSIONS).unwrap();
     sqlx::query(&super::q(
-        "INSERT INTO roles (id, space_id, name, color, hoist, position, permissions) VALUES (?, ?, 'Admin', 15158332, ?, 2, ?)"
+        "INSERT INTO roles (id, space_id, name, color, hoist, position, permissions) VALUES (?, ?, '高级管理员', 15158332, ?, 3, ?)"
     ))
     .bind(&admin_role_id)
     .bind(&id)
@@ -120,14 +123,23 @@ pub async fn create_space(
     .execute(pool)
     .await?;
 
-    // Create default #general text channel
-    let channel_id = snowflake::generate();
-    sqlx::query(&super::q(
-        "INSERT INTO channels (id, name, type, space_id, position) VALUES (?, 'general', 'text', ?, 0)"
-    ))
-    .bind(&channel_id)
-    .bind(&id)
-    .execute(pool)
+    // Channels inherit domain permissions.
+    super::channels::create_channel(
+        pool,
+        &id,
+        &crate::models::channel::CreateChannel {
+            name: "general".into(),
+            channel_type: "text".into(),
+            topic: None,
+            parent_id: None,
+            nsfw: None,
+            bitrate: None,
+            user_limit: None,
+            rate_limit: None,
+            position: Some(0),
+            allow_anonymous_read: None,
+        },
+    )
     .await?;
 
     // Add the owner as a member
@@ -136,16 +148,6 @@ pub async fn create_space(
     ))
     .bind(owner_id)
     .bind(&id)
-    .execute(pool)
-    .await?;
-
-    // Assign Admin role to owner
-    sqlx::query(&super::q(
-        "INSERT INTO member_roles (user_id, space_id, role_id) VALUES (?, ?, ?)",
-    ))
-    .bind(owner_id)
-    .bind(&id)
-    .bind(&admin_role_id)
     .execute(pool)
     .await?;
 

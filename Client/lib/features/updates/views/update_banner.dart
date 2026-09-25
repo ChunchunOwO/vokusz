@@ -1,3 +1,4 @@
+import 'package:bonfire/l10n/ui_copy.dart';
 import 'package:bonfire/features/settings/controllers/settings.dart';
 import 'package:bonfire/features/updates/controllers/update_controller.dart';
 import 'package:bonfire/features/updates/views/updates_page.dart';
@@ -39,11 +40,15 @@ class UpdateBanner extends ConsumerWidget {
     // install applies via pkexec, so warn that an admin prompt will appear.
     if (update.updateReady) {
       final tail = notifier.requiresPrivilegedInstall
-          ? 'Tap to install (admin required).'
-          : 'Tap to restart & install.';
+          ? UiCopy.tapToInstallAdminRequired(context: context)
+          : UiCopy.tapToRestartInstall(context: context);
       return AppBanner(
         icon: Icons.system_update,
-        message: 'Update ready — ${release.name}. $tail',
+        message: UiCopy.updateReady(
+          context: context,
+          arg0: release.name,
+          arg1: tail,
+        ),
         onTap: update.installing ? () {} : () => notifier.applyUpdate(),
         onDismiss: () => notifier.dismissCurrent(),
       );
@@ -60,7 +65,10 @@ class UpdateBanner extends ConsumerWidget {
 
     return AppBanner(
       icon: Icons.system_update,
-      message: 'Update available — ${release.name}. Tap to view.',
+      message: UiCopy.updateAvailableTapToView(
+        context: context,
+        arg0: release.name,
+      ),
       onTap: () => showUpdatesSettings(context),
       onDismiss: () => notifier.dismissCurrent(),
     );

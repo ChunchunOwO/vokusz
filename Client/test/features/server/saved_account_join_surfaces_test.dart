@@ -380,10 +380,10 @@ void main() {
       expect(container.read(pendingServerJoinProvider)?.invite, 'abc123');
       await tester.enterText(_field('Username or email'), 'saved-user');
       await tester.enterText(_field('Password'), 'password');
-      await tester.ensureVisible(find.text('Log In'));
+      await tester.ensureVisible(find.text('Log in'));
       // Login persists the last server; start that file I/O outside FakeAsync.
       await tester.runAsync(() async {
-        await tester.tap(find.text('Log In'));
+        await tester.tap(find.text('Log in'));
         await Hive.box('accord-session').flush();
       });
       await tester.pump();

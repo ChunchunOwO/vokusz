@@ -10,7 +10,7 @@ class _ReactButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = BonfireThemeExtension.of(context);
     return IconButton(
-      tooltip: 'Add reaction',
+      tooltip: UiCopy.addReaction(context: context),
       onPressed: onPressed,
       icon: Icon(Icons.add_reaction_outlined, size: 18, color: colors.gray),
     );
@@ -50,16 +50,16 @@ class _ReactionPill extends StatelessWidget {
     final mine = reaction.includesMe;
     return Material(
       color: mine ? colors.primary.withValues(alpha: 0.25) : colors.darkGray,
-      borderRadius: BorderRadius.circular(12),
+      borderRadius: BorderRadius.circular(4),
       child: InkWell(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(4),
         onTap: onTap,
         onLongPress: onShowReactors,
         onSecondaryTap: onShowReactors,
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(4),
             border: Border.all(
               color: mine ? colors.primary : Colors.transparent,
               width: 1,
@@ -148,7 +148,12 @@ class _ReactorsDialogState extends ConsumerState<_ReactorsDialog> {
       return;
     }
     final users = await ref
-        .read(accordMessagesControllerProvider(ref.readActiveServerKey() ?? '', widget.channelId).notifier)
+        .read(
+          accordMessagesControllerProvider(
+            ref.readActiveServerKey() ?? '',
+            widget.channelId,
+          ).notifier,
+        )
         .reactionUsers(
           client,
           widget.messageId,
@@ -166,21 +171,21 @@ class _ReactorsDialogState extends ConsumerState<_ReactorsDialog> {
     return AlertDialog(
       title: Text(
         widget.emojiId == null
-            ? 'Reacted with ${resolveEmojiGlyph(widget.emojiName)}'
-            : 'Reacted with :${widget.emojiName}:',
+            ? UiCopy.reactedWith(
+                context: context,
+                arg0: resolveEmojiGlyph(widget.emojiName),
+              )
+            : UiCopy.reactedWith2(context: context, arg0: widget.emojiName),
       ),
       content: SizedBox(
         width: 300,
         child: users == null
-            ? const SizedBox(
-                height: 80,
-                child: LoadingView(),
-              )
+            ? const SizedBox(height: 80, child: LoadingView())
             : users.isEmpty
             ? Padding(
                 padding: const EdgeInsets.all(16),
                 child: Text(
-                  'No one yet.',
+                  UiCopy.noOneYet(context: context),
                   style: Theme.of(
                     context,
                   ).textTheme.bodyMedium!.copyWith(color: colors.gray),
@@ -197,7 +202,7 @@ class _ReactorsDialogState extends ConsumerState<_ReactorsDialog> {
       actions: [
         TextButton(
           onPressed: () => Navigator.of(context).maybePop(),
-          child: const Text('Close'),
+          child: Text(UiCopy.close(context: context)),
         ),
       ],
     );

@@ -63,7 +63,7 @@ class _FriendsTabState extends ConsumerState<_FriendsTab> {
     if (client == null) return;
     await _mutate(
       () => client.users.putRelationship(userId, {'type': _Rel.friend}),
-      'Could not accept that friend request.',
+      UiCopy.couldNotAcceptThatFriendRequest(),
     );
   }
 
@@ -72,7 +72,7 @@ class _FriendsTabState extends ConsumerState<_FriendsTab> {
     if (client == null) return;
     await _mutate(
       () => client.users.deleteRelationship(userId),
-      'Could not remove that relationship.',
+      UiCopy.couldNotRemoveThatRelationship(),
     );
   }
 
@@ -81,7 +81,7 @@ class _FriendsTabState extends ConsumerState<_FriendsTab> {
     if (client == null) return;
     await _mutate(
       () => client.users.putRelationship(userId, {'type': _Rel.blocked}),
-      'Could not block that user.',
+      UiCopy.couldNotBlockThatUser(),
     );
   }
 
@@ -95,6 +95,10 @@ class _FriendsTabState extends ConsumerState<_FriendsTab> {
 
   @override
   Widget build(BuildContext context) {
+    ref.listen<int>(relationshipEpochProvider, (previous, next) {
+      if (previous == next) return;
+      unawaited(_load());
+    });
     final theme = Theme.of(context);
     final colors = BonfireThemeExtension.of(context);
     final all = _relationships;
@@ -116,7 +120,7 @@ class _FriendsTabState extends ConsumerState<_FriendsTab> {
             child: FilledButton.icon(
               onPressed: _busy ? null : _addFriend,
               icon: const Icon(Icons.person_add, size: 18),
-              label: const Text('Add friend'),
+              label: Text(UiCopy.addFriend(context: context)),
             ),
           ),
         ),
@@ -125,7 +129,10 @@ class _FriendsTabState extends ConsumerState<_FriendsTab> {
             padding: const EdgeInsets.symmetric(horizontal: 8),
             children: [
               if (incoming.isNotEmpty)
-                _SectionLabel('Incoming requests', colors: colors),
+                _SectionLabel(
+                  UiCopy.incomingRequests(context: context),
+                  colors: colors,
+                ),
               for (final r in incoming)
                 _FriendRow(
                   name: _userName(r.user),
@@ -134,14 +141,14 @@ class _FriendsTabState extends ConsumerState<_FriendsTab> {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       IconButton(
-                        tooltip: 'Accept',
+                        tooltip: UiCopy.accept(context: context),
                         onPressed: _busy || r.user == null
                             ? null
                             : () => _accept(r.user!.id),
                         icon: Icon(Icons.check, color: colors.green, size: 20),
                       ),
                       IconButton(
-                        tooltip: 'Decline',
+                        tooltip: UiCopy.decline(context: context),
                         onPressed: _busy || r.user == null
                             ? null
                             : () => _remove(r.user!.id),
@@ -151,7 +158,10 @@ class _FriendsTabState extends ConsumerState<_FriendsTab> {
                   ),
                 ),
               if (outgoing.isNotEmpty)
-                _SectionLabel('Outgoing requests', colors: colors),
+                _SectionLabel(
+                  UiCopy.outgoingRequests(context: context),
+                  colors: colors,
+                ),
               for (final r in outgoing)
                 _FriendRow(
                   name: _userName(r.user),
@@ -160,10 +170,11 @@ class _FriendsTabState extends ConsumerState<_FriendsTab> {
                     onPressed: _busy || r.user == null
                         ? null
                         : () => _remove(r.user!.id),
-                    child: const Text('Cancel'),
+                    child: Text(UiCopy.cancel(context: context)),
                   ),
                 ),
-              if (friends.isNotEmpty) _SectionLabel('Friends', colors: colors),
+              if (friends.isNotEmpty)
+                _SectionLabel(UiCopy.friends(context: context), colors: colors),
               for (final r in friends)
                 _FriendRow(
                   name: _userName(r.user),
@@ -172,14 +183,14 @@ class _FriendsTabState extends ConsumerState<_FriendsTab> {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       IconButton(
-                        tooltip: 'Block',
+                        tooltip: UiCopy.block(context: context),
                         onPressed: _busy || r.user == null
                             ? null
                             : () => _block(r.user!.id),
                         icon: Icon(Icons.block, color: colors.gray, size: 20),
                       ),
                       IconButton(
-                        tooltip: 'Remove friend',
+                        tooltip: UiCopy.removeFriend(context: context),
                         onPressed: _busy || r.user == null
                             ? null
                             : () => _remove(r.user!.id),
@@ -192,7 +203,8 @@ class _FriendsTabState extends ConsumerState<_FriendsTab> {
                     ],
                   ),
                 ),
-              if (blocked.isNotEmpty) _SectionLabel('Blocked', colors: colors),
+              if (blocked.isNotEmpty)
+                _SectionLabel(UiCopy.blocked(context: context), colors: colors),
               for (final r in blocked)
                 _FriendRow(
                   name: _userName(r.user),
@@ -201,7 +213,7 @@ class _FriendsTabState extends ConsumerState<_FriendsTab> {
                     onPressed: _busy || r.user == null
                         ? null
                         : () => _remove(r.user!.id),
-                    child: const Text('Unblock'),
+                    child: Text(UiCopy.unblock(context: context)),
                   ),
                 ),
               if (incoming.isEmpty &&
@@ -212,7 +224,7 @@ class _FriendsTabState extends ConsumerState<_FriendsTab> {
                   padding: const EdgeInsets.all(24),
                   child: Center(
                     child: Text(
-                      'No friends yet',
+                      UiCopy.noFriendsYet(context: context),
                       style: theme.textTheme.bodyMedium,
                     ),
                   ),
@@ -314,8 +326,8 @@ class _AddFriendDialogState extends ConsumerState<_AddFriendDialog> {
     setState(() {
       _busy = false;
       _message = result.ok
-          ? 'Friend request sent to ${_userName(user)}'
-          : 'Failed to send request';
+          ? UiCopy.friendRequestSentTo(arg0: _userName(user))
+          : UiCopy.failedToSendRequest();
     });
   }
 
@@ -332,11 +344,14 @@ class _AddFriendDialogState extends ConsumerState<_AddFriendDialog> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text('Add friend', style: theme.textTheme.titleMedium),
+              Text(
+                UiCopy.addFriend(context: context),
+                style: theme.textTheme.titleMedium,
+              ),
               const SizedBox(height: 12),
               Flexible(
                 child: _UserSearchList(
-                  hintText: 'Search by username',
+                  hintText: UiCopy.searchByUsername(context: context),
                   busy: _busy,
                   onBusyChanged: (busy) => setState(() {
                     _busy = busy;
@@ -362,7 +377,7 @@ class _AddFriendDialogState extends ConsumerState<_AddFriendDialog> {
                       overflow: TextOverflow.ellipsis,
                     ),
                     trailing: IconButton(
-                      tooltip: 'Send request',
+                      tooltip: UiCopy.sendRequest(context: context),
                       onPressed: _busy ? null : () => _request(user),
                       icon: Icon(
                         Icons.person_add,
@@ -378,7 +393,7 @@ class _AddFriendDialogState extends ConsumerState<_AddFriendDialog> {
                 alignment: Alignment.centerRight,
                 child: TextButton(
                   onPressed: () => Navigator.of(context).pop(true),
-                  child: const Text('Done'),
+                  child: Text(UiCopy.done(context: context)),
                 ),
               ),
             ],

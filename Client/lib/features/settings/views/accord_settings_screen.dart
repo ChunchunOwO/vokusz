@@ -1,3 +1,4 @@
+import 'package:bonfire/l10n/ui_copy.dart';
 import 'package:bonfire/features/authentication/models/accord_auth_state.dart';
 import 'package:bonfire/features/authentication/models/accord_session.dart';
 import 'package:bonfire/shared/components/color_swatch_chip.dart';
@@ -8,6 +9,8 @@ import 'package:bonfire/features/developer/views/developer_settings_page.dart';
 import 'package:bonfire/features/settings/controllers/settings.dart';
 import 'package:bonfire/features/profiles/views/profiles_page.dart';
 import 'package:bonfire/features/server/controllers/connections.dart';
+import 'package:bonfire/features/settings/views/rich_presence_settings.dart';
+import 'package:bonfire/features/settings/views/server_accounts_section.dart';
 import 'package:bonfire/features/settings/views/connections_settings_page.dart';
 import 'package:bonfire/features/settings/views/privacy_settings_page.dart';
 import 'package:bonfire/features/settings/views/settings_backup.dart';
@@ -18,8 +21,7 @@ import 'package:bonfire/features/updates/views/updates_page.dart';
 import 'package:bonfire/features/settings/models/accord_settings.dart';
 import 'package:bonfire/features/user/views/accord_account_settings.dart';
 import 'package:bonfire/features/user/views/accord_profile_edit.dart';
-import 'package:bonfire/features/authentication/models/app_terms.dart';
-import 'package:bonfire/features/authentication/views/terms_gate.dart';
+import 'package:bonfire/l10n/app_strings.dart';
 import 'package:bonfire/shared/app_info.dart';
 import 'package:bonfire/shared/utils/rest_result_ext.dart';
 import 'package:bonfire/features/voice/views/voice_settings_screen.dart';
@@ -62,7 +64,7 @@ class AccordSettingsScreen extends ConsumerWidget {
       backgroundColor: colors.background,
       appBar: AppBar(
         backgroundColor: colors.foreground,
-        title: const Text('Settings'),
+        title: Text(AppStrings.of(context).settings),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
           onPressed: () =>
@@ -92,6 +94,8 @@ class AccordSettingsScreen extends ConsumerWidget {
                     .hasMultiple,
                 onPickServerProfile: () => _pickServerProfile(context, ref),
               ),
+              const Divider(height: 24),
+              const ServerAccountsSection(),
               const Divider(height: 24),
               const _ServerDirectorySection(),
               const Divider(height: 24),
@@ -260,15 +264,20 @@ class _SidebarTile extends StatelessWidget {
       child: ListTile(
         dense: true,
         selected: selected,
-        selectedTileColor: colors.primary.withValues(alpha: 0.18),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        selectedTileColor: Colors.transparent,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(4),
+          side: BorderSide(
+            color: selected ? colors.primary : Colors.transparent,
+          ),
+        ),
         leading: Icon(
           category.icon,
           size: 20,
           color: selected ? colors.primary : colors.dirtyWhite,
         ),
         title: Text(
-          category.label,
+          AppStrings.of(context).settingsCategory(category.name),
           style: TextStyle(color: selected ? colors.primary : null),
         ),
         onTap: onTap,
@@ -307,6 +316,7 @@ class _CategoryPane extends ConsumerWidget {
           // their "push a sub-page" tiles would be redundant here.
           showSubPageTiles: false,
         ),
+        const ServerAccountsSection(),
         const ConnectionsScreen(embedded: true),
         const PrivacySettingsScreen(embedded: true),
         const _ServerDirectorySection(),
@@ -372,7 +382,32 @@ class _AppearanceSection extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        SectionHeader('Appearance'),
+        SectionHeader(AppStrings.of(context).appearance),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+          child: Text(
+            AppStrings.of(context).language,
+            style: Theme.of(context).textTheme.labelLarge,
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+          child: Wrap(
+            spacing: 8,
+            children: [
+              ChoiceChip(
+                label: const Text('中文'),
+                selected: settings.languageCode != 'en',
+                onSelected: (_) => controller.setLanguage('zh'),
+              ),
+              ChoiceChip(
+                label: const Text('English'),
+                selected: settings.languageCode == 'en',
+                onSelected: (_) => controller.setLanguage('en'),
+              ),
+            ],
+          ),
+        ),
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
           child: Wrap(
@@ -381,7 +416,7 @@ class _AppearanceSection extends StatelessWidget {
             children: [
               for (final preset in AppThemePreset.values)
                 ChoiceChip(
-                  label: Text(preset.label),
+                  label: Text(AppStrings.of(context).themeName(preset.name)),
                   selected: settings.themePreset == preset,
                   onSelected: (_) => controller.setThemePreset(preset),
                 ),
@@ -391,7 +426,7 @@ class _AppearanceSection extends StatelessWidget {
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
           child: Text(
-            'Accent colour',
+            AppStrings.of(context).accent,
             style: Theme.of(context).textTheme.labelLarge,
           ),
         ),
@@ -404,7 +439,8 @@ class _AppearanceSection extends StatelessWidget {
               ColorSwatchChip(
                 color: defaultAccentFor(settings.themePreset),
                 selected: settings.accentColor == null,
-                label: 'Default',
+                label: AppStrings.of(context).accentDefault,
+                borderRadius: BorderRadius.circular(4),
                 onTap: () => controller.setAccentColor(null),
               ),
               for (final (argb, name) in avatarColorPalette)
@@ -412,34 +448,37 @@ class _AppearanceSection extends StatelessWidget {
                   color: Color(argb),
                   selected: settings.accentColor == argb,
                   label: name,
+                  borderRadius: BorderRadius.circular(4),
                   onTap: () => controller.setAccentColor(argb),
                 ),
             ],
           ),
         ),
         SwitchListTile(
-          title: const Text('Show embeds and link previews'),
-          subtitle: const Text(
-            'Hide previews only for you; message text stays visible',
+          title: Text(UiCopy.showEmbedsAndLinkPreviews(context: context)),
+          subtitle: Text(
+            UiCopy.hidePreviewsOnlyForYouMessageText(context: context),
           ),
           value: settings.showEmbeds,
           onChanged: controller.setShowEmbeds,
         ),
         SwitchListTile(
-          title: const Text('Compact mode'),
-          subtitle: const Text('Denser message layout (smaller spacing)'),
+          title: Text(UiCopy.compactMode(context: context)),
+          subtitle: Text(
+            UiCopy.denserMessageLayoutSmallerSpacing(context: context),
+          ),
           value: settings.compactMode,
           onChanged: controller.setCompactMode,
         ),
         SwitchListTile(
-          title: const Text('Convert emoticons to emoji'),
-          subtitle: const Text('Turn :) and <3 into 🙂 and ❤️ as you send'),
+          title: Text(UiCopy.convertEmoticonsToEmoji(context: context)),
+          subtitle: Text(UiCopy.turnAnd3IntoAndAsYou(context: context)),
           value: settings.convertEmoticons,
           onChanged: controller.setConvertEmoticons,
         ),
         SwitchListTile(
-          title: const Text('Reduced motion'),
-          subtitle: const Text('Minimise UI animations'),
+          title: Text(UiCopy.reducedMotion(context: context)),
+          subtitle: Text(UiCopy.minimiseUiAnimations(context: context)),
           value: settings.reducedMotion,
           onChanged: controller.setReducedMotion,
         ),
@@ -447,7 +486,7 @@ class _AppearanceSection extends StatelessWidget {
           title: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text('UI scale'),
+              Text(UiCopy.uiScale(context: context)),
               Text('${(settings.uiScale * 100).round()}%'),
             ],
           ),
@@ -485,16 +524,20 @@ class _NotificationsSection extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        SectionHeader('Notifications'),
+        SectionHeader(AppStrings.of(context).notifications),
         SwitchListTile(
-          title: const Text('Enable notifications'),
-          subtitle: const Text('Show a system notification when mentioned'),
+          title: Text(UiCopy.enableNotifications(context: context)),
+          subtitle: Text(
+            UiCopy.showASystemNotificationWhenMentioned(context: context),
+          ),
           value: settings.notificationsEnabled,
           onChanged: controller.setNotificationsEnabled,
         ),
         SwitchListTile(
-          title: const Text('Suppress @everyone'),
-          subtitle: const Text('Never notify for @everyone / @here mentions'),
+          title: Text(UiCopy.suppressEveryone(context: context)),
+          subtitle: Text(
+            UiCopy.neverNotifyForEveryoneHereMentions(context: context),
+          ),
           value: settings.suppressEveryone,
           onChanged: settings.notificationsEnabled
               ? controller.setSuppressEveryone
@@ -506,10 +549,9 @@ class _NotificationsSection extends StatelessWidget {
         if (isBackgroundConnectionAvailable)
           SwitchListTile(
             key: const Key('background-connection-switch'),
-            title: const Text('Stay connected in the background'),
-            subtitle: const Text(
-              'Keeps notifications arriving while the app is closed. Shows a '
-              'permanent notification and uses more battery.',
+            title: Text(UiCopy.stayConnectedInTheBackground(context: context)),
+            subtitle: Text(
+              UiCopy.keepsNotificationsArrivingWhileTheAppIs(context: context),
             ),
             value: settings.backgroundConnection,
             onChanged: controller.setBackgroundConnection,
@@ -531,10 +573,12 @@ class _SoundsSection extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        SectionHeader('Sounds'),
+        SectionHeader(AppStrings.of(context).sounds),
         SwitchListTile(
-          title: const Text('Enable sounds'),
-          subtitle: const Text('Play SFX for messages and mentions'),
+          title: Text(UiCopy.enableSounds(context: context)),
+          subtitle: Text(
+            UiCopy.playSfxForMessagesAndMentions(context: context),
+          ),
           value: settings.soundsEnabled,
           onChanged: controller.setSoundsEnabled,
         ),
@@ -542,7 +586,7 @@ class _SoundsSection extends StatelessWidget {
           title: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text('Volume'),
+              Text(UiCopy.volume(context: context)),
               Text('${(settings.sfxVolume * 100).round()}%'),
             ],
           ),
@@ -566,12 +610,12 @@ class _VoiceVideoSection extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        SectionHeader('Voice & Video'),
+        SectionHeader(AppStrings.of(context).voiceAndVideo),
         ListTile(
           leading: Icon(Icons.mic_none, color: colors.dirtyWhite),
-          title: const Text('Voice & video settings'),
-          subtitle: const Text(
-            'Microphone, speaker, sensitivity, camera, mic test',
+          title: Text(UiCopy.voiceVideoSettings(context: context)),
+          subtitle: Text(
+            UiCopy.microphoneSpeakerSensitivityCameraMicTest(context: context),
           ),
           trailing: const Icon(Icons.chevron_right),
           onTap: () => showVoiceSettings(context),
@@ -607,54 +651,56 @@ class _AccountSection extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        SectionHeader('Account'),
+        SectionHeader(AppStrings.of(context).account),
         if (session != null)
           ListTile(
-            leading: CircleAvatar(
-              backgroundColor: colors.primary,
+            leading: Container(
+              width: 40,
+              height: 40,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: colors.foreground,
+                borderRadius: BorderRadius.circular(4),
+                border: Border.all(color: colors.darkGray),
+              ),
               child: Text(
                 accordInitial(session.username),
-                style: const TextStyle(color: Colors.white),
+                style: TextStyle(color: colors.dirtyWhite),
               ),
             ),
             title: Text(session.username),
             subtitle: Text(session.server.baseUrl),
           ),
+        const RichPresenceSettings(),
         ListTile(
           leading: Icon(Icons.edit_outlined, color: colors.dirtyWhite),
-          title: const Text('Edit profile'),
-          subtitle: const Text('Display name, bio, avatar'),
+          title: Text(AppStrings.of(context).editProfile),
+          subtitle: Text(AppStrings.of(context).editProfileHint),
           trailing: const Icon(Icons.chevron_right),
           onTap: () => showAccordProfileEdit(context),
         ),
         ListTile(
           leading: Icon(Icons.lock_outline, color: colors.dirtyWhite),
-          title: const Text('Password & Security'),
-          subtitle: const Text(
-            'Password, two-factor authentication, delete account',
-          ),
+          title: Text(AppStrings.of(context).passwordSecurity),
+          subtitle: Text(AppStrings.of(context).passwordSecurityHint),
           trailing: const Icon(Icons.chevron_right),
           onTap: () => showAccordAccountSettings(context),
         ),
         if (hasMultipleConnections)
           ListTile(
             leading: Icon(Icons.dns_outlined, color: colors.dirtyWhite),
-            title: const Text('Per-server profile'),
-            subtitle: const Text("Override name/bio/avatar on one server"),
+            title: Text(UiCopy.perServerProfile(context: context)),
+            subtitle: Text(
+              UiCopy.overrideNameBioAvatarOnOneServer(context: context),
+            ),
             trailing: const Icon(Icons.chevron_right),
             onTap: onPickServerProfile,
           ),
         ListTile(
-          leading: Icon(Icons.switch_account, color: colors.dirtyWhite),
-          title: const Text('Switch account'),
-          trailing: const Icon(Icons.chevron_right),
-          onTap: () => context.push('/switcher'),
-        ),
-        ListTile(
           leading: Icon(Icons.devices, color: colors.dirtyWhite),
-          title: const Text('Device profiles'),
-          subtitle: const Text(
-            'Local profiles with an optional casual PIN lock',
+          title: Text(UiCopy.deviceProfiles2(context: context)),
+          subtitle: Text(
+            UiCopy.localProfilesWithAnOptionalCasualPin(context: context),
           ),
           trailing: const Icon(Icons.chevron_right),
           onTap: () => showProfilesSettings(context),
@@ -662,15 +708,19 @@ class _AccountSection extends StatelessWidget {
         if (showSubPageTiles) ...[
           ListTile(
             leading: Icon(Icons.link, color: colors.dirtyWhite),
-            title: const Text('Connections'),
-            subtitle: const Text('Linked third-party (OAuth) accounts'),
+            title: Text(UiCopy.connections(context: context)),
+            subtitle: Text(
+              UiCopy.linkedThirdPartyOauthAccounts(context: context),
+            ),
             trailing: const Icon(Icons.chevron_right),
             onTap: () => showConnectionsSettings(context),
           ),
           ListTile(
             leading: Icon(Icons.privacy_tip_outlined, color: colors.dirtyWhite),
-            title: const Text('Privacy & Data'),
-            subtitle: const Text('Data export, leave & delete data, retention'),
+            title: Text(UiCopy.privacyData(context: context)),
+            subtitle: Text(
+              UiCopy.dataExportLeaveDeleteDataRetention(context: context),
+            ),
             trailing: const Icon(Icons.chevron_right),
             onTap: () => showPrivacySettings(context),
           ),
@@ -678,8 +728,8 @@ class _AccountSection extends StatelessWidget {
         if (session?.isAdmin ?? false)
           ListTile(
             leading: Icon(Icons.admin_panel_settings, color: colors.dirtyWhite),
-            title: const Text('Server administration'),
-            subtitle: const Text('Spaces, users, reports, settings'),
+            title: Text(UiCopy.serverAdministration(context: context)),
+            subtitle: Text(UiCopy.spacesUsersReportsSettings(context: context)),
             onTap: () => context.push('/admin'),
           ),
       ],
@@ -696,7 +746,7 @@ class _ServerDirectorySection extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        SectionHeader('Server Directory'),
+        SectionHeader(UiCopy.serverDirectory(context: context)),
         const Padding(
           padding: EdgeInsets.fromLTRB(16, 0, 16, 4),
           child: _MasterServerField(),
@@ -716,11 +766,13 @@ class _UpdatesSection extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        SectionHeader('Updates'),
+        SectionHeader(UiCopy.updates(context: context)),
         ListTile(
           leading: Icon(Icons.system_update, color: colors.dirtyWhite),
-          title: const Text('Updates'),
-          subtitle: const Text('Current version, check for new releases'),
+          title: Text(UiCopy.updates(context: context)),
+          subtitle: Text(
+            UiCopy.currentVersionCheckForNewReleases(context: context),
+          ),
           trailing: const Icon(Icons.chevron_right),
           onTap: () => showUpdatesSettings(context),
         ),
@@ -737,7 +789,10 @@ class _BackupSection extends StatelessWidget {
   Widget build(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [SectionHeader('Backup'), const SettingsBackupSection()],
+      children: [
+        SectionHeader(UiCopy.backup(context: context)),
+        const SettingsBackupSection(),
+      ],
     );
   }
 }
@@ -755,11 +810,11 @@ class _DeveloperSection extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        SectionHeader('Developer'),
+        SectionHeader(UiCopy.developer(context: context)),
         SwitchListTile(
-          title: const Text('Developer Mode'),
-          subtitle: const Text(
-            'Unlock the local Client MCP server for AI agents',
+          title: Text(UiCopy.developerMode(context: context)),
+          subtitle: Text(
+            UiCopy.unlockTheLocalClientMcpServerFor(context: context),
           ),
           value: settings.developerMode,
           onChanged: controller.setDeveloperMode,
@@ -767,8 +822,10 @@ class _DeveloperSection extends StatelessWidget {
         if (settings.developerMode)
           ListTile(
             leading: Icon(Icons.terminal, color: colors.dirtyWhite),
-            title: const Text('Client MCP server'),
-            subtitle: const Text('Token, port, tool groups, activity'),
+            title: Text(UiCopy.clientMcpServer(context: context)),
+            subtitle: Text(
+              UiCopy.tokenPortToolGroupsActivity(context: context),
+            ),
             trailing: const Icon(Icons.chevron_right),
             onTap: () => showDeveloperSettings(context),
           ),
@@ -786,28 +843,19 @@ class _AboutSection extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        SectionHeader('About'),
+        SectionHeader(UiCopy.about(context: context)),
         ListTile(
           title: const Text('Vokusz'),
-          subtitle: const Text(
-            'Free screen sharing and stable voice. No paywall on the call.',
+          subtitle: Text(
+            UiCopy.freeScreenSharingAndStableVoiceNo(context: context),
           ),
           trailing: Text('v$kAppVersion'),
         ),
         ListTile(
-          leading: const Icon(Icons.gavel_outlined),
-          title: const Text(appTermsTitle),
-          subtitle: const Text(
-            'The terms you accepted, including what is not allowed and how to '
-            'report it.',
-          ),
-          onTap: () => showAppTermsDialog(context),
-        ),
-        ListTile(
           leading: const Icon(Icons.privacy_tip_outlined),
-          title: const Text('Privacy Policy'),
-          subtitle: const Text(
-            'How the app and independent servers handle data.',
+          title: Text(UiCopy.privacyPolicy(context: context)),
+          subtitle: Text(
+            UiCopy.howTheAppAndIndependentServersHandle(context: context),
           ),
           trailing: const Icon(Icons.open_in_new, size: 16),
           onTap: () => openOnboardingHelpUrl(kVokuszPrivacyPolicyUrl),
@@ -828,7 +876,10 @@ class _LogOutTile extends StatelessWidget {
     final colors = BonfireThemeExtension.of(context);
     return ListTile(
       leading: Icon(Icons.logout, color: colors.red),
-      title: Text('Log out', style: TextStyle(color: colors.red)),
+      title: Text(
+        AppStrings.of(context).logOut,
+        style: TextStyle(color: colors.red),
+      ),
       onTap: onLogOut,
     );
   }
@@ -895,7 +946,7 @@ class _MasterServerFieldState extends ConsumerState<_MasterServerField> {
     final applied = ref.read(settingsControllerProvider).masterServerUrl;
     _controller.text = applied;
     FocusScope.of(context).unfocus();
-    showInfoSnack(context, 'Master server URL saved');
+    showInfoSnack(context, UiCopy.masterServerUrlSaved());
   }
 
   @override
@@ -908,9 +959,9 @@ class _MasterServerFieldState extends ConsumerState<_MasterServerField> {
             controller: _controller,
             keyboardType: TextInputType.url,
             autocorrect: false,
-            decoration: const InputDecoration(
+            decoration: InputDecoration(
               isDense: true,
-              labelText: 'Master server URL',
+              labelText: UiCopy.masterServerUrl(context: context),
               hintText: AccordSettings.defaultMasterServerUrl,
               border: OutlineInputBorder(),
             ),
@@ -918,7 +969,10 @@ class _MasterServerFieldState extends ConsumerState<_MasterServerField> {
           ),
         ),
         const SizedBox(width: 8),
-        FilledButton(onPressed: _save, child: const Text('Save')),
+        FilledButton(
+          onPressed: _save,
+          child: Text(UiCopy.save(context: context)),
+        ),
       ],
     );
   }

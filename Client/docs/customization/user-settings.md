@@ -50,3 +50,5 @@ Link external accounts or services to your profile. Connected accounts may be vi
 ### Delete Account
 
 Permanently delete your account from the server.
+
+To sign in with another account, log out and sign in again. The separate account-switcher screen is no longer available.

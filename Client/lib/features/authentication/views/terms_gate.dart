@@ -1,3 +1,4 @@
+import 'package:bonfire/l10n/ui_copy.dart';
 import 'package:bonfire/features/authentication/models/app_terms.dart';
 import 'package:bonfire/features/onboarding/views/onboarding_help.dart'
     show openOnboardingHelpUrl;
@@ -27,10 +28,6 @@ class TermsGateView extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Center(
-          child: Image.asset('assets/images/icon.png', width: 64, height: 64),
-        ),
-        const SizedBox(height: 14),
         Text(
           appTermsTitle,
           textAlign: TextAlign.center,
@@ -51,7 +48,7 @@ class TermsGateView extends StatelessWidget {
           child: TextButton.icon(
             onPressed: () => openOnboardingHelpUrl(kVokuszPrivacyPolicyUrl),
             icon: const Icon(Icons.privacy_tip_outlined, size: 18),
-            label: const Text('Privacy Policy'),
+            label: Text(UiCopy.privacyPolicy(context: context)),
           ),
         ),
         const SizedBox(height: 16),
@@ -60,19 +57,21 @@ class TermsGateView extends StatelessWidget {
           child: ElevatedButton(
             onPressed: onAccept,
             style: ElevatedButton.styleFrom(
-              backgroundColor: colors.primary,
-              foregroundColor: Colors.white,
+              elevation: 0,
+              backgroundColor: colors.background,
+              foregroundColor: colors.dirtyWhite,
               textStyle: theme.textTheme.titleSmall,
+              side: BorderSide(color: colors.primary),
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: BorderRadius.circular(4),
               ),
             ),
-            child: const Text('Agree and continue'),
+            child: Text(UiCopy.agreeAndContinue(context: context)),
           ),
         ),
         const SizedBox(height: 8),
         Text(
-          'You must accept these terms to create an account or sign in.',
+          UiCopy.youMustAcceptTheseTermsToCreate(context: context),
           textAlign: TextAlign.center,
           style: theme.textTheme.bodySmall?.copyWith(color: colors.gray),
         ),
@@ -102,7 +101,7 @@ class AppTermsBody extends StatelessWidget {
       height: height,
       decoration: BoxDecoration(
         color: colors.foreground,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(4),
         border: Border.all(color: colors.darkGray),
       ),
       padding: const EdgeInsets.all(16),
@@ -142,7 +141,7 @@ class AppTermsNotice extends StatelessWidget {
       crossAxisAlignment: WrapCrossAlignment.center,
       children: [
         Text(
-          'By continuing you agree to the',
+          UiCopy.byContinuingYouAgreeToThe(context: context),
           style: theme.textTheme.bodySmall?.copyWith(color: colors.gray),
         ),
         TextButton(
@@ -192,11 +191,11 @@ Future<void> showAppTermsDialog(BuildContext context) {
                     onPressed: () =>
                         openOnboardingHelpUrl(kVokuszPrivacyPolicyUrl),
                     icon: const Icon(Icons.privacy_tip_outlined, size: 18),
-                    label: const Text('Privacy Policy'),
+                    label: Text(UiCopy.privacyPolicy(context: context)),
                   ),
                   FilledButton(
                     onPressed: () => Navigator.of(context).pop(),
-                    child: const Text('Close'),
+                    child: Text(UiCopy.close(context: context)),
                   ),
                 ],
               ),

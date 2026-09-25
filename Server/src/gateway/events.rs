@@ -83,6 +83,10 @@ pub struct ResumeData {
 pub struct PresenceUpdateData {
     pub status: String,
     pub activity: Option<serde_json::Value>,
+    /// Full activity list. When present it wins over [activity], so a custom
+    /// status and a rich-presence entry can be stored together.
+    #[serde(default)]
+    pub activities: Option<Vec<serde_json::Value>>,
 }
 
 /// VOICE_STATE_UPDATE (opcode 9) payload data.

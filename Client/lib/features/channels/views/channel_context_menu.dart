@@ -1,3 +1,9 @@
+import 'package:bonfire/features/channels/views/channel_permissions.dart';
+import 'package:bonfire/features/member/utils/permissions.dart';
+import 'package:bonfire/features/member/controllers/accord_members.dart';
+import 'package:bonfire/features/spaces/controllers/spaces.dart';
+import 'package:bonfire/shared/utils/client_access.dart';
+import 'package:bonfire/l10n/ui_copy.dart';
 import 'package:accordkit/accordkit.dart';
 import 'package:bonfire/features/authentication/models/accord_auth_state.dart';
 import 'package:bonfire/features/authentication/repositories/accord_auth.dart';
@@ -68,16 +74,46 @@ Future<void> showChannelContextMenu(
     fallbackMessageId: channel.lastMessageId,
   );
 
+  final space = ref
+      .read(spacesControllerProvider)
+      ?.where((s) => s.id == spaceId)
+      .firstOrNull;
+  final userId = ref.readUserId() ?? '';
+  final member = ref.read(
+    accordMembersControllerProvider(activeKey ?? '', spaceId),
+  )?[userId];
+  final permissions = accordEffectiveChannelPermissions(
+    permissions: ref.readAccordPermissions(space, spaceId),
+    channel: channel,
+    everyoneRoleId:
+        space?.roles.where((r) => r.position == 0).firstOrNull?.id ?? '',
+    memberRoleIds: member?.roles.toSet() ?? {},
+    currentUserId: userId,
+  );
+  final canEdit = accordHasPermission(
+    permissions,
+    AccordPermission.manageChannels,
+  );
   final entries = <AccordMenuEntry>[
     ...leadingEntries,
+    if (accordHasPermission(permissions, AccordPermission.manageRoles))
+      AccordMenuEntry(
+        label: UiCopy.permissions3(),
+        icon: Icons.shield_outlined,
+        onSelected: () => showChannelPermissionsDialog(
+          hostContext,
+          spaceId: spaceId,
+          channel: channel,
+        ),
+      ),
     if (unread)
       AccordMenuEntry(
-        label: 'Mark as read',
+        label: UiCopy.markAsRead(),
         icon: Icons.mark_chat_read_outlined,
         onSelected: markRead,
       ),
     AccordMenuEntry(
-      label: muted ? 'Unmute channel' : 'Mute channel',
+      label: muted ? UiCopy.unmuteChannel() : UiCopy.muteChannel(),
       icon: muted
           ? Icons.notifications_active_outlined
           : Icons.notifications_off_outlined,
@@ -95,10 +131,10 @@ Future<void> showChannelContextMenu(
               }
             },
     ),
-    if (canManageChannels) ...[
+    if (canEdit) ...[
       const AccordMenuEntry.divider(),
       AccordMenuEntry(
-        label: 'Edit channel',
+        label: UiCopy.editChannel(),
         icon: Icons.settings_outlined,
         onSelected: () => showEditChannelDialog(
           hostContext,
@@ -107,7 +143,7 @@ Future<void> showChannelContextMenu(
         ),
       ),
       AccordMenuEntry(
-        label: 'Delete channel',
+        label: UiCopy.deleteChannel(),
         icon: Icons.delete_outline,
         destructive: true,
         onSelected: () => confirmAndDeleteChannel(
@@ -145,14 +181,14 @@ Future<void> showCategoryContextMenu(
 }) {
   final entries = <AccordMenuEntry>[
     AccordMenuEntry(
-      label: collapsed ? 'Expand category' : 'Collapse category',
+      label: collapsed ? UiCopy.expandCategory() : UiCopy.collapseCategory(),
       icon: collapsed ? Icons.expand_more : Icons.expand_less,
       onSelected: onToggle,
     ),
     if (canManageChannels) ...[
       const AccordMenuEntry.divider(),
       AccordMenuEntry(
-        label: 'Create channel here',
+        label: UiCopy.createChannelHere(),
         icon: Icons.add,
         onSelected: () => showCreateChannelDialog(
           hostContext,
@@ -161,7 +197,7 @@ Future<void> showCategoryContextMenu(
         ),
       ),
       AccordMenuEntry(
-        label: 'Edit category',
+        label: UiCopy.editCategory(),
         icon: Icons.settings_outlined,
         onSelected: () => showEditChannelDialog(
           hostContext,
@@ -170,7 +206,7 @@ Future<void> showCategoryContextMenu(
         ),
       ),
       AccordMenuEntry(
-        label: 'Delete category',
+        label: UiCopy.deleteCategory(),
         icon: Icons.delete_outline,
         destructive: true,
         onSelected: () => confirmAndDeleteChannel(

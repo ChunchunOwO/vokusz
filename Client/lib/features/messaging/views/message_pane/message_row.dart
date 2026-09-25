@@ -145,12 +145,12 @@ class _MessageRowState extends ConsumerState<_MessageRow> {
   /// — by the next rebuild a real name resolves; "Unknown" is the brief gap).
   String get _authorName {
     if (widget.author != null) {
-      return accordMemberName(widget.author, fallback: 'Unknown');
+      return accordMemberName(widget.author, fallback: UiCopy.unknown());
     }
     if (widget.authorUser != null) {
-      return accordUserName(widget.authorUser, fallback: 'Unknown');
+      return accordUserName(widget.authorUser, fallback: UiCopy.unknown());
     }
-    return 'Unknown';
+    return UiCopy.unknown();
   }
 
   String get _initial => accordInitial(_authorName);
@@ -298,9 +298,9 @@ class _MessageRowState extends ConsumerState<_MessageRow> {
     if (client == null || _busy) return;
     final confirmed = await showConfirmDialog(
       context,
-      title: 'Delete message',
-      message: 'This message will be permanently deleted.',
-      confirmLabel: 'Delete',
+      title: UiCopy.deleteMessage(),
+      message: UiCopy.thisMessageWillBePermanentlyDeleted(),
+      confirmLabel: UiCopy.delete(),
       danger: true,
     );
     if (confirmed != true || !mounted) return;
@@ -317,7 +317,7 @@ class _MessageRowState extends ConsumerState<_MessageRow> {
     // Row disappears on success; if it failed we re-enable and say so, rather
     // than leaving the message sitting there as if nothing had been asked.
     setState(() => _busy = false);
-    if (!ok) showInfoSnack(context, 'Failed to delete message');
+    if (!ok) showInfoSnack(context, UiCopy.failedToDeleteMessage());
   }
 
   Future<void> _blockFiles(AccordMessage message) async {
@@ -498,7 +498,11 @@ class _MessageRowState extends ConsumerState<_MessageRow> {
                       if (!widget.grouped)
                         MessageAuthorHeader(
                           name: _authorName,
-                          nameColor: widget.nameColor,
+                          nameColor:
+                              communityNameColor(
+                                widget.author?.user ?? widget.authorUser,
+                              ) ??
+                              widget.nameColor,
                           // A long name must ellipsize rather than push the
                           // timestamp out of a narrow row.
                           ellipsizeName: true,
@@ -597,17 +601,17 @@ class _MessageRowState extends ConsumerState<_MessageRow> {
     final canReport = !widget.isOwn;
     final entries = <AccordMenuEntry>[
       AccordMenuEntry(
-        label: 'Add reaction',
+        label: UiCopy.addReaction(),
         icon: Icons.add_reaction_outlined,
         onSelected: () => _openReactionPicker(message.id),
       ),
       AccordMenuEntry(
-        label: 'Reply',
+        label: UiCopy.reply(),
         icon: Icons.reply,
         onSelected: widget.onReply,
       ),
       AccordMenuEntry(
-        label: 'Thread',
+        label: UiCopy.thread(),
         icon: Icons.forum_outlined,
         onSelected: () => _openThread(message),
       ),
@@ -624,13 +628,13 @@ class _MessageRowState extends ConsumerState<_MessageRow> {
               message.attachments.isNotEmpty &&
               (message.spaceId != null || ref.readIsAdmin()))
             AccordMenuEntry(
-              label: 'Block files and delete',
+              label: UiCopy.blockFilesAndDelete(),
               icon: Icons.block,
               onSelected: () => _blockFiles(message),
             ),
           if (widget.canManageMessages)
             AccordMenuEntry(
-              label: message.pinned ? 'Unpin' : 'Pin',
+              label: message.pinned ? UiCopy.unpin() : UiCopy.pin(),
               icon: message.pinned ? Icons.push_pin_outlined : Icons.push_pin,
               onSelected: () => _togglePin(message.id, pinned: message.pinned),
             ),
@@ -638,14 +642,14 @@ class _MessageRowState extends ConsumerState<_MessageRow> {
       ),
       if (canReport)
         AccordMenuEntry(
-          label: 'Report',
+          label: UiCopy.report(),
           icon: Icons.flag_outlined,
           onSelected: () => _report(message),
         ),
       if (widget.onLongPressSelect != null) ...[
         const AccordMenuEntry.divider(),
         AccordMenuEntry(
-          label: 'Select messages',
+          label: UiCopy.selectMessages(),
           icon: Icons.checklist,
           onSelected: widget.onLongPressSelect,
         ),
@@ -669,7 +673,7 @@ class _MessageRowState extends ConsumerState<_MessageRow> {
     return Padding(
       padding: const EdgeInsets.only(top: 4),
       child: InkWell(
-        borderRadius: BorderRadius.circular(6),
+        borderRadius: BorderRadius.circular(4),
         onTap: () => _openThread(message),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
@@ -760,7 +764,7 @@ class _MessageRowState extends ConsumerState<_MessageRow> {
   ) {
     final theme = Theme.of(context);
     final referenced = widget.messagesById[message.replyTo];
-    String name = 'Unknown';
+    String name = UiCopy.unknown(context: context);
     String preview = '';
     if (referenced != null) {
       // Same resolution order as the row header: member nickname → on-demand
@@ -878,7 +882,7 @@ class _MessageRowState extends ConsumerState<_MessageRow> {
               filled: true,
               fillColor: colors.darkGray,
               border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: BorderRadius.circular(4),
                 borderSide: BorderSide.none,
               ),
             ),
@@ -889,11 +893,11 @@ class _MessageRowState extends ConsumerState<_MessageRow> {
             children: [
               TextButton(
                 onPressed: _busy ? null : _cancelEdit,
-                child: const Text('Cancel'),
+                child: Text(UiCopy.cancel(context: context)),
               ),
               TextButton(
                 onPressed: _busy ? null : _saveEdit,
-                child: const Text('Save'),
+                child: Text(UiCopy.save(context: context)),
               ),
             ],
           ),

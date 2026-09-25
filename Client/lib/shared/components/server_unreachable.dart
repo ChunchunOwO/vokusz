@@ -1,3 +1,5 @@
+import 'package:bonfire/l10n/app_strings.dart';
+import 'package:bonfire/l10n/ui_copy.dart';
 import 'package:bonfire/theme/theme.dart';
 import 'package:flutter/material.dart';
 
@@ -36,13 +38,13 @@ class ServerUnreachable extends StatelessWidget {
             Icon(Icons.cloud_off_outlined, size: 40, color: colors.gray),
             const SizedBox(height: 12),
             Text(
-              title,
+              AppStrings.label(title, context: context),
               textAlign: TextAlign.center,
               style: textTheme.titleSmall?.copyWith(color: colors.dirtyWhite),
             ),
             const SizedBox(height: 4),
             Text(
-              message,
+              AppStrings.label(message, context: context),
               textAlign: TextAlign.center,
               style: textTheme.bodySmall?.copyWith(color: colors.gray),
             ),
@@ -51,7 +53,7 @@ class ServerUnreachable extends StatelessWidget {
               TextButton.icon(
                 onPressed: onRetry,
                 icon: const Icon(Icons.refresh, size: 18),
-                label: const Text('Retry'),
+                label: Text(UiCopy.retry(context: context)),
                 style: TextButton.styleFrom(
                   foregroundColor: colors.dirtyWhite,
                   backgroundColor: colors.darkGray,

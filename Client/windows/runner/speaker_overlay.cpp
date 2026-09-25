@@ -32,10 +32,10 @@ namespace {
 constexpr char kChannelName[] = "com.vokusz.app/speaker_overlay";
 constexpr wchar_t kClassName[] = L"VokuszSpeakerOverlay";
 constexpr int kPad = 12;
-constexpr int kAvatar = 40;
+constexpr int kAvatar = 32;
 constexpr int kGap = 8;
 constexpr int kRowGap = 8;
-constexpr int kNameW = 132;
+constexpr int kNameW = 156;
 constexpr int kRing = 3;
 constexpr int kSpeakingR = 77;
 constexpr int kSpeakingG = 163;
@@ -260,7 +260,7 @@ void DrawInitial(Gdiplus::Graphics& graphics, const Gdiplus::FontFamily* face,
                  const std::wstring& name, int x, int y, int size) {
   Gdiplus::SolidBrush fill(Gdiplus::Color(255, 54, 57, 63));
   graphics.FillEllipse(&fill, x, y, size, size);
-  Gdiplus::Font font(face, static_cast<Gdiplus::REAL>(S(18)),
+  Gdiplus::Font font(face, static_cast<Gdiplus::REAL>(size * 7 / 16),
                      Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
   Gdiplus::SolidBrush letter(Gdiplus::Color(255, 255, 255, 255));
   Gdiplus::StringFormat format;
@@ -356,9 +356,9 @@ void Draw(Gdiplus::Graphics& graphics, const Layout& layout) {
     graphics.DrawRectangle(&pen, 0, 0, layout.width - 1, layout.height - 1);
   }
   const RowMetrics m = Metrics();
-  Gdiplus::Font name_font(face, static_cast<Gdiplus::REAL>(S(14)),
-                          Gdiplus::FontStyleRegular, Gdiplus::UnitPixel);
-  Gdiplus::Font speaking_font(face, static_cast<Gdiplus::REAL>(S(14)),
+  Gdiplus::Font name_font(face, static_cast<Gdiplus::REAL>(S(18)),
+                          Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
+  Gdiplus::Font speaking_font(face, static_cast<Gdiplus::REAL>(S(18)),
                               Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
   const int visuals = layout.chips + (layout.extra > 0 ? 1 : 0);
   for (int i = 0; i < visuals; ++i) {

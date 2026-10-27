@@ -1,4 +1,5 @@
 import 'package:bonfire/theme/theme.dart';
+import 'package:flutter/cupertino.dart' show CupertinoPageTransitionsBuilder;
 import 'package:flutter/material.dart';
 
 /// Selectable colour themes for the Accord client. Each preset maps to a
@@ -156,51 +157,151 @@ TextTheme _textTheme(BonfireThemeExtension palette) {
   );
 }
 
-/// Corner radius for primary chrome. Larger radii read as pills; the shell
-/// stays at a hairline 4.
-const BorderRadius kFlatRadius = BorderRadius.all(Radius.circular(4));
+/// Corner radius for small primary chrome (buttons, inputs, menus).
+const BorderRadius kControlRadius = BorderRadius.all(
+  Radius.circular(AppRadius.md),
+);
 
-RoundedRectangleBorder _flatRect({BorderSide side = BorderSide.none}) =>
-    RoundedRectangleBorder(borderRadius: kFlatRadius, side: side);
+RoundedRectangleBorder _rounded(double radius, {BorderSide? side}) =>
+    RoundedRectangleBorder(
+      borderRadius: BorderRadius.all(Radius.circular(radius)),
+      side: side ?? BorderSide.none,
+    );
 
-OutlineInputBorder _flatInput(Color color, {double width = 1}) =>
+OutlineInputBorder _input(Color color, {double width = 1}) =>
     OutlineInputBorder(
-      borderRadius: kFlatRadius,
+      borderRadius: kControlRadius,
       borderSide: BorderSide(color: color, width: width),
     );
 
-/// Outline control: the surface colour, a 1px edge, no filled accent block.
-ButtonStyle _flatButton(BonfireThemeExtension palette) {
+/// Text on an accent fill: whichever of black or white contrasts more.
+///
+/// A plain luminance > 0.5 split put white on mid-tone accents such as the
+/// Nord blue (2.8:1); the crossover where both contrast equally is ~0.18.
+Color _onAccent(Color accent) =>
+    accent.computeLuminance() > 0.179 ? Colors.black : Colors.white;
+
+const _buttonPadding = WidgetStatePropertyAll(
+  EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+);
+const _buttonText = WidgetStatePropertyAll(
+  TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+);
+
+WidgetStateProperty<Color?> _overlay(Color ink) =>
+    WidgetStateProperty.resolveWith((states) {
+      if (states.contains(WidgetState.pressed)) {
+        return ink.withValues(alpha: 0.14);
+      }
+      if (states.contains(WidgetState.hovered)) {
+        return ink.withValues(alpha: 0.08);
+      }
+      if (states.contains(WidgetState.focused)) {
+        return ink.withValues(alpha: 0.12);
+      }
+      return null;
+    });
+
+/// The primary action: a solid accent fill.
+ButtonStyle _filledButton(BonfireThemeExtension palette, Color onAccent) {
+  Color fg(Set<WidgetState> states) =>
+      states.contains(WidgetState.disabled) ? palette.gray : onAccent;
   return ButtonStyle(
     elevation: const WidgetStatePropertyAll(0),
     shadowColor: const WidgetStatePropertyAll(Colors.transparent),
     surfaceTintColor: const WidgetStatePropertyAll(Colors.transparent),
-    backgroundColor: WidgetStatePropertyAll(palette.background),
-    foregroundColor: WidgetStateProperty.resolveWith(
+    backgroundColor: WidgetStateProperty.resolveWith(
       (states) => states.contains(WidgetState.disabled)
-          ? palette.gray
-          : palette.dirtyWhite,
+          ? palette.selectedFill
+          : palette.primary,
     ),
-    iconColor: WidgetStateProperty.resolveWith(
-      (states) => states.contains(WidgetState.disabled)
-          ? palette.gray
-          : palette.dirtyWhite,
+    foregroundColor: WidgetStateProperty.resolveWith(fg),
+    iconColor: WidgetStateProperty.resolveWith(fg),
+    overlayColor: _overlay(onAccent),
+    shape: const WidgetStatePropertyAll(
+      RoundedRectangleBorder(borderRadius: kControlRadius),
     ),
+    padding: _buttonPadding,
+    textStyle: _buttonText,
+  );
+}
+
+/// The secondary action: transparent with a quiet outline.
+ButtonStyle _outlinedButton(BonfireThemeExtension palette) {
+  Color fg(Set<WidgetState> states) => states.contains(WidgetState.disabled)
+      ? palette.gray
+      : palette.dirtyWhite;
+  return ButtonStyle(
+    elevation: const WidgetStatePropertyAll(0),
+    shadowColor: const WidgetStatePropertyAll(Colors.transparent),
+    surfaceTintColor: const WidgetStatePropertyAll(Colors.transparent),
+    backgroundColor: const WidgetStatePropertyAll(Colors.transparent),
+    foregroundColor: WidgetStateProperty.resolveWith(fg),
+    iconColor: WidgetStateProperty.resolveWith(fg),
+    overlayColor: _overlay(palette.dirtyWhite),
     side: WidgetStateProperty.resolveWith(
       (states) => BorderSide(
         color: states.contains(WidgetState.disabled)
-            ? palette.darkGray
-            : palette.primary,
+            ? palette.hairline
+            : palette.gray.withValues(alpha: 0.45),
       ),
     ),
     shape: const WidgetStatePropertyAll(
-      RoundedRectangleBorder(borderRadius: kFlatRadius),
+      RoundedRectangleBorder(borderRadius: kControlRadius),
     ),
-    padding: const WidgetStatePropertyAll(
-      EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-    ),
+    padding: _buttonPadding,
+    textStyle: _buttonText,
   );
 }
+
+/// Pages fade in while rising a few pixels: quick and quiet, for a desktop
+/// app where full-screen slides feel heavy. Instant under reduced motion.
+class _SoftPageTransitionsBuilder extends PageTransitionsBuilder {
+  const _SoftPageTransitionsBuilder();
+
+  @override
+  Duration get transitionDuration => const Duration(milliseconds: 220);
+
+  @override
+  Duration get reverseTransitionDuration => const Duration(milliseconds: 180);
+
+  @override
+  Widget buildTransitions<T>(
+    PageRoute<T> route,
+    BuildContext context,
+    Animation<double> animation,
+    Animation<double> secondaryAnimation,
+    Widget child,
+  ) {
+    if (MediaQuery.disableAnimationsOf(context)) return child;
+    final curved = CurvedAnimation(
+      parent: animation,
+      curve: AppMotion.curve,
+      reverseCurve: Curves.easeInCubic,
+    );
+    return FadeTransition(
+      opacity: curved,
+      child: SlideTransition(
+        position: Tween<Offset>(
+          begin: const Offset(0, 0.02),
+          end: Offset.zero,
+        ).animate(curved),
+        child: child,
+      ),
+    );
+  }
+}
+
+const _pageTransitions = PageTransitionsTheme(
+  builders: {
+    TargetPlatform.android: _SoftPageTransitionsBuilder(),
+    TargetPlatform.fuchsia: _SoftPageTransitionsBuilder(),
+    TargetPlatform.linux: _SoftPageTransitionsBuilder(),
+    TargetPlatform.windows: _SoftPageTransitionsBuilder(),
+    TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
+    TargetPlatform.macOS: CupertinoPageTransitionsBuilder(),
+  },
+);
 
 /// Builds the [ThemeData] for [preset], applying an optional custom [accent].
 ThemeData buildAppTheme(AppThemePreset preset, {Color? accent}) {
@@ -209,13 +310,91 @@ ThemeData buildAppTheme(AppThemePreset preset, {Color? accent}) {
   final base = brightness == Brightness.light
       ? ThemeData.light()
       : ThemeData.dark();
-  final button = _flatButton(palette);
+  final onAccent = _onAccent(palette.primary);
+  final filled = _filledButton(palette, onAccent);
+  final hairline = BorderSide(color: palette.hairline);
   return base.copyWith(
     scaffoldBackgroundColor: palette.background,
     canvasColor: palette.background,
-    cardColor: palette.foreground,
+    cardColor: palette.sheet,
+    pageTransitionsTheme: _pageTransitions,
     splashFactory: InkRipple.splashFactory,
     highlightColor: palette.primary.withValues(alpha: 0.06),
+    hoverColor: palette.hoverFill,
+    focusColor: palette.primary.withValues(alpha: 0.12),
+    // Selection, caret and handles carry the accent rather than Material blue.
+    textSelectionTheme: TextSelectionThemeData(
+      cursorColor: palette.primary,
+      selectionColor: palette.primary.withValues(alpha: 0.32),
+      selectionHandleColor: palette.primary,
+    ),
+    tooltipTheme: TooltipThemeData(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: palette.sheet,
+        borderRadius: const BorderRadius.all(Radius.circular(AppRadius.sm)),
+        border: Border.fromBorderSide(hairline),
+        boxShadow: [
+          BoxShadow(
+            color: palette.shadow,
+            blurRadius: 14,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      textStyle: TextStyle(
+        color: palette.dirtyWhite,
+        fontSize: 12,
+        fontWeight: FontWeight.w500,
+      ),
+    ),
+    // Thin, quiet scrollbars that firm up under the pointer.
+    scrollbarTheme: ScrollbarThemeData(
+      radius: const Radius.circular(AppRadius.xs),
+      crossAxisMargin: 2,
+      thickness: WidgetStateProperty.resolveWith(
+        (states) =>
+            states.contains(WidgetState.hovered) ||
+                states.contains(WidgetState.dragged)
+            ? 8
+            : 5,
+      ),
+      thumbColor: WidgetStateProperty.resolveWith(
+        (states) => palette.gray.withValues(
+          alpha: states.contains(WidgetState.dragged)
+              ? 0.6
+              : states.contains(WidgetState.hovered)
+              ? 0.45
+              : 0.28,
+        ),
+      ),
+    ),
+    checkboxTheme: CheckboxThemeData(
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.all(Radius.circular(AppRadius.xs)),
+      ),
+      side: WidgetStateBorderSide.resolveWith(
+        (states) => BorderSide(
+          color: states.contains(WidgetState.selected)
+              ? palette.primary
+              : palette.gray,
+          width: 1.5,
+        ),
+      ),
+      fillColor: WidgetStateProperty.resolveWith(
+        (states) => states.contains(WidgetState.selected)
+            ? palette.primary
+            : Colors.transparent,
+      ),
+      checkColor: WidgetStatePropertyAll(onAccent),
+    ),
+    radioTheme: RadioThemeData(
+      fillColor: WidgetStateProperty.resolveWith(
+        (states) => states.contains(WidgetState.selected)
+            ? palette.primary
+            : palette.gray,
+      ),
+    ),
     colorScheme:
         ColorScheme.fromSeed(
           seedColor: palette.primary,
@@ -223,13 +402,12 @@ ThemeData buildAppTheme(AppThemePreset preset, {Color? accent}) {
         ).copyWith(
           primary: palette.primary,
           // fromSeed derives onPrimary for its generated primary tone, not the
-          // accent we force above — so a light accent (e.g. Nord, or a custom one)
-          // would otherwise get light text. Pick the on-colour by luminance.
-          onPrimary: _onColor(palette.primary),
+          // accent we force above — so pick the on-colour by contrast.
+          onPrimary: onAccent,
           error: palette.red,
           onError: _onColor(palette.red),
           surface: palette.background,
-          surfaceContainerHighest: palette.foreground,
+          surfaceContainerHighest: palette.sheet,
         ),
     textTheme: _textTheme(palette),
     appBarTheme: AppBarTheme(
@@ -238,133 +416,206 @@ ThemeData buildAppTheme(AppThemePreset preset, {Color? accent}) {
       backgroundColor: palette.background,
       foregroundColor: palette.dirtyWhite,
       surfaceTintColor: Colors.transparent,
+      // Titles otherwise inherit titleLarge (36), sized for hero headings.
+      titleTextStyle: TextStyle(
+        fontSize: 18,
+        fontWeight: FontWeight.w700,
+        color: palette.dirtyWhite,
+      ),
     ),
     cardTheme: CardThemeData(
-      color: palette.foreground,
+      color: palette.sheet,
       elevation: 0,
       margin: EdgeInsets.zero,
-      shape: _flatRect(side: BorderSide(color: palette.darkGray)),
+      shape: _rounded(AppRadius.lg, side: hairline),
     ),
+    // Floating surfaces lift off the page with a soft shadow rather than a
+    // hard outline.
     dialogTheme: DialogThemeData(
-      backgroundColor: palette.foreground,
-      elevation: 0,
-      shape: _flatRect(side: BorderSide(color: palette.darkGray)),
+      backgroundColor: palette.sheet,
+      surfaceTintColor: Colors.transparent,
+      elevation: 16,
+      shadowColor: palette.shadow,
+      shape: _rounded(AppRadius.xl, side: hairline),
+      // Dialog titles otherwise inherit headlineSmall (24): heavier than any
+      // heading in the panes they open over.
+      titleTextStyle: TextStyle(
+        fontSize: 18,
+        fontWeight: FontWeight.w600,
+        color: palette.dirtyWhite,
+      ),
     ),
     bottomSheetTheme: BottomSheetThemeData(
-      backgroundColor: palette.foreground,
+      backgroundColor: palette.sheet,
+      surfaceTintColor: Colors.transparent,
       elevation: 0,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(4)),
+        borderRadius: BorderRadius.vertical(
+          top: Radius.circular(AppRadius.xl),
+        ),
       ),
     ),
     popupMenuTheme: PopupMenuThemeData(
-      color: palette.foreground,
-      elevation: 0,
-      shape: _flatRect(side: BorderSide(color: palette.darkGray)),
+      color: palette.sheet,
+      surfaceTintColor: Colors.transparent,
+      elevation: 10,
+      shadowColor: palette.shadow,
+      shape: _rounded(AppRadius.md + 2, side: hairline),
     ),
     snackBarTheme: SnackBarThemeData(
-      backgroundColor: palette.foreground,
-      elevation: 0,
+      backgroundColor: palette.sheet,
+      elevation: 8,
       behavior: SnackBarBehavior.floating,
-      shape: _flatRect(side: BorderSide(color: palette.darkGray)),
+      shape: _rounded(AppRadius.md + 2, side: hairline),
       contentTextStyle: TextStyle(color: palette.dirtyWhite),
     ),
     dividerTheme: DividerThemeData(
-      color: palette.darkGray,
+      color: palette.hairline,
       thickness: 1,
       space: 1,
     ),
-    elevatedButtonTheme: ElevatedButtonThemeData(style: button),
-    filledButtonTheme: FilledButtonThemeData(style: button),
-    outlinedButtonTheme: OutlinedButtonThemeData(style: button),
+    elevatedButtonTheme: ElevatedButtonThemeData(style: filled),
+    filledButtonTheme: FilledButtonThemeData(style: filled),
+    outlinedButtonTheme: OutlinedButtonThemeData(
+      style: _outlinedButton(palette),
+    ),
     textButtonTheme: TextButtonThemeData(
-      style: TextButton.styleFrom(
-        foregroundColor: palette.dirtyWhite,
-        shape: const RoundedRectangleBorder(borderRadius: kFlatRadius),
+      style: ButtonStyle(
+        foregroundColor: WidgetStateProperty.resolveWith(
+          (states) => states.contains(WidgetState.disabled)
+              ? palette.gray
+              : palette.dirtyWhite,
+        ),
+        overlayColor: _overlay(palette.dirtyWhite),
+        shape: const WidgetStatePropertyAll(
+          RoundedRectangleBorder(borderRadius: kControlRadius),
+        ),
       ),
     ),
     iconButtonTheme: IconButtonThemeData(
-      style: IconButton.styleFrom(
-        foregroundColor: palette.dirtyWhite,
-        shape: const RoundedRectangleBorder(borderRadius: kFlatRadius),
+      style: ButtonStyle(
+        foregroundColor: WidgetStatePropertyAll(palette.dirtyWhite),
+        overlayColor: _overlay(palette.dirtyWhite),
+        shape: const WidgetStatePropertyAll(
+          RoundedRectangleBorder(borderRadius: kControlRadius),
+        ),
       ),
     ),
     floatingActionButtonTheme: FloatingActionButtonThemeData(
-      elevation: 0,
-      backgroundColor: palette.background,
-      foregroundColor: palette.dirtyWhite,
-      shape: _flatRect(side: BorderSide(color: palette.primary)),
+      elevation: 2,
+      backgroundColor: palette.primary,
+      foregroundColor: onAccent,
+      shape: _rounded(AppRadius.lg),
     ),
     chipTheme: ChipThemeData(
       elevation: 0,
       pressElevation: 0,
       showCheckmark: false,
-      backgroundColor: palette.background,
-      selectedColor: palette.foreground,
-      disabledColor: palette.darkGray,
-      side: BorderSide(color: palette.darkGray),
-      shape: const RoundedRectangleBorder(borderRadius: kFlatRadius),
+      backgroundColor: Colors.transparent,
+      selectedColor: palette.accentSoft,
+      disabledColor: palette.hoverFill,
+      side: WidgetStateBorderSide.resolveWith(
+        (states) => BorderSide(
+          color: states.contains(WidgetState.selected)
+              ? palette.primary.withValues(alpha: 0.7)
+              : palette.gray.withValues(alpha: 0.35),
+        ),
+      ),
+      shape: _rounded(AppRadius.md),
       labelStyle: TextStyle(color: palette.dirtyWhite, fontSize: 13),
       secondaryLabelStyle: TextStyle(color: palette.dirtyWhite, fontSize: 13),
       brightness: brightness,
     ),
+    // Fields are recessed wells: a hairline at rest, the accent on focus.
     inputDecorationTheme: InputDecorationTheme(
       filled: true,
-      fillColor: palette.darkGray,
+      fillColor: palette.inset,
       isDense: true,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
       labelStyle: TextStyle(color: palette.gray),
       hintStyle: TextStyle(color: palette.gray),
-      border: _flatInput(palette.darkGray),
-      enabledBorder: _flatInput(palette.gray.withValues(alpha: 0.45)),
-      focusedBorder: _flatInput(palette.primary),
-      errorBorder: _flatInput(palette.red),
-      focusedErrorBorder: _flatInput(palette.red),
+      border: _input(palette.hairline),
+      enabledBorder: _input(palette.hairline),
+      disabledBorder: _input(Colors.transparent),
+      focusedBorder: _input(palette.primary, width: 1.5),
+      errorBorder: _input(palette.red),
+      focusedErrorBorder: _input(palette.red, width: 1.5),
     ),
-    listTileTheme: const ListTileThemeData(
-      selectedTileColor: Colors.transparent,
-      shape: RoundedRectangleBorder(borderRadius: kFlatRadius),
+    listTileTheme: ListTileThemeData(
+      selectedTileColor: palette.selectedFill,
+      selectedColor: palette.emphasis,
+      shape: _rounded(AppRadius.md),
     ),
     navigationRailTheme: NavigationRailThemeData(
       backgroundColor: palette.background,
-      indicatorColor: Colors.transparent,
+      indicatorColor: palette.accentSoft,
       selectedIconTheme: IconThemeData(color: palette.primary),
       unselectedIconTheme: IconThemeData(color: palette.dirtyWhite),
     ),
     tabBarTheme: TabBarThemeData(
       indicatorSize: TabBarIndicatorSize.label,
-      dividerColor: palette.darkGray,
-      labelColor: palette.dirtyWhite,
+      dividerColor: palette.hairline,
+      labelColor: palette.emphasis,
       unselectedLabelColor: palette.gray,
       indicator: UnderlineTabIndicator(
-        borderSide: BorderSide(color: palette.primary, width: 1),
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(2)),
+        borderSide: BorderSide(color: palette.primary, width: 2.5),
       ),
     ),
     progressIndicatorTheme: ProgressIndicatorThemeData(
       color: palette.primary,
-      linearTrackColor: palette.darkGray,
-      circularTrackColor: palette.darkGray,
+      linearTrackColor: palette.inset,
+      circularTrackColor: palette.inset,
     ),
     sliderTheme: SliderThemeData(
-      trackHeight: 2,
+      trackHeight: 4,
       activeTrackColor: palette.primary,
-      inactiveTrackColor: palette.darkGray,
-      thumbColor: palette.dirtyWhite,
-      overlayColor: palette.primary.withValues(alpha: 0.08),
+      inactiveTrackColor: palette.inset,
+      thumbColor: palette.primary,
+      overlayColor: palette.primary.withValues(alpha: 0.12),
     ),
+    // A solid accent track for "on", a recessed outlined one for "off".
     switchTheme: SwitchThemeData(
       thumbColor: WidgetStateProperty.resolveWith(
-        (states) => states.contains(WidgetState.selected)
-            ? palette.dirtyWhite
+        (states) => states.contains(WidgetState.disabled)
+            ? palette.gray.withValues(alpha: 0.5)
+            : states.contains(WidgetState.selected)
+            ? onAccent
             : palette.gray,
       ),
       trackColor: WidgetStateProperty.resolveWith(
         (states) => states.contains(WidgetState.selected)
-            ? palette.darkGray
-            : palette.background,
+            ? palette.primary
+            : palette.inset,
       ),
-      trackOutlineColor: WidgetStatePropertyAll(palette.gray),
+      trackOutlineColor: WidgetStateProperty.resolveWith(
+        (states) => states.contains(WidgetState.selected)
+            ? Colors.transparent
+            : palette.gray.withValues(alpha: 0.5),
+      ),
     ),
     extensions: [palette],
+  );
+}
+
+/// The pre-redesign control styling, applied only around the compact voice
+/// window so that mode keeps its look while the rest of the app moves on.
+ThemeData compactWindowTheme(ThemeData theme) {
+  final palette = theme.extension<BonfireThemeExtension>()!;
+  final defaults = theme.brightness == Brightness.light
+      ? ThemeData.light()
+      : ThemeData.dark();
+  return theme.copyWith(
+    hoverColor: defaults.hoverColor,
+    focusColor: defaults.focusColor,
+    tooltipTheme: const TooltipThemeData(),
+    iconButtonTheme: IconButtonThemeData(
+      style: IconButton.styleFrom(
+        foregroundColor: palette.dirtyWhite,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.all(Radius.circular(AppRadius.xs)),
+        ),
+      ),
+    ),
   );
 }

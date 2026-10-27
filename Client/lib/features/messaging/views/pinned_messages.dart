@@ -207,11 +207,9 @@ class _PinnedMessagesDialogState extends ConsumerState<_PinnedMessagesDialog> {
                   if (pins.isEmpty) {
                     return Padding(
                       padding: const EdgeInsets.all(32),
-                      child: Center(
-                        child: Text(
-                          UiCopy.noPinnedMessages(context: context),
-                          style: Theme.of(context).textTheme.bodyMedium,
-                        ),
+                      child: EmptyStateView(
+                        icon: Icons.push_pin_outlined,
+                        message: UiCopy.noPinnedMessages(context: context),
                       ),
                     );
                   }

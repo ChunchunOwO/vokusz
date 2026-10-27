@@ -41,6 +41,8 @@ class AccordMarkdownBox extends StatelessWidget {
       enableFootnote: false,
       enableImageSize: false,
       selectable: shouldUseDesktopLayout(context),
+      // The theme's accent selection, not the viewer's built-in blue.
+      selectionColor: Theme.of(context).textSelectionTheme.selectionColor,
       enableKbd: false,
       syntaxExtensions: syntaxExtensions,
       elementBuilders: elementBuilders,

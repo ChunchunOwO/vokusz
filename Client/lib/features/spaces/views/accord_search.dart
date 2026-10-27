@@ -170,7 +170,11 @@ class _SearchDialogState extends ConsumerState<_SearchDialog>
       return _hint(UiCopy.typeToSearchMessages(context: context), theme);
     }
     if (messages.isEmpty) {
-      return _hint(UiCopy.noMessagesFound(context: context), theme);
+      return _hint(
+        UiCopy.noMessagesFound(context: context),
+        theme,
+        icon: Icons.search_off,
+      );
     }
     final members = ref.watch(
       accordMembersControllerProvider(
@@ -224,7 +228,11 @@ class _SearchDialogState extends ConsumerState<_SearchDialog>
       return _hint(UiCopy.typeToSearchMembers(context: context), theme);
     }
     if (members.isEmpty) {
-      return _hint(UiCopy.noMembersFound(context: context), theme);
+      return _hint(
+        UiCopy.noMembersFound(context: context),
+        theme,
+        icon: Icons.person_search_outlined,
+      );
     }
     return ListView.separated(
       padding: const EdgeInsets.all(8),
@@ -243,8 +251,6 @@ class _SearchDialogState extends ConsumerState<_SearchDialog>
     );
   }
 
-  Widget _hint(String text, ThemeData theme) => Padding(
-    padding: const EdgeInsets.all(32),
-    child: Center(child: Text(text, style: theme.textTheme.bodyMedium)),
-  );
+  Widget _hint(String text, ThemeData theme, {IconData icon = Icons.search}) =>
+      EmptyStateView(icon: icon, message: text);
 }

@@ -240,10 +240,8 @@ class VoiceLobbyBody extends ConsumerWidget {
       return Container(
         padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
         decoration: BoxDecoration(
-          color: colors.foreground,
-          border: Border(
-            bottom: BorderSide(color: colors.background, width: 1),
-          ),
+          color: colors.inset,
+          border: Border(bottom: BorderSide(color: colors.hairline)),
         ),
         child: card,
       );
@@ -257,8 +255,9 @@ class VoiceLobbyBody extends ConsumerWidget {
           child: Container(
             padding: const EdgeInsets.fromLTRB(24, 22, 24, 22),
             decoration: BoxDecoration(
-              color: colors.foreground,
-              borderRadius: BorderRadius.circular(4),
+              color: colors.inset,
+              borderRadius: BorderRadius.circular(AppRadius.xl),
+              border: Border.all(color: colors.hairline),
             ),
             child: card,
           ),
@@ -283,8 +282,9 @@ class _PreJoinChip extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: colors.background,
-        borderRadius: BorderRadius.circular(4),
+        color: colors.sheet,
+        borderRadius: BorderRadius.circular(AppRadius.md),
+        border: Border.all(color: colors.hairline),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,

@@ -27,8 +27,14 @@ class SettingsScaffold extends StatelessWidget {
     return Scaffold(
       backgroundColor: colors.background,
       appBar: AppBar(
-        backgroundColor: colors.foreground,
-        title: Text(title),
+        backgroundColor: colors.background,
+        shape: Border(bottom: BorderSide(color: colors.hairline)),
+        title: Text(
+          title,
+          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+            fontWeight: FontWeight.w700,
+          ),
+        ),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
           onPressed: () => Navigator.of(context).maybePop(),

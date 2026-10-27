@@ -104,7 +104,7 @@ class _VoicePipOverlayState extends ConsumerState<VoicePipOverlay> {
         onPanUpdate: (d) => setState(() => _pos = _clamp(pos + d.delta, size)),
         child: Material(
           elevation: 8,
-          borderRadius: BorderRadius.circular(4),
+          borderRadius: BorderRadius.circular(AppRadius.md),
           clipBehavior: Clip.antiAlias,
           child: SizedBox(
             width: _w,

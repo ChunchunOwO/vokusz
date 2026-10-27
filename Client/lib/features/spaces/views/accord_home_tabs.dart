@@ -117,8 +117,7 @@ class _TabStripState extends ConsumerState<_TabStrip> {
     return Container(
       height: 38,
       decoration: BoxDecoration(
-        color: colors.background,
-        border: Border(bottom: BorderSide(color: colors.foreground, width: 1)),
+        border: Border(bottom: BorderSide(color: colors.hairline)),
       ),
       child: ScrollConfiguration(
         behavior: ScrollConfiguration.of(context).copyWith(scrollbars: false),
@@ -249,7 +248,7 @@ String _buildConnectLink(
   return url;
 }
 
-class _TabChip extends StatelessWidget {
+class _TabChip extends StatefulWidget {
   const _TabChip({
     required this.tab,
     required this.active,
@@ -267,60 +266,82 @@ class _TabChip extends StatelessWidget {
   final void Function(Offset globalPos) onContextMenu;
 
   @override
+  State<_TabChip> createState() => _TabChipState();
+}
+
+class _TabChipState extends State<_TabChip> {
+  bool _hovered = false;
+
+  @override
   Widget build(BuildContext context) {
     final colors = BonfireThemeExtension.of(context);
+    final active = widget.active;
+    final iconUrl = widget.iconUrl;
+    final tab = widget.tab;
     return Padding(
       padding: const EdgeInsets.only(right: 4),
       child: GestureDetector(
-        onTap: onTap,
-        onTertiaryTapUp: (_) => onClose(),
-        onSecondaryTapUp: (d) => onContextMenu(d.globalPosition),
+        onTap: widget.onTap,
+        onTertiaryTapUp: (_) => widget.onClose(),
+        onSecondaryTapUp: (d) => widget.onContextMenu(d.globalPosition),
         child: MouseRegion(
           cursor: SystemMouseCursors.click,
-          child: Container(
-            constraints: const BoxConstraints(maxWidth: 180),
-            padding: const EdgeInsets.only(left: 10, right: 4),
-            decoration: BoxDecoration(
-              color: active ? colors.foreground : Colors.transparent,
-              borderRadius: BorderRadius.circular(4),
-              border: Border.all(
-                color: active ? colors.darkGray : Colors.transparent,
+          onEnter: (_) => setState(() => _hovered = true),
+          onExit: (_) => setState(() => _hovered = false),
+          // Pills: the active tab is filled, others light up under the pointer.
+          child: AnimatedContainer(
+              duration: AppMotion.of(context, AppMotion.fast),
+              curve: AppMotion.curve,
+              constraints: const BoxConstraints(maxWidth: 180),
+              padding: const EdgeInsets.only(left: 10, right: 4),
+              decoration: BoxDecoration(
+                color: active
+                    ? colors.selectedFill
+                    : _hovered
+                    ? colors.hoverFill
+                    : colors.hoverFill.withValues(alpha: 0),
+                borderRadius: BorderRadius.circular(AppRadius.md),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (iconUrl != null) ...[
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(3),
+                      child: CachedNetworkImage(
+                        imageUrl: iconUrl,
+                        width: 16,
+                        height: 16,
+                        fit: BoxFit.cover,
+                        errorWidget: (_, _, _) => const SizedBox(width: 16),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                  ] else ...[
+                    Icon(
+                      Icons.tag,
+                      size: 14,
+                      color: active ? colors.emphasis : colors.gray,
+                    ),
+                    const SizedBox(width: 4),
+                  ],
+                  Flexible(
+                    child: Text(
+                      tab.name,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodySmall!.copyWith(
+                        color: active ? colors.emphasis : colors.dirtyWhite,
+                        fontWeight: active
+                            ? FontWeight.w600
+                            : FontWeight.normal,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 2),
+                  _TabCloseButton(onTap: widget.onClose),
+                ],
               ),
             ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (iconUrl != null) ...[
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(3),
-                    child: CachedNetworkImage(
-                      imageUrl: iconUrl!,
-                      width: 16,
-                      height: 16,
-                      fit: BoxFit.cover,
-                      errorWidget: (_, _, _) => const SizedBox(width: 16),
-                    ),
-                  ),
-                  const SizedBox(width: 6),
-                ] else ...[
-                  Icon(Icons.tag, size: 14, color: colors.gray),
-                  const SizedBox(width: 4),
-                ],
-                Flexible(
-                  child: Text(
-                    tab.name,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.bodySmall!.copyWith(
-                      color: active ? Colors.white : colors.dirtyWhite,
-                      fontWeight: active ? FontWeight.w600 : FontWeight.normal,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 2),
-                _TabCloseButton(onTap: onClose),
-              ],
-            ),
-          ),
         ),
       ),
     );
@@ -353,8 +374,8 @@ class _TabCloseButtonState extends State<_TabCloseButton> {
           height: 20,
           alignment: Alignment.center,
           decoration: BoxDecoration(
-            color: _hovered ? colors.darkGray : Colors.transparent,
-            borderRadius: BorderRadius.circular(4),
+            color: _hovered ? colors.selectedFill : Colors.transparent,
+            borderRadius: BorderRadius.circular(AppRadius.sm),
           ),
           child: Icon(Icons.close, size: 13, color: colors.dirtyWhite),
         ),

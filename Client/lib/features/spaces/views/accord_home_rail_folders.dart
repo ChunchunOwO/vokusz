@@ -92,7 +92,7 @@ class _FolderTileState extends ConsumerState<_FolderTile> {
                       ctl.setFolderCollapsed(folder.id, !folder.collapsed),
                   child: Container(
                     decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(4),
+                      borderRadius: BorderRadius.circular(AppRadius.xl),
                       border: highlight
                           ? Border.all(color: colors.primary, width: 2)
                           : null,
@@ -104,7 +104,10 @@ class _FolderTileState extends ConsumerState<_FolderTile> {
             },
           ),
         ),
-        if (!folder.collapsed)
+        AnimatedReveal(
+          open: !folder.collapsed,
+          child: Column(
+            children: [
           for (final railSpace in spaces)
             Padding(
               padding: const EdgeInsets.only(top: 6),
@@ -124,6 +127,9 @@ class _FolderTileState extends ConsumerState<_FolderTile> {
                 onMenu: (pos) => _memberMenu(context, ref, ctl, railSpace, pos),
               ),
             ),
+            ],
+          ),
+        ),
       ],
     );
   }
@@ -270,7 +276,7 @@ class SpaceFolderIcon extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = BonfireThemeExtension.of(context);
     final folderColor = folder.color == null
-        ? colors.darkGray
+        ? colors.sheet
         : Color(folder.color!);
     final members = folder.spaceIds.where(spaces.containsKey).take(4).toList();
     return Container(
@@ -278,7 +284,7 @@ class SpaceFolderIcon extends StatelessWidget {
       height: 48,
       decoration: BoxDecoration(
         color: folderColor.withValues(alpha: 0.5),
-        borderRadius: BorderRadius.circular(4),
+        borderRadius: BorderRadius.circular(AppRadius.xl),
       ),
       alignment: Alignment.center,
       child: !folder.collapsed || members.isEmpty
@@ -299,7 +305,7 @@ class SpaceFolderIcon extends StatelessWidget {
                           if (column > 0) const SizedBox(width: 2),
                           if (row * 2 + column < members.length)
                             ClipRRect(
-                              borderRadius: BorderRadius.circular(4),
+                              borderRadius: BorderRadius.circular(6),
                               child: ColoredBox(
                                 color: colors.darkGray,
                                 child: _SpaceIconImage(

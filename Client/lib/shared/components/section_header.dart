@@ -23,9 +23,12 @@ class SectionHeader extends StatelessWidget {
     final colors = BonfireThemeExtension.of(context);
     final label = Text(
       title.toUpperCase(),
+      // Tracked small caps, matching the channel-list and roster headers.
       style: Theme.of(context).textTheme.labelMedium!.copyWith(
             color: color ?? colors.gray,
-            letterSpacing: 0.6,
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 1.0,
           ),
     );
     return Padding(

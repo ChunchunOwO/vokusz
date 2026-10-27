@@ -244,11 +244,9 @@ class _AuditLogDialogState extends ConsumerState<_AuditLogDialog>
                   : visible.isEmpty
                   ? Padding(
                       padding: const EdgeInsets.all(32),
-                      child: Center(
-                        child: Text(
-                          UiCopy.noMatchingEntries(context: context),
-                          style: theme.textTheme.bodyMedium,
-                        ),
+                      child: EmptyStateView(
+                        icon: Icons.history,
+                        message: UiCopy.noMatchingEntries(context: context),
                       ),
                     )
                   : ListView.separated(

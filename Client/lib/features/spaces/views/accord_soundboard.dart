@@ -162,7 +162,7 @@ class _SoundboardDialogState extends ConsumerState<_SoundboardDialog>
     final sounds = items;
     return Dialog(
       backgroundColor: colors.foreground,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.md)),
       child: ConstrainedBox(
         constraints: dialogConstraints(context, maxWidth: 480, maxHeight: 520),
         child: Padding(
@@ -212,7 +212,7 @@ class _SoundboardDialogState extends ConsumerState<_SoundboardDialog>
                       ),
                       hintText: UiCopy.searchSounds(context: context),
                       border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(4),
+                        borderRadius: BorderRadius.circular(AppRadius.md),
                         borderSide: BorderSide.none,
                       ),
                     ),
@@ -232,11 +232,9 @@ class _SoundboardDialogState extends ConsumerState<_SoundboardDialog>
                                     )
                                     .toList();
                           if (sounds.isEmpty) {
-                            return Center(
-                              child: Text(
-                                UiCopy.noSoundsYet(context: context),
-                                style: theme.textTheme.bodyMedium,
-                              ),
+                            return EmptyStateView(
+                              icon: Icons.graphic_eq,
+                              message: UiCopy.noSoundsYet(context: context),
                             );
                           }
                           if (filtered.isEmpty) {
@@ -303,9 +301,9 @@ class _SoundTile extends StatelessWidget {
     final colors = BonfireThemeExtension.of(context);
     return Material(
       color: colors.darkGray,
-      borderRadius: BorderRadius.circular(4),
+      borderRadius: BorderRadius.circular(AppRadius.md),
       child: InkWell(
-        borderRadius: BorderRadius.circular(4),
+        borderRadius: BorderRadius.circular(AppRadius.md),
         onTap: onPlay,
         child: Stack(
           children: [

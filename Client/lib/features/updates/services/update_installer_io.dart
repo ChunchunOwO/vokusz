@@ -289,6 +289,13 @@ tasklist /FI "PID eq $pid" 2>NUL | find "$pid" >NUL
 if "%ERRORLEVEL%"=="0" ( ping -n 2 127.0.0.1 >NUL & goto wait )
 if exist "$dst.old" rmdir /S /Q "$dst.old" >NUL 2>&1
 move "$dst" "$dst.old" >NUL 2>&1
+if errorlevel 1 (
+  if /I not "%~1"=="elevated" (
+    powershell -NoProfile -Command "Start-Process -FilePath '%~f0' -ArgumentList 'elevated' -Verb RunAs"
+    exit /b
+  )
+  exit /b 1
+)
 move "${staged.path}" "$dst" >NUL 2>&1
 if not exist "$dst\\vokusz.exe" (
   rmdir /S /Q "$dst" >NUL 2>&1

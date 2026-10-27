@@ -2,7 +2,7 @@ name: bonfire
 description: "Vokusz — community chat with free screen sharing and stable voice."
 publish_to: "none"
 
-version: 0.2.21+1
+version: 0.2.23+1
 
 environment:
   sdk: ^3.10.0

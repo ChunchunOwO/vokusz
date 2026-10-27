@@ -136,6 +136,11 @@ flutter test test/features/voice/voice_logic_test.dart
 flutter build windows -v
 ```
 
+Windows builds need VS 2022 (Build Tools suffice) with the C++ workload plus
+the C++ ATL component, and Developer Mode on — see README "Release builds".
+`windows/CMakeLists.txt` compiles every target with `/utf-8` so CJK-locale
+machines build like CI.
+
 CI is at the repo root (`.github/workflows/`): Windows analyze/test, and tagged Windows releases.
 
 ## Migration status

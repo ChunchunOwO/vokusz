@@ -340,7 +340,7 @@ class _MessagePaneState extends ConsumerState<MessagePane> {
 
     if (channelId == null) {
       return Container(
-        color: colors.background,
+        color: colors.sheet,
         alignment: Alignment.center,
         child: Text(
           UiCopy.selectAChannel(context: context),
@@ -447,21 +447,19 @@ class _MessagePaneState extends ConsumerState<MessagePane> {
 
     if (channel?.type == 'forum') {
       return Container(
-        color: colors.background,
+        color: colors.sheet,
         child: Column(
           children: [
             Container(
-              height: 48,
+              height: 52,
               alignment: Alignment.centerLeft,
-              padding: const EdgeInsets.only(left: 16, right: 8),
+              padding: const EdgeInsets.only(left: 18, right: 8),
               decoration: BoxDecoration(
-                border: Border(
-                  bottom: BorderSide(color: colors.foreground, width: 1),
-                ),
+                border: Border(bottom: BorderSide(color: colors.hairline)),
               ),
               child: Row(
                 children: [
-                  Icon(Icons.forum, size: 18, color: colors.dirtyWhite),
+                  Icon(Icons.forum, size: 18, color: colors.primary),
                   const SizedBox(width: 6),
                   Expanded(
                     child: Text(
@@ -504,26 +502,22 @@ class _MessagePaneState extends ConsumerState<MessagePane> {
 
     return Container(
       decoration: BoxDecoration(
-        color: colors.background,
+        color: colors.sheet,
         // In panel mode the pane sits beside the video grid, so it needs a
         // divider on its leading edge too.
-        border: panel
-            ? Border(left: BorderSide(color: colors.foreground, width: 1))
-            : null,
+        border: panel ? Border(left: BorderSide(color: colors.hairline)) : null,
       ),
       child: Column(
         children: [
           Container(
-            height: panel ? 44 : 48,
+            height: panel ? 44 : 52,
             alignment: Alignment.centerLeft,
             padding: EdgeInsets.only(
-              left: panel ? 12 : 16,
+              left: panel ? 12 : 18,
               right: panel ? 4 : 8,
             ),
             decoration: BoxDecoration(
-              border: Border(
-                bottom: BorderSide(color: colors.foreground, width: 1),
-              ),
+              border: Border(bottom: BorderSide(color: colors.hairline)),
             ),
             child: _selecting
                 ? Row(
@@ -585,7 +579,9 @@ class _MessagePaneState extends ConsumerState<MessagePane> {
                               ? Icons.campaign
                               : Icons.tag,
                           size: panel ? 16 : 18,
-                          color: colors.dirtyWhite,
+                          // The channel glyph carries the accent: the one
+                          // coloured mark in an otherwise neutral header.
+                          color: colors.primary,
                         ),
                         const SizedBox(width: 6),
                       ],
@@ -599,7 +595,8 @@ class _MessagePaneState extends ConsumerState<MessagePane> {
                                         AppStrings.of(context).chat)
                                   : channel?.name ?? '',
                               overflow: TextOverflow.ellipsis,
-                              style: Theme.of(context).textTheme.titleSmall,
+                              style: Theme.of(context).textTheme.titleSmall!
+                                  .copyWith(fontWeight: FontWeight.w600),
                             ),
                       ),
                       ...widget.headerActions,
@@ -634,20 +631,23 @@ class _MessagePaneState extends ConsumerState<MessagePane> {
                   ),
           ),
           Expanded(
-            child: messages == null
+            child: _ChannelFade(
+              channelId: channelId,
+              child: messages == null
                 ? _historyEmptyState(channelId)
                 : messages.isEmpty
-                ? Center(
-                    child: Text(
-                      AppStrings.of(context).noMessagesYet,
-                      style: Theme.of(context).textTheme.bodyMedium,
-                    ),
+                ? EmptyStateView(
+                    icon: Icons.chat_bubble_outline,
+                    message: AppStrings.of(context).noMessagesYet,
                   )
                 : ListView.builder(
                     controller: _scroll,
                     reverse: true,
+                    // Rows pad themselves by [_messageRowInset] (room for
+                    // their hover highlight), so the list pads that much less.
                     padding: EdgeInsets.symmetric(
-                      horizontal: panel ? 10 : 16,
+                      horizontal:
+                          (panel ? 10 : 16) - _messageRowInset(narrow: panel),
                       vertical: panel ? 8 : 12,
                     ),
                     // One extra slot at the top of history (rendered last
@@ -757,6 +757,7 @@ class _MessagePaneState extends ConsumerState<MessagePane> {
                       );
                     },
                   ),
+            ),
           ),
           _TypingIndicator(channelId: channelId, spaceId: spaceId),
           OnboardingAnchor(
@@ -805,6 +806,11 @@ bool _mentionsSelf(
 ) =>
     message.mentions.any((m) => isSameUser(m, uid, localDomain: homeDomain)) ||
     message.mentionRoles.any(myRoles.contains);
+
+/// Horizontal padding inside each message row. It comes out of the list's own
+/// padding, so message text stays where it was while the row's hover highlight
+/// gets a margin around its content.
+double _messageRowInset({required bool narrow}) => narrow ? 6 : 8;
 
 /// How close in time two consecutive same-author messages must be to collapse
 /// into a single group (matching the reference client's denser layout).
@@ -903,4 +909,48 @@ class _TypingIndicator extends ConsumerWidget {
             ),
     );
   }
+}
+
+/// Fades the history in whenever the pane switches channel, so a switch reads
+/// as a transition rather than a hard cut. The child is never re-keyed: the
+/// list keeps its scroll controller and row state, only its opacity moves.
+class _ChannelFade extends StatefulWidget {
+  const _ChannelFade({required this.channelId, required this.child});
+
+  final String channelId;
+  final Widget child;
+
+  @override
+  State<_ChannelFade> createState() => _ChannelFadeState();
+}
+
+class _ChannelFadeState extends State<_ChannelFade>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 180),
+    value: 1,
+  );
+  late final Animation<double> _opacity = CurvedAnimation(
+    parent: _controller,
+    curve: AppMotion.curve,
+  );
+
+  @override
+  void didUpdateWidget(_ChannelFade oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.channelId == widget.channelId) return;
+    if (MediaQuery.disableAnimationsOf(context)) return;
+    _controller.forward(from: 0.25);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) =>
+      FadeTransition(opacity: _opacity, child: widget.child);
 }

@@ -37,10 +37,18 @@ class _MentionPopup extends ConsumerWidget {
     return Container(
       margin: const EdgeInsets.fromLTRB(8, 6, 8, 0),
       padding: const EdgeInsets.symmetric(vertical: 4),
+      // A popover above the field.
       decoration: BoxDecoration(
-        color: colors.background,
-        borderRadius: BorderRadius.circular(4),
-        border: Border.all(color: colors.foreground, width: 1),
+        color: colors.sheet,
+        borderRadius: BorderRadius.circular(AppRadius.lg),
+        border: Border.all(color: colors.hairline),
+        boxShadow: [
+          BoxShadow(
+            color: colors.shadow.withValues(alpha: 0.35),
+            blurRadius: 16,
+            offset: const Offset(0, 4),
+          ),
+        ],
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,

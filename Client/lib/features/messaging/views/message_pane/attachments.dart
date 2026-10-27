@@ -93,7 +93,7 @@ class _PendingAttachmentTile extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         decoration: BoxDecoration(
           color: colors.darkGray,
-          borderRadius: BorderRadius.circular(4),
+          borderRadius: BorderRadius.circular(AppRadius.md),
           border: Border.all(
             color: refused
                 ? colors.red.withValues(alpha: 0.5)
@@ -155,8 +155,9 @@ class _AttachmentChip extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.fromLTRB(10, 6, 6, 6),
         decoration: BoxDecoration(
-          color: colors.foreground.withValues(alpha: 0.08),
-          borderRadius: BorderRadius.circular(4),
+          color: colors.inset,
+          borderRadius: BorderRadius.circular(AppRadius.md),
+          border: Border.all(color: colors.hairline),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -180,7 +181,7 @@ class _AttachmentChip extends StatelessWidget {
             const SizedBox(width: 4),
             InkWell(
               onTap: onRemove,
-              borderRadius: BorderRadius.circular(4),
+              borderRadius: BorderRadius.circular(AppRadius.md),
               child: Icon(Icons.close, size: 16, color: colors.gray),
             ),
           ],
@@ -212,8 +213,14 @@ class _ImageAttachment extends StatelessWidget {
       renderWidth = _maxWidth;
       if (renderHeight != null) renderHeight *= scale;
     }
+    // Decode no wider than the slot can show. A phone photo is ~4000px wide —
+    // about 48 MB once decoded — for a 400px preview; the lightbox loads the
+    // full-resolution original separately. Width only, so the aspect ratio
+    // (and so the layout) is unchanged, and smaller images are never upscaled.
+    final decodeWidth = (_maxWidth * MediaQuery.devicePixelRatioOf(context))
+        .round();
     return ClipRRect(
-      borderRadius: BorderRadius.circular(4),
+      borderRadius: BorderRadius.circular(AppRadius.md),
       child: ConstrainedBox(
         constraints: const BoxConstraints(
           maxWidth: _maxWidth,
@@ -223,6 +230,7 @@ class _ImageAttachment extends StatelessWidget {
           imageUrl: url,
           width: renderWidth,
           height: renderHeight,
+          memCacheWidth: decodeWidth,
           fit: BoxFit.cover,
           placeholder: (_, _) => Container(
             width: renderWidth ?? 200,

@@ -127,7 +127,7 @@ class IncomingCallOverlay extends ConsumerWidget {
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             decoration: BoxDecoration(
               color: colors.foreground,
-              borderRadius: BorderRadius.circular(4),
+              borderRadius: BorderRadius.circular(AppRadius.md),
               boxShadow: const [
                 BoxShadow(
                   color: Colors.black54,

@@ -230,13 +230,13 @@ class _DmListTabState extends ConsumerState<_DmListTab> {
           child: channels == null
               ? const LoadingView()
               : filtered!.isEmpty
-              ? Center(
-                  child: Text(
-                    query.isEmpty
-                        ? UiCopy.noDirectMessagesYet(context: context)
-                        : UiCopy.noMatchingConversations(context: context),
-                    style: theme.textTheme.bodyMedium,
-                  ),
+              ? EmptyStateView(
+                  icon: query.isEmpty
+                      ? Icons.chat_bubble_outline
+                      : Icons.search_off,
+                  message: query.isEmpty
+                      ? UiCopy.noDirectMessagesYet(context: context)
+                      : UiCopy.noMatchingConversations(context: context),
                 )
               : ListView.builder(
                   padding: const EdgeInsets.all(8),

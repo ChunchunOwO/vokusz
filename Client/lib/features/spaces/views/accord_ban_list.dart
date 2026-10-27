@@ -254,11 +254,9 @@ class _BanListState extends ConsumerState<_BanList>
                           if (filtered.isEmpty) {
                             return Padding(
                               padding: const EdgeInsets.all(24),
-                              child: Center(
-                                child: Text(
-                                  UiCopy.noMatchingBans(context: context),
-                                  style: theme.textTheme.bodyMedium,
-                                ),
+                              child: EmptyStateView(
+                                icon: Icons.gavel,
+                                message: UiCopy.noMatchingBans(context: context),
                               ),
                             );
                           }

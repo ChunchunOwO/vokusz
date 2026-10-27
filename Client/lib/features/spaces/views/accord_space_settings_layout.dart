@@ -1,6 +1,7 @@
 part of 'accord_space_settings.dart';
 
-/// Lays out the space-settings sections in one scrolling page. On wide
+/// Lays out the space-settings sections in one scrolling page of cards on the
+/// canvas (each divider-separated run becomes a [SurfaceCard]). On wide
 /// (desktop) viewports the editable [form] and the [actions] tiles sit in two
 /// side-by-side columns constrained to a readable max width; on narrow
 /// viewports they stack into a single column (the mobile layout).
@@ -23,11 +24,13 @@ class _AdaptiveSettingsBody extends StatelessWidget {
         final twoColumn = constraints.maxWidth >= 880;
         if (!twoColumn) {
           return ListView(
-            padding: const EdgeInsets.symmetric(vertical: 8),
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 24),
             children: [
-              ...form,
-              const Divider(height: 24),
-              ...actions,
+              ...surfaceCardsFromSections([
+                ...form,
+                const Divider(),
+                ...actions,
+              ]),
               if (error != null) error!,
             ],
           );
@@ -36,7 +39,7 @@ class _AdaptiveSettingsBody extends StatelessWidget {
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 1100),
             child: SingleChildScrollView(
-              padding: const EdgeInsets.symmetric(vertical: 8),
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -46,14 +49,14 @@ class _AdaptiveSettingsBody extends StatelessWidget {
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: form,
+                          children: surfaceCardsFromSections(form),
                         ),
                       ),
-                      const SizedBox(width: 24),
+                      const SizedBox(width: 16),
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: actions,
+                          children: surfaceCardsFromSections(actions),
                         ),
                       ),
                     ],

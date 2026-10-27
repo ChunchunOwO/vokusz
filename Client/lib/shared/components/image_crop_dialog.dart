@@ -86,7 +86,7 @@ class _ImageCropDialogState extends State<_ImageCropDialog> {
               const SizedBox(height: 12),
               Expanded(
                 child: ClipRRect(
-                  borderRadius: BorderRadius.circular(4),
+                  borderRadius: BorderRadius.circular(AppRadius.md),
                   child: Crop(
                     image: widget.imageBytes,
                     controller: _controller,

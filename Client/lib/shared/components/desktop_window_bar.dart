@@ -19,7 +19,7 @@ class DesktopWindowBar extends StatelessWidget {
     if (!enabled) return const SizedBox.shrink();
     final colors = BonfireThemeExtension.of(context);
     return Material(
-      color: colors.background,
+      color: colors.canvas,
       child: SizedBox(
         height: 32,
         child: Row(

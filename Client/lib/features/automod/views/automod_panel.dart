@@ -1,3 +1,4 @@
+import 'package:bonfire/shared/components/surface_card.dart';
 import 'package:bonfire/l10n/app_strings.dart';
 import 'package:bonfire/l10n/ui_copy.dart';
 import 'dart:async';
@@ -468,9 +469,14 @@ class _AutomodWorkbenchState extends State<AutomodWorkbench> {
     final permissions = automodList(
       policy['exempt_permissions'],
     ).map((v) => '$v').toSet();
+    final theme = Theme.of(context);
+    final heading = theme.textTheme.labelLarge?.copyWith(
+      fontWeight: FontWeight.w600,
+    );
+    // Grouped into cards: detector health, scanning, exemptions, rules.
     return ListView(
       padding: const EdgeInsets.all(16),
-      children: [
+      children: surfaceCardsFromSections(padding: const EdgeInsets.all(16), [
         if (_health != null)
           Text(
             AppStrings.choose(
@@ -495,16 +501,22 @@ class _AutomodWorkbenchState extends State<AutomodWorkbench> {
         if (_health != null && _health!['scanner'] != 'ready')
           Text(UiCopy.askTheServerOperatorToInstallConfigure()),
         if (_inherited) Text(UiCopy.usingTheServerPolicySavingCreatesA()),
+        const Divider(),
         SwitchListTile(
           contentPadding: EdgeInsets.zero,
           title: Text(UiCopy.enableAutomaticScanning()),
           value: policy['enabled'] == true,
           onChanged: _busy ? null : (v) => _edit(() => policy['enabled'] = v),
         ),
-        Text(UiCopy.explicitFileBlocksAndUploadLimitsWork()),
+        Text(
+          UiCopy.explicitFileBlocksAndUploadLimitsWork(),
+          style: theme.textTheme.bodySmall,
+        ),
+        const SizedBox(height: 12),
         TextFormField(
           key: ObjectKey(policy),
-          initialValue: '${policy['retention_days']}',
+          // A server that omits the value must show an empty field, not "null".
+          initialValue: policy['retention_days']?.toString() ?? '',
           keyboardType: TextInputType.number,
           decoration: InputDecoration(
             labelText: UiCopy.keepHeldEvidenceDays190(),
@@ -512,10 +524,12 @@ class _AutomodWorkbenchState extends State<AutomodWorkbench> {
           onChanged: (v) =>
               _edit(() => policy['retention_days'] = int.tryParse(v)),
         ),
-        const SizedBox(height: 12),
-        Text(UiCopy.exemptRoles()),
+        const Divider(),
+        Text(UiCopy.exemptRoles(), style: heading),
+        const SizedBox(height: 8),
         Wrap(
           spacing: 6,
+          runSpacing: 6,
           children: [
             for (final role in widget.roles)
               FilterChip(
@@ -546,9 +560,12 @@ class _AutomodWorkbenchState extends State<AutomodWorkbench> {
               ),
           ],
         ),
-        Text(UiCopy.exemptPermissions()),
+        const SizedBox(height: 16),
+        Text(UiCopy.exemptPermissions(), style: heading),
+        const SizedBox(height: 8),
         Wrap(
           spacing: 6,
+          runSpacing: 6,
           children: [
             for (final permission in {
               ...permissions,
@@ -572,8 +589,9 @@ class _AutomodWorkbenchState extends State<AutomodWorkbench> {
               ),
           ],
         ),
-        const SizedBox(height: 12),
-        Text(UiCopy.rulesRunInOrderTheFirstMatch()),
+        const Divider(),
+        Text(UiCopy.rulesRunInOrderTheFirstMatch(), style: heading),
+        const SizedBox(height: 8),
         for (var i = 0; i < rules.length; i++)
           Card(
             child: ListTile(
@@ -659,7 +677,7 @@ class _AutomodWorkbenchState extends State<AutomodWorkbench> {
               ),
           ],
         ),
-      ],
+      ]),
     );
   }
 

@@ -1,3 +1,4 @@
+import 'package:bonfire/shared/components/leading_icon.dart';
 import 'package:bonfire/features/authentication/models/accord_auth_state.dart';
 import 'package:bonfire/features/authentication/models/accord_session.dart';
 import 'package:bonfire/features/authentication/repositories/accord_auth.dart';
@@ -7,6 +8,7 @@ import 'package:bonfire/features/server/views/add_server_dialog.dart';
 import 'package:bonfire/l10n/app_strings.dart';
 import 'package:bonfire/shared/components/section_header.dart';
 import 'package:bonfire/theme/theme.dart';
+import 'package:bonfire/shared/app_info.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -120,7 +122,7 @@ class _ServerAccountsSectionState extends ConsumerState<ServerAccountsSection> {
             onEdit: () => _edit(session),
           ),
         ListTile(
-          leading: Icon(Icons.add, color: colors.dirtyWhite),
+          leading: LeadingIcon(Icons.add),
           title: Text(AppStrings.choose('Add server', '添加服务器', context: context)),
           onTap: () => showAddServerDialog(context),
         ),
@@ -246,7 +248,7 @@ class _ServerAddressDialogState extends State<_ServerAddressDialog> {
         autofocus: true,
         keyboardType: TextInputType.url,
         decoration: InputDecoration(
-          hintText: 'https://vokusz.shiinasuki.com',
+          hintText: kDefaultAccordServerUrl,
           border: const OutlineInputBorder(),
         ),
         onSubmitted: (_) => Navigator.of(context).pop(_controller.text.trim()),

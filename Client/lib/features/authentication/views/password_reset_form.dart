@@ -84,22 +84,18 @@ class PasswordResetForm extends StatelessWidget {
           height: 50,
           child: ElevatedButton(
             onPressed: enabled ? onSubmit : null,
+            // The theme's solid accent action.
             style: ElevatedButton.styleFrom(
-              elevation: 0,
-              backgroundColor: BonfireThemeExtension.of(context).background,
-              foregroundColor: BonfireThemeExtension.of(context).dirtyWhite,
-              side: BorderSide(
-                color: BonfireThemeExtension.of(context).primary,
-              ),
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(4),
+                borderRadius: BorderRadius.circular(AppRadius.lg),
               ),
             ),
             child: enabled
                 ? Text(
                     UiCopy.changePassword(context: context),
                     style: theme.textTheme.titleSmall!.copyWith(
-                      color: BonfireThemeExtension.of(context).dirtyWhite,
+                      color: BonfireThemeExtension.of(context).onPrimary,
+                      fontWeight: FontWeight.w600,
                     ),
                   )
                 : const SizedBox(

@@ -353,9 +353,13 @@ class _OnboardingCard extends StatelessWidget {
     final isLast = index == total - 1;
 
     return Material(
-      color: colors.foreground,
+      color: colors.sheet,
       elevation: 12,
-      borderRadius: BorderRadius.circular(14),
+      shadowColor: colors.shadow,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(AppRadius.xl),
+        side: BorderSide(color: colors.hairline),
+      ),
       clipBehavior: Clip.antiAlias,
       child: Padding(
         padding: const EdgeInsets.fromLTRB(20, 18, 12, 10),

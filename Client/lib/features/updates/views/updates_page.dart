@@ -1,3 +1,4 @@
+import 'package:bonfire/shared/components/leading_icon.dart';
 import 'package:bonfire/l10n/ui_copy.dart';
 import 'package:bonfire/features/settings/controllers/settings.dart';
 import 'package:bonfire/shared/components/async_state_views.dart';
@@ -54,7 +55,7 @@ class UpdatesScreen extends ConsumerWidget {
           // Re-open the post-update "What's new" notes on demand, so dismissing
           // the startup dialog isn't the only chance to read them (#183).
           ListTile(
-            leading: const Icon(Icons.auto_awesome),
+            leading: const LeadingIcon(Icons.auto_awesome),
             title: Text(UiCopy.whatSNewInThisVersion(context: context)),
             subtitle: Text(
               UiCopy.releaseNotesForTheBuildYouRe(context: context),

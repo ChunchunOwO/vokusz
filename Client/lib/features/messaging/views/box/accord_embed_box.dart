@@ -149,6 +149,8 @@ class AccordEmbedBox extends StatelessWidget {
                   child: CachedNetworkImage(
                     imageUrl: safeUrl,
                     fit: BoxFit.contain,
+                    // Decode at the slot's width, not the source's.
+                    memCacheWidth: _decodeWidth(context, _maxImageWidth),
                     errorWidget: (_, _, _) => const SizedBox.shrink(),
                   ),
                 ),
@@ -169,8 +171,9 @@ class AccordEmbedBox extends StatelessWidget {
       margin: const EdgeInsets.only(top: 4),
       constraints: const BoxConstraints(maxWidth: 460),
       decoration: BoxDecoration(
-        color: colors.foreground,
-        borderRadius: BorderRadius.circular(6),
+        // Recessed into the conversation sheet it sits on.
+        color: colors.inset,
+        borderRadius: BorderRadius.circular(AppRadius.md),
         border: Border(left: BorderSide(color: borderColor, width: 4)),
       ),
       padding: const EdgeInsets.all(12),
@@ -194,6 +197,12 @@ class AccordEmbedBox extends StatelessWidget {
                         imageUrl: safeUrl,
                         width: _thumbnailSize,
                         height: _thumbnailSize,
+                        // Cover-cropped: leave room for a wide source to
+                        // still fill the square's height.
+                        memCacheWidth: _decodeWidth(
+                          context,
+                          _thumbnailSize * 3,
+                        ),
                         fit: BoxFit.cover,
                         errorWidget: (_, _, _) => const SizedBox.shrink(),
                       ),
@@ -388,6 +397,7 @@ class _VideoPoster extends StatelessWidget {
                 CachedNetworkImage(
                   imageUrl: imageUrl,
                   fit: BoxFit.contain,
+                  memCacheWidth: _decodeWidth(context, 400),
                   errorWidget: (_, _, _) => const SizedBox.shrink(),
                 ),
                 Container(
@@ -410,3 +420,9 @@ class _VideoPoster extends StatelessWidget {
     );
   }
 }
+
+/// Device pixels across [logicalWidth], used to cap how wide an embed image is
+/// decoded. Width only, so aspect ratios (and layout) are unchanged; images
+/// smaller than this are never upscaled.
+int _decodeWidth(BuildContext context, double logicalWidth) =>
+    (logicalWidth * MediaQuery.devicePixelRatioOf(context)).round();

@@ -6,6 +6,7 @@ import 'package:bonfire/features/voice/views/incoming_call_overlay.dart';
 import 'package:bonfire/features/presence/rich_presence_host.dart';
 import 'package:bonfire/features/voice/views/voice_desktop_extras.dart';
 import 'package:bonfire/shared/components/desktop_window_bar.dart';
+import 'package:bonfire/theme/app_theme.dart';
 import 'package:bonfire/theme/theme.dart';
 import 'package:flutter/material.dart';
 import 'package:window_manager/window_manager.dart';
@@ -86,12 +87,16 @@ Widget buildAppShell(
             clipBehavior: Clip.antiAlias,
             child: ColoredBox(
               color: colors.background,
-              child: const Column(
-                children: [
-                  VoiceDesktopExtras(),
-                  RichPresenceHost(),
-                  Expanded(child: CompactVoiceWindow()),
-                ],
+              // The compact window keeps its original control styling.
+              child: Theme(
+                data: compactWindowTheme(Theme.of(context)),
+                child: const Column(
+                  children: [
+                    VoiceDesktopExtras(),
+                    RichPresenceHost(),
+                    Expanded(child: CompactVoiceWindow()),
+                  ],
+                ),
               ),
             ),
           ),

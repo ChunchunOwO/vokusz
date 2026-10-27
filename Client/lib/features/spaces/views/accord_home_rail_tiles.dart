@@ -151,7 +151,7 @@ class _DraggableSpace extends StatelessWidget {
   }
 }
 
-class _SpaceIcon extends ConsumerWidget {
+class _SpaceIcon extends ConsumerStatefulWidget {
   const _SpaceIcon({
     required this.space,
     required this.selected,
@@ -174,7 +174,20 @@ class _SpaceIcon extends ConsumerWidget {
   final String serverKey;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_SpaceIcon> createState() => _SpaceIconState();
+}
+
+class _SpaceIconState extends ConsumerState<_SpaceIcon> {
+  bool _hovered = false;
+
+  AccordSpace get space => widget.space;
+  bool get selected => widget.selected;
+  String? get cdnUrl => widget.cdnUrl;
+  VoidCallback? get onTap => widget.onTap;
+  String get serverKey => widget.serverKey;
+
+  @override
+  Widget build(BuildContext context) {
     final colors = BonfireThemeExtension.of(context);
     // Roll up this server's per-channel read state into a single rail-level
     // indicator. Keyed by [serverKey] so each server's badge reflects its own
@@ -224,57 +237,80 @@ class _SpaceIcon extends ConsumerWidget {
                 )
                 ?.isUnreachable ??
             false);
-    final radius = BorderRadius.circular(4);
+    final active = selected || (_hovered && onTap != null);
+    final duration = AppMotion.of(context, AppMotion.medium);
     // No Tooltip here: in the rail, [RailDraggable] owns the name tooltip (its
     // long-press trigger must not compete with the drag / menu gesture), and
     // the other host — the hidden-servers sheet — prints the name beside it.
     return Center(
-      child: GestureDetector(
-        onTap: onTap,
-        child: Stack(
-          clipBehavior: Clip.none,
-          children: [
-            Opacity(
-              opacity: unreachable ? 0.4 : 1.0,
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 120),
-                width: 48,
-                height: 48,
-                clipBehavior: Clip.antiAlias,
-                decoration: BoxDecoration(
-                  color: colors.foreground,
-                  borderRadius: radius,
-                  border: Border.all(
-                    color: selected ? colors.primary : colors.darkGray,
-                    width: selected ? 2 : 1,
+      child: MouseRegion(
+        cursor: onTap == null ? MouseCursor.defer : SystemMouseCursors.click,
+        onEnter: (_) => setState(() => _hovered = true),
+        onExit: (_) => setState(() => _hovered = false),
+        child: GestureDetector(
+          onTap: onTap,
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Opacity(
+                opacity: unreachable ? 0.4 : 1.0,
+                // A circle at rest that squares off when hovered or selected.
+                child: AnimatedContainer(
+                  duration: duration,
+                  curve: AppMotion.curve,
+                  width: 48,
+                  height: 48,
+                  clipBehavior: Clip.antiAlias,
+                  decoration: BoxDecoration(
+                    color: active ? colors.primary : colors.sheet,
+                    borderRadius: BorderRadius.circular(
+                      active ? AppRadius.xl : 24,
+                    ),
+                  ),
+                  alignment: Alignment.center,
+                  child: _SpaceIconImage(
+                    space: space,
+                    cdnUrl: cdnUrl,
+                    initialsColor: active ? colors.onPrimary : null,
                   ),
                 ),
-                alignment: Alignment.center,
-                child: _SpaceIconImage(space: space, cdnUrl: cdnUrl),
               ),
-            ),
-            if (mentions > 0)
-              Positioned(
-                right: -4,
-                top: -2,
-                child: _MentionBadge(count: mentions),
-              )
-            else if (hasUnread)
-              Positioned(
-                left: -4,
-                top: 18,
-                child: Container(
-                  width: 8,
-                  height: 12,
-                  decoration: const BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.horizontal(
-                      right: Radius.circular(4),
+              // The rail's indicator pill: a dot for unread, a short bar on
+              // hover, a tall one for the space you are in.
+              if (onTap != null)
+                Positioned(
+                  left: -12,
+                  top: 0,
+                  bottom: 0,
+                  child: Center(
+                    child: AnimatedContainer(
+                      duration: duration,
+                      curve: AppMotion.curve,
+                      width: 4,
+                      height: selected
+                          ? 36
+                          : _hovered
+                          ? 20
+                          : hasUnread
+                          ? 8
+                          : 0,
+                      decoration: BoxDecoration(
+                        color: selected ? colors.primary : colors.emphasis,
+                        borderRadius: const BorderRadius.horizontal(
+                          right: Radius.circular(4),
+                        ),
+                      ),
                     ),
                   ),
                 ),
-              ),
-          ],
+              if (mentions > 0)
+                Positioned(
+                  right: -4,
+                  bottom: -2,
+                  child: _MentionBadge(count: mentions),
+                ),
+            ],
+          ),
         ),
       ),
     );
@@ -288,11 +324,15 @@ class _SpaceIconImage extends StatelessWidget {
     required this.space,
     required this.cdnUrl,
     this.size = 48,
+    this.initialsColor,
   });
 
   final AccordSpace space;
   final String? cdnUrl;
   final double size;
+
+  /// Colour for the initials fallback; defaults to the body text colour.
+  final Color? initialsColor;
 
   String get _initials {
     final name = space.name.trim();
@@ -310,8 +350,9 @@ class _SpaceIconImage extends StatelessWidget {
       child: Text(
         _initials,
         style: Theme.of(context).textTheme.titleSmall!.copyWith(
-          color: BonfireThemeExtension.of(context).dirtyWhite,
+          color: initialsColor ?? BonfireThemeExtension.of(context).dirtyWhite,
           fontSize: size < 48 ? size / 2 : null,
+          fontWeight: FontWeight.w600,
         ),
       ),
     );
@@ -336,7 +377,7 @@ class _SpaceIconImage extends StatelessWidget {
 /// button): a dark round background with a single icon and a tooltip. Backs
 /// the DM, add-server and hidden-servers affordances below, which differ only
 /// in tooltip, icon, icon size and icon color.
-class _RailIconTile extends StatelessWidget {
+class _RailIconTile extends StatefulWidget {
   const _RailIconTile({
     required this.tooltip,
     required this.icon,
@@ -358,52 +399,76 @@ class _RailIconTile extends StatelessWidget {
   final int mentionCount;
 
   @override
+  State<_RailIconTile> createState() => _RailIconTileState();
+}
+
+class _RailIconTileState extends State<_RailIconTile> {
+  bool _hovered = false;
+
+  @override
   Widget build(BuildContext context) {
     final colors = BonfireThemeExtension.of(context);
+    final tint = widget.iconColor ?? colors.primary;
+    final mentionCount = widget.mentionCount;
+    final hasUnread = widget.hasUnread;
     return Center(
       child: Tooltip(
-        message: tooltip,
-        child: GestureDetector(
-          onTap: onTap,
+        message: widget.tooltip,
+        child: MouseRegion(
+          cursor: SystemMouseCursors.click,
+          onEnter: (_) => setState(() => _hovered = true),
+          onExit: (_) => setState(() => _hovered = false),
+          child: GestureDetector(
+          onTap: widget.onTap,
           child: Stack(
             clipBehavior: Clip.none,
             children: [
-              Container(
+              // Fills with its own colour on hover, the way a space squares off.
+              AnimatedContainer(
+                duration: AppMotion.of(context, AppMotion.medium),
+                curve: AppMotion.curve,
                 width: 48,
                 height: 48,
                 decoration: BoxDecoration(
-                  color: colors.foreground,
-                  borderRadius: BorderRadius.circular(4),
-                  border: Border.all(color: colors.darkGray, width: 1),
+                  color: _hovered ? tint : colors.sheet,
+                  borderRadius: BorderRadius.circular(
+                    _hovered ? AppRadius.xl : 24,
+                  ),
                 ),
                 alignment: Alignment.center,
                 child: Icon(
-                  icon,
-                  size: iconSize,
-                  color: iconColor ?? colors.dirtyWhite,
+                  widget.icon,
+                  size: widget.iconSize,
+                  color: _hovered
+                      ? (tint.computeLuminance() > 0.179
+                            ? Colors.black
+                            : Colors.white)
+                      : (widget.iconColor ?? colors.dirtyWhite),
                 ),
               ),
               if (mentionCount > 0)
                 Positioned(
                   right: -4,
-                  top: -2,
+                  bottom: -2,
                   child: _MentionBadge(count: mentionCount),
                 )
               else if (hasUnread)
                 Positioned(
-                  right: -3,
-                  top: -3,
+                  right: -1,
+                  bottom: -1,
                   child: Container(
-                    width: 10,
-                    height: 10,
+                    width: 12,
+                    height: 12,
                     decoration: BoxDecoration(
                       color: colors.red,
                       shape: BoxShape.circle,
+                      border: Border.all(color: colors.canvas, width: 2),
                     ),
                   ),
                 ),
             ],
           ),
+        ),
         ),
       ),
     );

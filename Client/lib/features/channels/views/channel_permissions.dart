@@ -432,7 +432,7 @@ class _ChannelPermissionsDialogState
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         SizedBox(width: 200, child: _buildEntityPane(compact: false)),
-        VerticalDivider(width: 1, color: colors.background),
+        VerticalDivider(width: 1, color: colors.hairline),
         Expanded(child: _buildEditorPane(compact: false)),
       ],
     );
@@ -445,7 +445,7 @@ class _ChannelPermissionsDialogState
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         _buildEntityPane(compact: true),
-        Divider(height: 1, color: colors.background),
+        Divider(height: 1, color: colors.hairline),
         Expanded(child: _buildEditorPane(compact: true)),
       ],
     );
@@ -467,11 +467,9 @@ class _ChannelPermissionsDialogState
 
   Widget _buildEditorPane({required bool compact}) {
     if (_selectedId == null) {
-      return Center(
-        child: Text(
-          UiCopy.selectARoleOrMember(context: context),
-          style: Theme.of(context).textTheme.bodyMedium,
-        ),
+      return EmptyStateView(
+        icon: Icons.tune,
+        message: UiCopy.selectARoleOrMember(context: context),
       );
     }
     return _OverwriteEditorPane(
@@ -498,7 +496,7 @@ class _Header extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.fromLTRB(20, 16, 12, 16),
       decoration: BoxDecoration(
-        border: Border(bottom: BorderSide(color: colors.background, width: 1)),
+        border: Border(bottom: BorderSide(color: colors.hairline)),
       ),
       child: Row(
         children: [
@@ -540,7 +538,7 @@ class _Footer extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.fromLTRB(20, 12, 20, 16),
       decoration: BoxDecoration(
-        border: Border(top: BorderSide(color: colors.background, width: 1)),
+        border: Border(top: BorderSide(color: colors.hairline)),
       ),
       // OverflowBar wraps Reset/Save onto two lines when large text scale
       // makes them too wide for a phone, instead of overflowing.
@@ -733,12 +731,12 @@ class _EntityRowState extends State<_EntityRow> {
       style: theme.textTheme.bodyMedium!.copyWith(color: color),
     );
     return Material(
-      color: selected ? colors.darkGray : Colors.transparent,
+      color: selected ? colors.selectedFill : Colors.transparent,
       shape: RoundedRectangleBorder(
         borderRadius: radius,
         // Unselected chips need an outline to read as tappable in the strip.
         side: compact
-            ? BorderSide(color: selected ? color : colors.darkGray)
+            ? BorderSide(color: selected ? color : colors.hairline)
             : BorderSide.none,
       ),
       child: InkWell(

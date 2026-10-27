@@ -95,17 +95,23 @@ class _VoiceBarState extends ConsumerState<VoiceBar> {
 
     final (statusText, statusColor) = _status(voice, colors, channelName);
 
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: colors.background,
-        border: Border(top: BorderSide(color: colors.darkGray)),
+    // A raised card at the foot of the channel list, like the conversation
+    // sheet it controls.
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(8, 4, 8, 8),
+      child: Material(
+      color: colors.sheet,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(AppRadius.lg),
+        side: BorderSide(color: colors.hairline),
       ),
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(10, 6, 6, 6),
+        padding: const EdgeInsets.fromLTRB(10, 8, 6, 8),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             InkWell(
+              borderRadius: BorderRadius.circular(AppRadius.sm),
               onTap: widget.onTapStatus,
               child: Padding(
                 padding: const EdgeInsets.symmetric(vertical: 2),
@@ -230,6 +236,7 @@ class _VoiceBarState extends ConsumerState<VoiceBar> {
           ],
         ),
       ),
+      ),
     );
   }
 
@@ -313,12 +320,15 @@ class _VoiceButton extends StatelessWidget {
       padding: const EdgeInsets.only(right: 2),
       child: GestureDetector(
         onSecondaryTap: onSecondaryPressed,
-        child: DecoratedBox(
+        // A toggled control is a soft fill in its colour rather than an
+        // outline.
+        child: AnimatedContainer(
+          duration: AppMotion.of(context, AppMotion.fast),
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(4),
-            border: Border.all(
-              color: active ? activeColor : Colors.transparent,
-            ),
+            borderRadius: BorderRadius.circular(AppRadius.sm),
+            color: active
+                ? activeColor.withValues(alpha: 0.18)
+                : activeColor.withValues(alpha: 0),
           ),
           child: IconButton(
             tooltip: tooltip,

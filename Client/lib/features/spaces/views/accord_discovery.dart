@@ -94,7 +94,7 @@ class _DiscoveryPanel extends StatelessWidget {
     final colors = BonfireThemeExtension.of(context);
     return Dialog(
       backgroundColor: colors.foreground,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.md)),
       child: ConstrainedBox(
         constraints: dialogConstraints(context, maxWidth: 560, maxHeight: 600),
         child: Column(
@@ -514,15 +514,15 @@ class _SparseDirectoryNote extends StatelessWidget {
       margin: const EdgeInsets.only(top: 4),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: colors.background,
-        borderRadius: BorderRadius.circular(4),
+        color: colors.accentSoft,
+        borderRadius: BorderRadius.circular(AppRadius.lg),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Icon(Icons.info_outline, size: 18, color: colors.dirtyWhite),
+              Icon(Icons.info_outline, size: 18, color: colors.primary),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
@@ -562,7 +562,7 @@ class _ConnectFooter extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
       decoration: BoxDecoration(
-        border: Border(top: BorderSide(color: colors.background)),
+        border: Border(top: BorderSide(color: colors.hairline)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -735,7 +735,7 @@ class _DiscoveryCard extends StatelessWidget {
                             ),
                             decoration: BoxDecoration(
                               color: colors.darkGray,
-                              borderRadius: BorderRadius.circular(4),
+                              borderRadius: BorderRadius.circular(AppRadius.md),
                             ),
                             child: Text(
                               tag,

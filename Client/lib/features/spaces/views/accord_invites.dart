@@ -335,11 +335,9 @@ class _InvitesDialogState extends ConsumerState<_InvitesDialog>
                   : invites.isEmpty
                   ? Padding(
                       padding: const EdgeInsets.all(32),
-                      child: Center(
-                        child: Text(
-                          UiCopy.noActiveInvites(context: context),
-                          style: theme.textTheme.bodyMedium,
-                        ),
+                      child: EmptyStateView(
+                        icon: Icons.link,
+                        message: UiCopy.noActiveInvites(context: context),
                       ),
                     )
                   : Builder(
@@ -355,11 +353,9 @@ class _InvitesDialogState extends ConsumerState<_InvitesDialog>
                         if (filtered.isEmpty) {
                           return Padding(
                             padding: const EdgeInsets.all(32),
-                            child: Center(
-                              child: Text(
-                                UiCopy.noMatches(context: context),
-                                style: theme.textTheme.bodyMedium,
-                              ),
+                            child: EmptyStateView(
+                              icon: Icons.search_off,
+                              message: UiCopy.noMatches(context: context),
                             ),
                           );
                         }

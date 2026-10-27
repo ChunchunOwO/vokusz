@@ -56,14 +56,13 @@ class TermsGateView extends StatelessWidget {
           height: 50,
           child: ElevatedButton(
             onPressed: onAccept,
+            // The theme's solid accent action.
             style: ElevatedButton.styleFrom(
-              elevation: 0,
-              backgroundColor: colors.background,
-              foregroundColor: colors.dirtyWhite,
-              textStyle: theme.textTheme.titleSmall,
-              side: BorderSide(color: colors.primary),
+              textStyle: theme.textTheme.titleSmall?.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(4),
+                borderRadius: BorderRadius.circular(AppRadius.lg),
               ),
             ),
             child: Text(UiCopy.agreeAndContinue(context: context)),
@@ -101,8 +100,8 @@ class AppTermsBody extends StatelessWidget {
       height: height,
       decoration: BoxDecoration(
         color: colors.foreground,
-        borderRadius: BorderRadius.circular(4),
-        border: Border.all(color: colors.darkGray),
+        borderRadius: BorderRadius.circular(AppRadius.md),
+        border: Border.all(color: colors.hairline),
       ),
       padding: const EdgeInsets.all(16),
       child: Scrollbar(

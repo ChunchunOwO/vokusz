@@ -70,6 +70,7 @@ import 'package:bonfire/features/voice/views/voice_participants.dart';
 import 'package:bonfire/features/voice/views/voice_pip_overlay.dart';
 import 'package:bonfire/theme/theme.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:bonfire/shared/components/animated_reveal.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart' show SchedulerPhase;
 import 'package:flutter/services.dart';
@@ -621,30 +622,50 @@ class _AccordHomeScreenState extends ConsumerState<AccordHomeScreen> {
       ),
     );
 
-    // [membersButton] is the escape hatch for the medium layout, where the
-    // roster has been pushed into the end drawer to keep the message column
-    // readable; the wide layout keeps it inline and passes false.
-    Widget messageArea({required bool membersButton}) => Column(
-      children: [
-        Row(
-          children: [
-            Expanded(child: _TabStrip(onSelect: _selectTab)),
-            if (membersButton)
-              IconButton(
-                tooltip: AppStrings.of(context).members,
-                icon: Icon(Icons.people_alt_outlined, color: colors.dirtyWhite),
-                onPressed: () => _scaffoldKey.currentState?.openEndDrawer(),
-              ),
-          ],
+    // On the inline layouts the conversation is a raised sheet floating on the
+    // canvas that holds the navigation (rail, channel list, roster), so the
+    // panes read as one surface plus its navigation rather than four strips.
+    // On the inline layouts the conversation and its roster share one content
+    // surface that runs to the window edge, set into the navigation canvas by
+    // a single rounded corner — one surface plus its navigation, rather than
+    // a card floating beside a separate column.
+    Widget sheet(Widget child) => Material(
+      // A Material, not a coloured box, so ink inside it paints on it.
+      color: colors.sheet,
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(
+        borderRadius: const BorderRadius.only(
+          topLeft: Radius.circular(AppRadius.lg),
         ),
-        Expanded(
-          child: MessagePane(
-            channel: channels?.firstWhereOrNull((c) => c.id == shownChannelId),
-            channelId: shownChannelId,
-            spaceId: effectiveSpaceId,
-          ),
-        ),
-      ],
+        side: BorderSide(color: colors.hairline),
+      ),
+      child: child,
+    );
+
+    // The members toggle lives in the channel header: it shows and hides the
+    // inline roster on the wide layout, and opens the roster drawer on the
+    // medium one.
+    Widget membersToggle({required bool inline}) => IconButton(
+      tooltip: AppStrings.of(context).members,
+      onPressed: inline
+          ? () => setState(() => _memberListVisible = !_memberListVisible)
+          : () => _scaffoldKey.currentState?.openEndDrawer(),
+      icon: Icon(
+        _memberListVisible && inline
+            ? Icons.people_alt
+            : Icons.people_alt_outlined,
+        size: 18,
+        color: _memberListVisible && inline
+            ? colors.primary
+            : colors.dirtyWhite,
+      ),
+    );
+
+    Widget messagePane({Widget? membersAction}) => MessagePane(
+      channel: channels?.firstWhereOrNull((c) => c.id == shownChannelId),
+      channelId: shownChannelId,
+      spaceId: effectiveSpaceId,
+      headerActions: [?membersAction],
     );
 
     final pip = VoicePipOverlay(
@@ -659,7 +680,7 @@ class _AccordHomeScreenState extends ConsumerState<AccordHomeScreen> {
     Widget? memberEndDrawer() => hasMembers
         ? Drawer(
             width: 260,
-            backgroundColor: colors.background,
+            backgroundColor: colors.canvas,
             child: SafeArea(
               child: AccordMemberList(
                 spaceId: effectiveSpaceId,
@@ -684,6 +705,47 @@ class _AccordHomeScreenState extends ConsumerState<AccordHomeScreen> {
         );
         if (layout.showsSidebarInline) {
           final channelWidth = layout.channelListWidth;
+          final rosterInline = layout.showsMemberListInline && hasMembers;
+          final content = sheet(
+            Column(
+              children: [
+                _TabStrip(onSelect: _selectTab),
+                Expanded(
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Expanded(
+                        child: messagePane(
+                          membersAction: hasMembers
+                              ? membersToggle(inline: rosterInline)
+                              : null,
+                        ),
+                      ),
+                      if (rosterInline)
+                        AnimatedReveal(
+                          open: _memberListVisible,
+                          axis: Axis.horizontal,
+                          child: DecoratedBox(
+                            decoration: BoxDecoration(
+                              border: Border(
+                                left: BorderSide(color: colors.hairline),
+                              ),
+                            ),
+                            child: AccordMemberList(
+                              spaceId: effectiveSpaceId,
+                              showHeader: true,
+                              channel: channels?.firstWhereOrNull(
+                                (c) => c.id == shownChannelId,
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          );
           final panes = Stack(
             children: [
               Row(
@@ -710,32 +772,20 @@ class _AccordHomeScreenState extends ConsumerState<AccordHomeScreen> {
                       setState(() => _dragChannelWidth = null);
                     },
                   ),
-                  Expanded(
-                    child: messageArea(
-                      membersButton:
-                          hasMembers && !layout.showsMemberListInline,
-                    ),
-                  ),
-                  if (layout.showsMemberListInline &&
-                      hasMembers &&
-                      _memberListVisible)
-                    AccordMemberList(
-                      spaceId: effectiveSpaceId,
-                      channel: channels?.firstWhereOrNull(
-                        (c) => c.id == shownChannelId,
-                      ),
-                    ),
+                  Expanded(child: content),
                 ],
               ),
               pip,
             ],
           );
-          if (layout.showsMemberListInline) return panes;
+          if (layout.showsMemberListInline) {
+            return ColoredBox(color: colors.canvas, child: panes);
+          }
           // Medium: the roster is an end drawer, so this half of the tree needs
           // its own Scaffold to host it.
           return Scaffold(
             key: _scaffoldKey,
-            backgroundColor: colors.background,
+            backgroundColor: colors.canvas,
             endDrawer: memberEndDrawer(),
             body: panes,
           );
@@ -763,11 +813,11 @@ class _AccordHomeScreenState extends ConsumerState<AccordHomeScreen> {
           },
           child: Scaffold(
             key: _scaffoldKey,
-            backgroundColor: colors.background,
+            backgroundColor: colors.sheet,
             drawerEdgeDragWidth: 48,
             drawer: Drawer(
               width: 292,
-              backgroundColor: colors.background,
+              backgroundColor: colors.canvas,
               child: SafeArea(
                 child: Row(
                   children: [
@@ -818,15 +868,7 @@ class _AccordHomeScreenState extends ConsumerState<AccordHomeScreen> {
                               ),
                           ],
                         ),
-                        Expanded(
-                          child: MessagePane(
-                            channel: channels?.firstWhereOrNull(
-                              (c) => c.id == shownChannelId,
-                            ),
-                            channelId: shownChannelId,
-                            spaceId: effectiveSpaceId,
-                          ),
-                        ),
+                        Expanded(child: messagePane()),
                       ],
                     ),
                   ),

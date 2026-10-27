@@ -476,8 +476,12 @@ class _DirectMessagesDialogState extends ConsumerState<_DirectMessagesDialog>
     final theme = Theme.of(context);
     final openChannel = _openChannel;
     final dialog = Dialog(
-      backgroundColor: colors.foreground,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      backgroundColor: colors.sheet,
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(AppRadius.xl),
+        side: BorderSide(color: colors.hairline),
+      ),
       child: ConstrainedBox(
         constraints: dialogConstraints(context, maxWidth: 900, maxHeight: 720),
         child: openChannel != null

@@ -195,7 +195,7 @@ class _ScreenShareSourceDialogState
 
     return Dialog(
       backgroundColor: colors.foreground,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.md)),
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 640, maxHeight: 600),
         child: Column(
@@ -326,7 +326,7 @@ class _ScreenShareSourceDialogState
                       onTap: () => setState(
                         () => _shareSystemAudio = !_shareSystemAudio,
                       ),
-                      borderRadius: BorderRadius.circular(4),
+                      borderRadius: BorderRadius.circular(AppRadius.md),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
@@ -385,12 +385,12 @@ class _SourceTile extends StatelessWidget {
     final thumbnail = source.thumbnail;
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(4),
+      borderRadius: BorderRadius.circular(AppRadius.md),
       child: Container(
         padding: const EdgeInsets.all(6),
         decoration: BoxDecoration(
-          color: colors.background,
-          borderRadius: BorderRadius.circular(4),
+          color: selected ? colors.accentSoft : colors.inset,
+          borderRadius: BorderRadius.circular(AppRadius.lg),
           border: Border.all(
             width: 2,
             color: selected ? colors.primary : Colors.transparent,

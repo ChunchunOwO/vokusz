@@ -61,9 +61,19 @@ class AccordMemberAvatar extends StatelessWidget {
           TickerAwareCircleAvatar(
             radius: radius,
             backgroundColor: bg,
+            // Decoded near display size rather than at the uploaded resolution:
+            // a roster or message list holds dozens of these, and full-size
+            // decodes evict everything else from the image cache. Width only
+            // keeps the aspect ratio; the 2x headroom lets a non-square source
+            // still cover the circle without upscaling.
             foregroundImage: url == null
                 ? null
-                : CachedNetworkImageProvider(url),
+                : ResizeImage.resizeIfNeeded(
+                    (radius * 4 * MediaQuery.devicePixelRatioOf(context))
+                        .ceil(),
+                    null,
+                    CachedNetworkImageProvider(url),
+                  ),
             child: Text(
               initial,
               style: (initialStyle ?? theme.textTheme.labelLarge!)

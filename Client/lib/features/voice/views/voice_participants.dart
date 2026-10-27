@@ -18,23 +18,27 @@ import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-/// The list of users present in a voice [channelId], rendered beneath the
-/// channel tile in the sidebar. The avatar lines up with the channel icon.
-/// Ports the reference client's `voice_channel_item.gd` participant strip:
-/// small avatar (green ring while speaking), name in role color, and status
-/// icons for mute, deafen, camera and screen share.
+/// The list of users present in a voice [channelId], nested beneath the
+/// channel row in the sidebar on a guide line that drops from the channel icon,
+/// so the people read as *in* the channel rather than as a separate list.
+/// Avatars line up with the channel name. Ports the reference client's
+/// `voice_channel_item.gd` participant strip: small avatar (ringed while
+/// speaking), name in role color, and status icons for mute, deafen, camera
+/// and screen share.
 class VoiceParticipantList extends ConsumerWidget {
   const VoiceParticipantList({
     super.key,
     required this.channelId,
     required this.spaceId,
-    // Channel rows inset the icon by 8 + 8. The 22px avatar circle sits 2px
-    // inside its 26px slot, so 14 puts that circle's left edge on the icon.
-    this.indent = 14,
+    // Channel rows inset the icon by 8 and it is 18 wide with an 8 gap, so the
+    // channel name — and the avatars beneath it — start 34 in.
+    this.indent = 34,
   });
 
   final String channelId;
   final String? spaceId;
+
+  /// Width of the guide-line gutter; the avatar starts here.
   final double indent;
 
   @override
@@ -98,29 +102,37 @@ class VoiceParticipantList extends ConsumerWidget {
       );
 
     return Padding(
-      padding: const EdgeInsets.only(top: 8),
+      padding: const EdgeInsets.only(bottom: 4),
       child: Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        for (final vs in sorted)
-          _VoiceMemberDrag(
-            enabled: canMove,
-            data: VoiceMemberDragData(ref.readActiveServerKey() ?? '', spaceId ?? '', channelId, vs.userId),
-            name: _nameFor(vs.userId, members, users),
-            child: _ParticipantRow(
-            voiceState: vs,
-            member: members?[vs.userId],
-            user: users[vs.userId],
-            roles: roles,
-            cdnUrl: cdnUrl,
-            spaceId: spaceId,
-            speaking: speaking.contains(vs.userId),
-            afk:
-                (selfAfk && vs.userId == selfUserId) ||
-                accordPresenceStatus(presences, vs.userId) == 'idle',
-            indent: indent,
-          )),
-      ],
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          for (var i = 0; i < sorted.length; i++)
+            _VoiceMemberDrag(
+              enabled: canMove,
+              data: VoiceMemberDragData(
+                ref.readActiveServerKey() ?? '',
+                spaceId ?? '',
+                channelId,
+                sorted[i].userId,
+              ),
+              name: _nameFor(sorted[i].userId, members, users),
+              child: _ParticipantRow(
+                voiceState: sorted[i],
+                member: members?[sorted[i].userId],
+                user: users[sorted[i].userId],
+                roles: roles,
+                cdnUrl: cdnUrl,
+                spaceId: spaceId,
+                speaking: speaking.contains(sorted[i].userId),
+                afk:
+                    (selfAfk && sorted[i].userId == selfUserId) ||
+                    accordPresenceStatus(presences, sorted[i].userId) ==
+                        'idle',
+                indent: indent,
+                last: i == sorted.length - 1,
+              ),
+            ),
+        ],
       ),
     );
   }
@@ -147,7 +159,11 @@ class _ParticipantRow extends StatelessWidget {
     required this.speaking,
     required this.afk,
     required this.indent,
+    required this.last,
   });
+
+  /// Row height; the guide line is drawn against it.
+  static const double height = 30;
 
   final AccordVoiceState voiceState;
   final AccordMember? member;
@@ -160,6 +176,9 @@ class _ParticipantRow extends StatelessWidget {
   /// Away from keyboard: dims the row and adds a moon badge.
   final bool afk;
   final double indent;
+
+  /// Whether this is the last participant, where the guide line ends.
+  final bool last;
 
   @override
   Widget build(BuildContext context) {
@@ -180,16 +199,17 @@ class _ParticipantRow extends StatelessWidget {
     final initial = accordInitial(name);
 
     final row = Padding(
-      padding: EdgeInsets.fromLTRB(indent, 1, 8, 1),
+      padding: const EdgeInsets.fromLTRB(4, 0, 8, 0),
       child: Row(
         children: [
           Opacity(
             // Dimmed avatar for an away member, matching how every other chat
             // client signals "present but not here".
             opacity: afk ? 0.4 : 1,
-            child: Container(
-              width: 26,
-              height: 26,
+            child: AnimatedContainer(
+              duration: AppMotion.of(context, AppMotion.fast),
+              width: 24,
+              height: 24,
               // The border's thickness is added to [padding]. Keeping the
               // stroke when silent stops the face from jumping.
               decoration: BoxDecoration(
@@ -201,17 +221,16 @@ class _ParticipantRow extends StatelessWidget {
                   width: 2,
                 ),
               ),
-              padding: const EdgeInsets.all(1),
               child: AccordMemberAvatar(
                 avatarUrl: avatarUrl,
                 initial: initial,
-                radius: 11,
+                radius: 10,
                 backgroundColor: avatarBg,
-                initialStyle: const TextStyle(fontSize: 11),
+                initialStyle: const TextStyle(fontSize: 10),
               ),
             ),
           ),
-          const SizedBox(width: 6),
+          const SizedBox(width: 8),
           Expanded(
             child: Text(
               name,
@@ -219,6 +238,7 @@ class _ParticipantRow extends StatelessWidget {
               style: theme.textTheme.bodySmall!.copyWith(
                 color: afk ? nameColor.withValues(alpha: 0.5) : nameColor,
                 fontSize: 13,
+                fontWeight: speaking ? FontWeight.w600 : FontWeight.w500,
               ),
             ),
           ),
@@ -240,16 +260,39 @@ class _ParticipantRow extends StatelessWidget {
       ),
     );
     final id = spaceId;
-    if (id == null) return row;
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: () => showAccordMemberPopout(
-          context,
-          spaceId: id,
-          userId: voiceState.userId,
-        ),
-        child: row,
+    final content = id == null
+        ? row
+        : Material(
+            color: Colors.transparent,
+            borderRadius: BorderRadius.circular(AppRadius.sm),
+            clipBehavior: Clip.antiAlias,
+            child: InkWell(
+              onTap: () => showAccordMemberPopout(
+                context,
+                spaceId: id,
+                userId: voiceState.userId,
+              ),
+              child: row,
+            ),
+          );
+    return SizedBox(
+      height: height,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          SizedBox(
+            width: indent - 4,
+            child: CustomPaint(
+              painter: _GuidePainter(
+                color: colors.dirtyWhite.withValues(alpha: 0.18),
+                // Centre of the 18px channel icon, which sits 8 in.
+                x: 17,
+                last: last,
+              ),
+            ),
+          ),
+          Expanded(child: content),
+        ],
       ),
     );
   }
@@ -304,6 +347,48 @@ class _ParticipantRow extends StatelessWidget {
   );
 }
 
+/// One participant's stretch of the guide line: a vertical stroke dropping from
+/// the channel icon, with a rounded elbow into this row. The last row's stroke
+/// ends at its elbow, so the line stops at the last person.
+class _GuidePainter extends CustomPainter {
+  const _GuidePainter({
+    required this.color,
+    required this.x,
+    required this.last,
+  });
+
+  final Color color;
+  final double x;
+  final bool last;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    const radius = 6.0;
+    final mid = size.height / 2;
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.5
+      ..strokeCap = StrokeCap.round;
+    final end = size.width - 2;
+    final path = Path()
+      ..moveTo(x, 0)
+      ..lineTo(x, mid - radius)
+      ..quadraticBezierTo(x, mid, x + radius, mid)
+      ..lineTo(end, mid);
+    if (!last) {
+      path
+        ..moveTo(x, mid - radius)
+        ..lineTo(x, size.height);
+    }
+    canvas.drawPath(path, paint);
+  }
+
+  @override
+  bool shouldRepaint(_GuidePainter old) =>
+      old.color != color || old.x != x || old.last != last;
+}
+
 class VoiceMemberDragData {
   const VoiceMemberDragData(this.serverKey, this.spaceId, this.channelId, this.userId);
   final String serverKey;
@@ -319,12 +404,41 @@ class _VoiceMemberDrag extends StatelessWidget {
   final String name;
   final Widget child;
   @override
-  Widget build(BuildContext context) => !enabled ? child : Draggable<VoiceMemberDragData>(
-    data: data,
-    feedback: Material(elevation: 6, child: Padding(padding: const EdgeInsets.all(10), child: Text(name))),
-    childWhenDragging: Opacity(opacity: 0.4, child: child),
-    child: child,
-  );
+  Widget build(BuildContext context) {
+    if (!enabled) return child;
+    final colors = BonfireThemeExtension.of(context);
+    return Draggable<VoiceMemberDragData>(
+      data: data,
+      // A lifted chip in the sheet colour, matching the menus.
+      feedback: Material(
+        color: colors.sheet,
+        elevation: 8,
+        shadowColor: colors.shadow,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppRadius.md),
+          side: BorderSide(color: colors.hairline),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.headset_mic_outlined, size: 16, color: colors.gray),
+              const SizedBox(width: 8),
+              Text(
+                name,
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: colors.emphasis,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+      childWhenDragging: Opacity(opacity: 0.4, child: child),
+      child: child,
+    );
+  }
 }
 
 class VoiceMemberDropTarget extends ConsumerWidget {
@@ -346,8 +460,15 @@ class VoiceMemberDropTarget extends ConsumerWidget {
           ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(result.errorMessageOr(AppStrings.choose('Could not move member', '移动成员失败', context: context)))));
         }
       },
-      builder: (context, candidates, rejected) => Container(
-        color: candidates.isEmpty ? null : Theme.of(context).colorScheme.primary.withValues(alpha: 0.2),
+      // A drop target lights up with a soft accent wash as a member hovers it.
+      builder: (context, candidates, rejected) => AnimatedContainer(
+        duration: AppMotion.of(context, AppMotion.fast),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(AppRadius.md),
+          color: Theme.of(context).colorScheme.primary.withValues(
+            alpha: candidates.isEmpty ? 0 : 0.18,
+          ),
+        ),
         child: child,
       ),
     );

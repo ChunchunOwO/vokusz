@@ -86,6 +86,12 @@ class _ComposerState extends ConsumerState<_Composer> {
     // Intercept Ctrl/Cmd+V to support pasting images and large text (the
     // EditableText's own paste only handles inline text).
     _focusNode.onKeyEvent = _onComposerKey;
+    // The frame takes the accent while the field has focus.
+    _focusNode.addListener(_onFocusChanged);
+  }
+
+  void _onFocusChanged() {
+    if (mounted) setState(() {});
   }
 
   KeyEventResult _onComposerKey(FocusNode node, KeyEvent event) {
@@ -251,6 +257,7 @@ class _ComposerState extends ConsumerState<_Composer> {
     _cooldownTicker?.cancel();
     _saveDraft(widget.channelId, _controller.text);
     _controller.dispose();
+    _focusNode.removeListener(_onFocusChanged);
     _focusNode.dispose();
     super.dispose();
   }
@@ -659,15 +666,19 @@ class _ComposerState extends ConsumerState<_Composer> {
       onDragDone: _onDrop,
       child: Padding(
         padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-        child: Container(
+        child: AnimatedContainer(
+          duration: AppMotion.of(context, AppMotion.fast),
+          curve: AppMotion.curve,
           padding: const EdgeInsets.symmetric(horizontal: 8),
           decoration: BoxDecoration(
-            color: colors.darkGray,
-            borderRadius: BorderRadius.circular(4),
+            color: colors.inset,
+            borderRadius: BorderRadius.circular(AppRadius.lg),
             border: Border.all(
               color: _dragging
                   ? colors.primary
-                  : colors.gray.withValues(alpha: 0.35),
+                  : _focusNode.hasFocus
+                  ? colors.primary.withValues(alpha: 0.6)
+                  : colors.hairline,
             ),
           ),
           child: Column(
@@ -831,7 +842,13 @@ class _ComposerState extends ConsumerState<_Composer> {
                       style: Theme.of(context).textTheme.bodyLarge,
                       decoration: InputDecoration(
                         isDense: true,
+                        // The surrounding frame is the field's only border;
+                        // the theme's filled/outlined input would draw a second
+                        // box inside it.
                         border: InputBorder.none,
+                        enabledBorder: InputBorder.none,
+                        focusedBorder: InputBorder.none,
+                        filled: false,
                         hintText: hint,
                         hintStyle: Theme.of(
                           context,

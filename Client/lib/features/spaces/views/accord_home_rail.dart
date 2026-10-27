@@ -106,9 +106,16 @@ class _SpaceRail extends ConsumerWidget {
           onTap: () => showAccordDirectMessages(context),
         ),
       ),
-      Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
-        child: Divider(color: colors.darkGray, height: 2, thickness: 2),
+      Center(
+        child: Container(
+          width: 32,
+          height: 2,
+          margin: const EdgeInsets.symmetric(vertical: 6),
+          decoration: BoxDecoration(
+            color: colors.hairline,
+            borderRadius: BorderRadius.circular(1),
+          ),
+        ),
       ),
     ];
     // A drop zone for the track at [anchorId] (null = end of the list), so a
@@ -214,9 +221,8 @@ class _SpaceRail extends ConsumerWidget {
       );
     }
 
-    return Container(
+    return SizedBox(
       width: 72,
-      color: colors.background,
       child: Column(
         children: [
           Expanded(

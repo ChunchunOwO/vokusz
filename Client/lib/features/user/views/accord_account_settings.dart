@@ -107,7 +107,7 @@ class _AccountSettingsDialogState
               const SizedBox(height: 8),
               const _PasswordSection(),
               const SizedBox(height: 20),
-              Divider(height: 1, color: colors.background),
+              Divider(height: 1, color: colors.hairline),
               const SizedBox(height: 16),
               Text(
                 UiCopy.twoFactorAuthentication2(context: context),
@@ -125,7 +125,7 @@ class _AccountSettingsDialogState
                   onChanged: (v) => setState(() => _mfaEnabled = v),
                 ),
               const SizedBox(height: 20),
-              Divider(height: 1, color: colors.background),
+              Divider(height: 1, color: colors.hairline),
               const SizedBox(height: 16),
               Text(
                 UiCopy.dangerZone2(context: context),

@@ -1,10 +1,10 @@
 part of 'message_pane.dart';
 
 /// Floats [actions] over the top-right corner of [child], or renders [child]
-/// untouched when there are none. Used by narrow rows (the voice channel's chat
-/// panel), where an inline action bar would take most of the row's width; the
-/// bar is only passed in while the row is hovered, so nothing overlaps the
-/// message the rest of the time.
+/// untouched when there are none. Every desktop row uses it: an inline bar
+/// reserved its width on every message even while invisible, so text wrapped
+/// well short of the pane's edge. The bar is only passed in while the row is
+/// hovered (or its menu is open), so nothing overlaps the message otherwise.
 class _FloatingActionsOverlay extends StatelessWidget {
   const _FloatingActionsOverlay({required this.actions, required this.child});
 
@@ -16,17 +16,48 @@ class _FloatingActionsOverlay extends StatelessWidget {
     final actions = this.actions;
     if (actions == null) return child;
     final colors = BonfireThemeExtension.of(context);
+    final appStyle = Theme.of(context).iconButtonTheme.style;
+    // Compact buttons so the toolbar fits over a single-line row.
+    final compact = IconButton.styleFrom(
+      minimumSize: const Size(30, 30),
+      fixedSize: const Size(30, 30),
+      padding: EdgeInsets.zero,
+      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.all(Radius.circular(AppRadius.sm)),
+      ),
+    );
     return Stack(
       children: [
         child,
         Positioned(
           top: 0,
-          right: 4,
-          child: Material(
-            color: colors.foreground,
-            borderRadius: BorderRadius.circular(4),
-            clipBehavior: Clip.antiAlias,
-            child: actions,
+          right: 8,
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: colors.sheet,
+              borderRadius: BorderRadius.circular(AppRadius.md),
+              border: Border.all(color: colors.hairline),
+              boxShadow: [
+                BoxShadow(
+                  color: colors.shadow.withValues(alpha: 0.25),
+                  blurRadius: 10,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(2),
+              child: Material(
+                type: MaterialType.transparency,
+                child: IconButtonTheme(
+                  data: IconButtonThemeData(
+                    style: appStyle == null ? compact : compact.merge(appStyle),
+                  ),
+                  child: actions,
+                ),
+              ),
+            ),
           ),
         ),
       ],
@@ -224,6 +255,7 @@ class _MessageActions extends StatelessWidget {
     final colors = BonfireThemeExtension.of(context);
     return PopupMenuButton<String>(
       tooltip: UiCopy.messageActions(context: context),
+      padding: EdgeInsets.zero,
       icon: Icon(Icons.more_horiz, size: 18, color: colors.gray),
       // `onOpened` fires before the menu's barrier steals the hover, which is
       // what keeps this button mounted long enough for `onSelected` to run.

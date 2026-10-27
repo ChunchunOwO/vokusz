@@ -153,7 +153,7 @@ class _VoiceChannelViewState extends ConsumerState<VoiceChannelView> {
         );
 
     return Container(
-      color: colors.background,
+      color: colors.sheet,
       child: Column(
         children: [
           _header(context, colors),
@@ -229,15 +229,15 @@ class _VoiceChannelViewState extends ConsumerState<VoiceChannelView> {
 
   Widget _header(BuildContext context, BonfireThemeExtension colors) {
     return Container(
-      height: 48,
+      height: 52,
       alignment: Alignment.centerLeft,
-      padding: const EdgeInsets.only(left: 16, right: 4),
+      padding: const EdgeInsets.only(left: 18, right: 4),
       decoration: BoxDecoration(
-        border: Border(bottom: BorderSide(color: colors.foreground, width: 1)),
+        border: Border(bottom: BorderSide(color: colors.hairline)),
       ),
       child: Row(
         children: [
-          Icon(Icons.volume_up, size: 18, color: colors.dirtyWhite),
+          Icon(Icons.volume_up, size: 18, color: colors.primary),
           const SizedBox(width: 6),
           Expanded(
             child: Text(
@@ -587,13 +587,14 @@ class _VideoTile extends ConsumerWidget {
       child: Container(
         clipBehavior: Clip.antiAlias,
         decoration: BoxDecoration(
-          color: colors.foreground,
-          borderRadius: BorderRadius.circular(4),
+          color: colors.inset,
+          borderRadius: BorderRadius.circular(AppRadius.lg),
           border: Border.all(
             color: speaking
                 ? const Color(0xFF4DA3FF)
                 : spotlighted
                 ? colors.primary
+                // Idle tiles carry no outline: a border means "speaking".
                 : const Color(0x00000000),
             width: 2,
           ),
@@ -625,7 +626,7 @@ class _VideoTile extends ConsumerWidget {
                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                 decoration: BoxDecoration(
                   color: Colors.black54,
-                  borderRadius: BorderRadius.circular(4),
+                  borderRadius: BorderRadius.circular(AppRadius.sm),
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
@@ -699,10 +700,10 @@ class _ControlBar extends ConsumerWidget {
       settingsControllerProvider.select((settings) => settings.voicePushToTalk),
     );
     return Container(
-      padding: const EdgeInsets.symmetric(vertical: 8),
+      padding: const EdgeInsets.symmetric(vertical: 10),
       decoration: BoxDecoration(
-        color: colors.foreground,
-        border: Border(top: BorderSide(color: colors.background, width: 1)),
+        color: colors.sheet,
+        border: Border(top: BorderSide(color: colors.hairline)),
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,

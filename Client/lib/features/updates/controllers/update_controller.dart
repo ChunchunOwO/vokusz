@@ -282,9 +282,8 @@ class UpdateController extends _$UpdateController {
   List<String> get _installableExts {
     if (UniversalPlatform.isAndroid) return const ['.apk'];
     if (UniversalPlatform.isWindows) {
-      return UpdateInstaller.isInstallRootWritable
-          ? const ['windows-x86_64.zip', '.zip']
-          : const [];
+      // A Program Files install is not writable, but the swap helper elevates.
+      return const ['windows-x86_64.zip', '.zip'];
     }
     if (UniversalPlatform.isMacOS) {
       return UpdateInstaller.isInstallRootWritable ? const ['.dmg'] : const [];

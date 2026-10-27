@@ -195,22 +195,33 @@ class AuthModeToggle extends StatelessWidget {
       return Expanded(
         child: GestureDetector(
           onTap: onModeChanged == null ? null : () => onModeChanged!(value),
-          child: Container(
+          // A segmented control: the chosen mode is a raised segment
+          // sliding over a recessed track.
+          child: AnimatedContainer(
+            duration: AppMotion.of(context, AppMotion.medium),
+            curve: AppMotion.curve,
             margin: const EdgeInsets.all(4),
             padding: const EdgeInsets.symmetric(vertical: 10),
             decoration: BoxDecoration(
-              color: selected ? colors.foreground : Colors.transparent,
-              borderRadius: BorderRadius.circular(4),
-              border: Border.all(
-                color: selected ? colors.primary : Colors.transparent,
-              ),
+              color: selected ? colors.sheet : colors.sheet.withValues(alpha: 0),
+              borderRadius: BorderRadius.circular(AppRadius.md),
+              boxShadow: selected
+                  ? [
+                      BoxShadow(
+                        color: colors.shadow.withValues(alpha: 0.3),
+                        blurRadius: 6,
+                        offset: const Offset(0, 1),
+                      ),
+                    ]
+                  : const [],
             ),
             alignment: Alignment.center,
             child: Text(
               label,
-              style: Theme.of(
-                context,
-              ).textTheme.titleSmall!.copyWith(color: colors.dirtyWhite),
+              style: Theme.of(context).textTheme.titleSmall!.copyWith(
+                color: selected ? colors.emphasis : colors.gray,
+                fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+              ),
             ),
           ),
         ),
@@ -219,8 +230,9 @@ class AuthModeToggle extends StatelessWidget {
 
     return Container(
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(4),
-        border: Border.all(color: colors.darkGray),
+        color: colors.inset,
+        borderRadius: BorderRadius.circular(AppRadius.md + 4),
+        border: Border.all(color: colors.hairline),
       ),
       child: Row(
         children: [
@@ -273,7 +285,7 @@ class AuthField extends StatelessWidget {
         fillColor: colors.darkGray,
         labelStyle: Theme.of(context).textTheme.bodyMedium,
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(4),
+          borderRadius: BorderRadius.circular(AppRadius.md),
           borderSide: BorderSide.none,
         ),
         contentPadding: const EdgeInsets.symmetric(
@@ -328,7 +340,7 @@ class _AuthPasswordFieldState extends State<AuthPasswordField> {
         fillColor: colors.darkGray,
         labelStyle: Theme.of(context).textTheme.bodyMedium,
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(4),
+          borderRadius: BorderRadius.circular(AppRadius.md),
           borderSide: BorderSide.none,
         ),
         contentPadding: const EdgeInsets.symmetric(

@@ -1,3 +1,4 @@
+import 'package:bonfire/shared/components/leading_icon.dart';
 import 'package:bonfire/l10n/app_strings.dart';
 import 'package:bonfire/l10n/ui_copy.dart';
 import 'package:accordkit/accordkit.dart';
@@ -259,7 +260,7 @@ class _ConnectionsScreenState extends ConsumerState<ConnectionsScreen> {
   List<Widget> _connectionTiles(BonfireThemeExtension colors) => [
     for (final conn in _connections)
       ListTile(
-        leading: Icon(Icons.link, color: colors.dirtyWhite),
+        leading: LeadingIcon(Icons.link),
         title: Text(conn.type),
         subtitle: conn.name.isEmpty ? null : Text(conn.name),
         trailing: _disconnecting.contains(conn.id)

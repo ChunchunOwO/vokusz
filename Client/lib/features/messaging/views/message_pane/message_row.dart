@@ -33,10 +33,9 @@ class _MessageRow extends ConsumerStatefulWidget {
   final bool grouped;
 
   /// Whether the row is rendered in a narrow column (the voice channel's chat
-  /// panel). An inline hover action bar reserves its full width even while
-  /// invisible, which in a ~340px panel would leave the message itself a few
-  /// dozen pixels; a narrow row floats the same bar over its top-right corner
-  /// instead. Everything else about the row is unchanged.
+  /// panel), which tightens its horizontal inset. The hover action bar floats
+  /// over the top-right corner on every desktop row (see
+  /// [_FloatingActionsOverlay]).
   final bool narrow;
 
   /// Whether the current user can pin/unpin in this channel.
@@ -119,6 +118,28 @@ class _MessageRowState extends ConsumerState<_MessageRow> {
   /// really is still mounted). Every async handler therefore takes the id it
   /// captured up front. See #198.
   AccordMessage get _message => widget.message;
+
+  /// The rendered message body, reused while its inputs hold. Hover and
+  /// selection only change the row's chrome; handing Flutter the identical
+  /// widget lets it skip re-rendering the markdown on every pointer crossing.
+  /// The body still rebuilds on its own when a provider or inherited value it
+  /// depends on changes.
+  Widget? _body;
+  String? _bodyContent;
+  String? _bodySpaceId;
+
+  Widget _bodyFor(String content) {
+    final spaceId = widget.spaceId;
+    if (_body != null && _bodyContent == content && _bodySpaceId == spaceId) {
+      return _body!;
+    }
+    _bodyContent = content;
+    _bodySpaceId = spaceId;
+    return _body = Padding(
+      padding: const EdgeInsets.only(top: 2),
+      child: AccordMessageContent(content: content, spaceId: spaceId),
+    );
+  }
 
   @override
   void dispose() {
@@ -360,6 +381,7 @@ class _MessageRowState extends ConsumerState<_MessageRow> {
     final bottomGap = compact ? 3.0 : 6.0;
     final avatarRadius = compact ? 14.0 : 18.0;
     final gutter = compact ? 8.0 : 12.0;
+    final inset = _messageRowInset(narrow: widget.narrow);
     final cdnUrl = ref.watchCdnUrl();
     // Attachments AutoMod is holding back (or refused) on this message — ours
     // only; the tracker is fed by our own 202s and uploader-only events.
@@ -393,7 +415,7 @@ class _MessageRowState extends ConsumerState<_MessageRow> {
         : _HoverActions(
             // Floated (see below), the bar is only built while hovered, so it
             // doesn't need to fade itself out.
-            visible: widget.narrow || _hovered,
+            visible: true,
             onReact: () => _openReactionPicker(message.id),
             onReply: widget.onReply,
             onThread: () => _openThread(message),
@@ -418,13 +440,12 @@ class _MessageRowState extends ConsumerState<_MessageRow> {
       onEnter: (_) => setState(() => _hovered = true),
       onExit: (_) => setState(() => _hovered = false),
       child: _FloatingActionsOverlay(
-        // In the voice chat panel an inline action bar would leave the message
-        // a few dozen pixels of width, so the bar floats over the row's
-        // top-right corner instead — and only while hovered, so it never covers
-        // the text or swallows a click. `_menuOpen` extends that past the
-        // hover: the actions menu's barrier ends the hover, and unmounting the
-        // button mid-menu loses the selection (see [_menuStateChanged]).
-        actions: widget.narrow && (_hovered || _menuOpen) ? hoverActions : null,
+        // The bar floats over the row's top-right corner, and only while
+        // hovered, so it never takes width from the text. `_menuOpen` extends
+        // that past the hover: the actions menu's barrier ends the hover, and
+        // unmounting the button mid-menu loses the selection (see
+        // [_menuStateChanged]).
+        actions: _hovered || _menuOpen ? hoverActions : null,
         child: GestureDetector(
           // Opaque so the whole row is hit-testable: on mobile a plain-text
           // message renders as a bare RichText with no recognisers, and the
@@ -439,17 +460,31 @@ class _MessageRowState extends ConsumerState<_MessageRow> {
               ? null
               : (d) => _showActionsMenu(message, d.globalPosition),
           onTap: widget.selecting ? widget.onToggleSelected : null,
-          child: Container(
+          child: AnimatedContainer(
+            duration: AppMotion.of(context, AppMotion.fast),
+            curve: AppMotion.curve,
+            // The pane's list pads by [_messageRowInset] less than it used
+            // to and each row pads by that much instead, so text sits where it
+            // always did while the hover highlight gets a margin around it.
             padding: widget.mentionsMe
-                ? EdgeInsets.fromLTRB(13, topGap, 6, bottomGap)
-                : EdgeInsets.only(top: topGap, bottom: bottomGap),
-            decoration: widget.selected
-                ? BoxDecoration(color: colors.primary.withValues(alpha: 0.14))
-                : widget.mentionsMe
+                ? EdgeInsets.fromLTRB(13 + inset, topGap, 6 + inset, bottomGap)
+                : EdgeInsets.fromLTRB(inset, topGap, inset, bottomGap),
+            // Clipped so a mention's accent edge follows the rounded corners.
+            clipBehavior: widget.mentionsMe ? Clip.antiAlias : Clip.none,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(AppRadius.md),
+              color: widget.selected
+                  ? colors.primary.withValues(alpha: 0.16)
+                  : widget.mentionsMe
+                  ? colors.yellow.withValues(alpha: _hovered ? 0.11 : 0.08)
+                  : _hovered && hoverActions != null
+                  ? colors.hoverFill
+                  : colors.hoverFill.withValues(alpha: 0),
+            ),
+            foregroundDecoration: widget.mentionsMe
                 ? BoxDecoration(
-                    color: colors.primary.withValues(alpha: 0.08),
                     border: Border(
-                      left: BorderSide(color: colors.primary, width: 3),
+                      left: BorderSide(color: colors.yellow, width: 3),
                     ),
                   )
                 : null,
@@ -522,13 +557,7 @@ class _MessageRowState extends ConsumerState<_MessageRow> {
                       if (_editing)
                         _buildEditor(theme, colors)
                       else if (message.content.isNotEmpty)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 2),
-                          child: AccordMessageContent(
-                            content: message.content,
-                            spaceId: widget.spaceId,
-                          ),
-                        ),
+                        _bodyFor(message.content),
                       for (final attachment in message.attachments)
                         Padding(
                           padding: const EdgeInsets.only(top: 4),
@@ -554,7 +583,6 @@ class _MessageRowState extends ConsumerState<_MessageRow> {
                     ],
                   ),
                 ),
-                if (hoverActions != null && !widget.narrow) hoverActions,
               ],
             ),
           ),
@@ -673,7 +701,7 @@ class _MessageRowState extends ConsumerState<_MessageRow> {
     return Padding(
       padding: const EdgeInsets.only(top: 4),
       child: InkWell(
-        borderRadius: BorderRadius.circular(4),
+        borderRadius: BorderRadius.circular(AppRadius.md),
         onTap: () => _openThread(message),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
@@ -882,7 +910,7 @@ class _MessageRowState extends ConsumerState<_MessageRow> {
               filled: true,
               fillColor: colors.darkGray,
               border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(4),
+                borderRadius: BorderRadius.circular(AppRadius.md),
                 borderSide: BorderSide.none,
               ),
             ),

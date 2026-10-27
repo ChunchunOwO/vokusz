@@ -585,7 +585,7 @@ class _ReportsPanelState extends ConsumerState<_ReportsPanel>
     final colors = BonfireThemeExtension.of(context);
     return Dialog(
       backgroundColor: colors.foreground,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.md)),
       child: ConstrainedBox(
         constraints: dialogConstraints(context, maxWidth: 540, maxHeight: 600),
         child: Column(
@@ -595,7 +595,7 @@ class _ReportsPanelState extends ConsumerState<_ReportsPanel>
               padding: const EdgeInsets.fromLTRB(20, 16, 12, 16),
               decoration: BoxDecoration(
                 border: Border(
-                  bottom: BorderSide(color: colors.background, width: 1),
+                  bottom: BorderSide(color: colors.hairline),
                 ),
               ),
               child: Row(
@@ -637,17 +637,15 @@ class _ReportsPanelState extends ConsumerState<_ReportsPanel>
               child: loading
                   ? const LoadingView()
                   : items.isEmpty
-                  ? Center(
-                      child: Text(
-                        UiCopy.noReports(context: context),
-                        style: theme.textTheme.bodyMedium,
-                      ),
+                  ? EmptyStateView(
+                      icon: Icons.flag_outlined,
+                      message: UiCopy.noReports(context: context),
                     )
                   : ListView.separated(
                       padding: const EdgeInsets.all(12),
                       itemCount: items.length + (hasMore ? 1 : 0),
                       separatorBuilder: (_, _) =>
-                          Divider(height: 12, color: colors.background),
+                          Divider(height: 12, color: colors.hairline),
                       itemBuilder: (context, index) {
                         if (index >= items.length) {
                           return LoadMoreFooter(

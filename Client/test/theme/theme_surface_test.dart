@@ -7,18 +7,16 @@ import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-/// Primary chrome inherits flat corners and tonal surfaces from [buildAppTheme].
-///
-/// A radius above 4, or a large control painted with a saturated fill, is the
-/// regression this guards: auth, settings chips, and the default buttons.
+/// Guards the shared surface language [buildAppTheme] hands every screen:
+/// corners on the [AppRadius] scale, a solid accent for the primary action
+/// with a label that stays readable on it, and neutral large surfaces.
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   group('shared theme surfaces', () {
     for (final preset in AppThemePreset.values) {
-      test('${preset.label} corners stay at 4 and buttons are not fills', () {
+      test('${preset.label} corners follow the radius scale', () {
         final theme = buildAppTheme(preset);
-        final palette = paletteFor(preset);
         for (final shape in [
           theme.cardTheme.shape,
           theme.dialogTheme.shape,
@@ -31,39 +29,64 @@ void main() {
           _resolvedShape(theme.outlinedButtonTheme.style),
           _resolvedShape(theme.textButtonTheme.style),
         ]) {
-          _expectRadiusAtMost4(shape);
+          _expectOnScale(shape);
         }
         final input = theme.inputDecorationTheme.enabledBorder;
         expect(input, isA<OutlineInputBorder>());
-        _expectBorderRadiusAtMost4(
+        _expectRadiusOnScale(
           (input! as OutlineInputBorder).borderRadius.resolve(TextDirection.ltr),
         );
+      });
 
+      test('${preset.label} primary buttons fill with a readable accent', () {
+        final theme = buildAppTheme(preset);
+        final palette = paletteFor(preset);
         for (final style in [
           theme.elevatedButtonTheme.style,
           theme.filledButtonTheme.style,
-          theme.outlinedButtonTheme.style,
         ]) {
           final bg = style?.backgroundColor?.resolve(const <WidgetState>{});
-          expect(bg, isNotNull);
+          final fg = style?.foregroundColor?.resolve(const <WidgetState>{});
+          expect(bg, palette.primary);
+          expect(fg, isNotNull);
+          final ratio = _contrastRatio(fg!, bg!);
           expect(
-            _chroma(bg!),
-            lessThan(0.32),
-            reason: '${preset.label} button fill is saturated ($bg)',
+            ratio,
+            greaterThanOrEqualTo(4.5),
+            reason:
+                '${preset.label} button label is ${ratio.toStringAsFixed(2)}:1 '
+                'on its accent',
           );
-          expect(bg, isNot(palette.primary));
         }
+        // The secondary action stays transparent so only one button per
+        // group reads as primary.
+        final outlined = theme.outlinedButtonTheme.style?.backgroundColor
+            ?.resolve(const <WidgetState>{});
+        expect(outlined, Colors.transparent);
+      });
 
-        final chipFill = theme.chipTheme.selectedColor;
-        expect(chipFill, isNotNull);
-        expect(_chroma(chipFill!), lessThan(0.32));
+      test('${preset.label} navigation canvas keeps body text readable', () {
+        final palette = paletteFor(preset);
+        for (final (name, token) in [
+          ('dirtyWhite', palette.dirtyWhite),
+          ('gray', palette.gray),
+        ]) {
+          final ratio = _contrastRatio(token, palette.canvas);
+          expect(
+            ratio,
+            greaterThanOrEqualTo(4.5),
+            reason:
+                '${preset.label}: $name on canvas is '
+                '${ratio.toStringAsFixed(2)}:1',
+          );
+        }
       });
     }
   });
 
-  testWidgets('auth toggle and default controls stay flat', (tester) async {
+  testWidgets('auth toggle and chips stay neutral surfaces', (tester) async {
     final theme = buildAppTheme(AppThemePreset.dark);
-    final primary = paletteFor(AppThemePreset.dark).primary;
+    final palette = paletteFor(AppThemePreset.dark);
     await tester.pumpWidget(
       MaterialApp(
         theme: theme,
@@ -78,11 +101,6 @@ void main() {
           body: Column(
             children: [
               AuthModeToggle(mode: AuthMode.signIn, onModeChanged: (_) {}),
-              const SizedBox(
-                width: 280,
-                height: 48,
-                child: ElevatedButton(onPressed: _noop, child: Text('继续')),
-              ),
               ChoiceChip(
                 label: const Text('中文'),
                 selected: true,
@@ -93,56 +111,55 @@ void main() {
         ),
       ),
     );
-    await tester.pump();
+    await tester.pumpAndSettle();
 
-    _expectNoLargeSaturatedFill(tester, primary);
+    _expectNoLargeSaturatedFill(tester);
 
-    final selected = tester.widget<Container>(
+    // The chosen mode is the raised segment: the sheet colour, never the
+    // accent, with rounded corners on the scale.
+    final selected = tester.widget<AnimatedContainer>(
       find.descendant(
         of: find.byType(AuthModeToggle),
         matching: find.byWidgetPredicate((widget) {
-          if (widget is! Container) return false;
+          if (widget is! AnimatedContainer) return false;
           final decoration = widget.decoration;
-          if (decoration is! BoxDecoration) return false;
-          final side = decoration.border;
-          return side is Border &&
-              side.top.color == primary &&
-              side.top.width > 0;
+          return decoration is BoxDecoration &&
+              decoration.color == palette.sheet;
         }),
       ),
     );
     final decoration = selected.decoration! as BoxDecoration;
-    expect(decoration.color, isNot(primary));
-    expect(_chroma(decoration.color!), lessThan(0.2));
+    expect(decoration.color, isNot(palette.primary));
     final radius = decoration.borderRadius! as BorderRadius;
-    expect(radius.topLeft.x, lessThanOrEqualTo(4));
+    expect(radius.topLeft.x, inInclusiveRange(AppRadius.sm, AppRadius.xl));
   });
 }
-
-void _noop() {}
 
 ShapeBorder? _resolvedShape(ButtonStyle? style) =>
     style?.shape?.resolve(const <WidgetState>{});
 
-void _expectRadiusAtMost4(ShapeBorder? shape) {
+void _expectOnScale(ShapeBorder? shape) {
   expect(shape, isNotNull);
   expect(shape, isNot(isA<StadiumBorder>()));
   expect(shape, isNot(isA<CircleBorder>()));
   if (shape is RoundedRectangleBorder) {
-    _expectBorderRadiusAtMost4(shape.borderRadius.resolve(TextDirection.ltr));
+    _expectRadiusOnScale(shape.borderRadius.resolve(TextDirection.ltr));
     return;
   }
-  fail('primary surface uses ${shape.runtimeType}, which is not a 4px rect');
+  fail('surface uses ${shape.runtimeType}, not a rounded rectangle');
 }
 
-void _expectBorderRadiusAtMost4(BorderRadius radius) {
+void _expectRadiusOnScale(BorderRadius radius) {
   for (final corner in [
     radius.topLeft,
     radius.topRight,
     radius.bottomLeft,
     radius.bottomRight,
   ]) {
-    expect(math.max(corner.x, corner.y), lessThanOrEqualTo(4));
+    expect(
+      math.max(corner.x, corner.y),
+      inInclusiveRange(AppRadius.sm, AppRadius.xl),
+    );
   }
 }
 
@@ -152,7 +169,22 @@ double _chroma(Color color) {
   return high - low;
 }
 
-void _expectNoLargeSaturatedFill(WidgetTester tester, Color primary) {
+/// WCAG 2.1 relative luminance.
+double _luminance(Color c) {
+  double channel(double v) =>
+      v <= 0.03928 ? v / 12.92 : math.pow((v + 0.055) / 1.055, 2.4).toDouble();
+  return 0.2126 * channel(c.r) +
+      0.7152 * channel(c.g) +
+      0.0722 * channel(c.b);
+}
+
+double _contrastRatio(Color a, Color b) {
+  final la = _luminance(a);
+  final lb = _luminance(b);
+  return (math.max(la, lb) + 0.05) / (math.min(la, lb) + 0.05);
+}
+
+void _expectNoLargeSaturatedFill(WidgetTester tester) {
   final candidates = [
     ...find.byType(DecoratedBox).evaluate(),
     ...find.byType(Material).evaluate(),
@@ -174,7 +206,7 @@ void _expectNoLargeSaturatedFill(WidgetTester tester, Color primary) {
       reason:
           'large surface ${element.widget.runtimeType} '
           '${size.width.toStringAsFixed(0)}x${size.height.toStringAsFixed(0)} '
-          'is a saturated fill ($color), primary=$primary',
+          'is a saturated fill ($color)',
     );
   }
 }

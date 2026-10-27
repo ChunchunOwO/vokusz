@@ -48,20 +48,23 @@ class _ReactionPill extends StatelessWidget {
     final id = rawId ?? parsed.id;
     final name = rawId != null ? rawName : parsed.name;
     final mine = reaction.includesMe;
+    const radius = BorderRadius.all(Radius.circular(AppRadius.md));
     return Material(
-      color: mine ? colors.primary.withValues(alpha: 0.25) : colors.darkGray,
-      borderRadius: BorderRadius.circular(4),
+      color: mine ? colors.accentSoft : colors.inset,
+      borderRadius: radius,
       child: InkWell(
-        borderRadius: BorderRadius.circular(4),
+        borderRadius: radius,
         onTap: onTap,
         onLongPress: onShowReactors,
         onSecondaryTap: onShowReactors,
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(4),
+            borderRadius: radius,
             border: Border.all(
-              color: mine ? colors.primary : Colors.transparent,
+              color: mine
+                  ? colors.primary.withValues(alpha: 0.7)
+                  : colors.hairline,
               width: 1,
             ),
           ),
@@ -97,7 +100,8 @@ class _ReactionPill extends StatelessWidget {
               Text(
                 '${reaction.count}',
                 style: theme.textTheme.labelMedium!.copyWith(
-                  color: colors.dirtyWhite,
+                  color: mine ? colors.emphasis : colors.dirtyWhite,
+                  fontWeight: FontWeight.w600,
                 ),
               ),
             ],

@@ -99,7 +99,6 @@ class _FriendsTabState extends ConsumerState<_FriendsTab> {
       if (previous == next) return;
       unawaited(_load());
     });
-    final theme = Theme.of(context);
     final colors = BonfireThemeExtension.of(context);
     final all = _relationships;
     if (all == null) {
@@ -222,11 +221,9 @@ class _FriendsTabState extends ConsumerState<_FriendsTab> {
                   blocked.isEmpty)
                 Padding(
                   padding: const EdgeInsets.all(24),
-                  child: Center(
-                    child: Text(
-                      UiCopy.noFriendsYet(context: context),
-                      style: theme.textTheme.bodyMedium,
-                    ),
+                  child: EmptyStateView(
+                    icon: Icons.people_outline,
+                    message: UiCopy.noFriendsYet(context: context),
                   ),
                 ),
             ],

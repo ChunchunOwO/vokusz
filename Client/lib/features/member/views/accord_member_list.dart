@@ -32,27 +32,60 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 /// `MemberScrollView`, but driven by the simpler [AccordMembersController]
 /// cache rather than lazy member-list sync ranges.
 class AccordMemberList extends ConsumerWidget {
-  const AccordMemberList({super.key, required this.spaceId, this.channel});
+  const AccordMemberList({
+    super.key,
+    required this.spaceId,
+    this.channel,
+    this.showHeader = false,
+  });
 
   final String? spaceId;
   final AccordChannel? channel;
 
+  /// Adds a titled header the height of the channel header, so the two read
+  /// as one bar when the roster sits inside the conversation surface.
+  final bool showHeader;
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final colors = BonfireThemeExtension.of(context);
     final id = spaceId;
 
     final body = id == null
         ? const SizedBox.shrink()
         : _Roster(spaceId: id, channel: channel);
 
-    return Container(
+    if (!showHeader) return SizedBox(width: 240, child: body);
+    final colors = BonfireThemeExtension.of(context);
+    return SizedBox(
       width: 240,
-      decoration: BoxDecoration(
-        color: colors.foreground,
-        border: Border(left: BorderSide(color: colors.background, width: 1)),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Container(
+            height: 52,
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            decoration: BoxDecoration(
+              border: Border(bottom: BorderSide(color: colors.hairline)),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.people_alt_outlined, size: 18, color: colors.gray),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    AppStrings.of(context).members,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.titleSmall!.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Expanded(child: body),
+        ],
       ),
-      child: body,
     );
   }
 }
@@ -260,9 +293,12 @@ class _SectionHeader extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
       child: Text(
         '${label.toUpperCase()} — $count',
+        // Same tracked small caps as the channel list's category headers.
         style: Theme.of(context).textTheme.labelSmall!.copyWith(
           color: colors.gray,
-          fontWeight: FontWeight.bold,
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+          letterSpacing: 1.0,
         ),
       ),
     );
@@ -311,9 +347,9 @@ class _MemberRow extends ConsumerWidget {
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 1),
       child: Material(
         color: Colors.transparent,
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(AppRadius.sm),
         child: InkWell(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(AppRadius.sm),
           onTap: () => showAccordMemberPopout(
             context,
             spaceId: spaceId,

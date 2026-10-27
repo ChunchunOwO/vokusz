@@ -152,29 +152,29 @@ class _ChannelListState extends ConsumerState<_ChannelList> {
       canInvite = accordHasPermission(perms, AccordPermission.createInvites);
     }
 
-    return Container(
-      decoration: BoxDecoration(
-        color: colors.foreground,
-        border: Border(left: BorderSide(color: colors.background, width: 1)),
-      ),
-      child: Column(
+    return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           if (bannerUrl != null)
-            CachedNetworkImage(
-              imageUrl: bannerUrl,
-              height: 100,
-              fit: BoxFit.cover,
-              errorWidget: (_, _, _) => const SizedBox.shrink(),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(AppRadius.lg),
+                child: CachedNetworkImage(
+                  imageUrl: bannerUrl,
+                  height: 100,
+                  fit: BoxFit.cover,
+                  errorWidget: (_, _, _) => const SizedBox.shrink(),
+                ),
+              ),
             ),
           Container(
-            height: id == null ? 48 : 78,
+            height: id == null ? 52 : 74,
             alignment: Alignment.centerLeft,
             padding: const EdgeInsets.only(left: 16, right: 4),
+            margin: const EdgeInsets.symmetric(horizontal: 8),
             decoration: BoxDecoration(
-              border: Border(
-                bottom: BorderSide(color: colors.background, width: 1),
-              ),
+              border: Border(bottom: BorderSide(color: colors.hairline)),
             ),
             child: Row(
               children: [
@@ -186,10 +186,14 @@ class _ChannelListState extends ConsumerState<_ChannelList> {
                       Text(
                         spaceName ?? AppStrings.of(context).pickChannel,
                         overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.titleSmall,
+                        style: Theme.of(context).textTheme.titleSmall!.copyWith(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                          color: colors.emphasis,
+                        ),
                       ),
                       if (id != null) ...[
-                        const SizedBox(height: 5),
+                        const SizedBox(height: 6),
                         Tooltip(
                           message: AppStrings.choose(
                             'Copy domain ID',
@@ -197,6 +201,7 @@ class _ChannelListState extends ConsumerState<_ChannelList> {
                             context: context,
                           ),
                           child: InkWell(
+                            borderRadius: BorderRadius.circular(AppRadius.sm),
                             onTap: () async {
                               await Clipboard.setData(ClipboardData(text: id));
                               if (context.mounted) {
@@ -217,7 +222,10 @@ class _ChannelListState extends ConsumerState<_ChannelList> {
                                 vertical: 2,
                               ),
                               decoration: BoxDecoration(
-                                border: Border.all(color: colors.darkGray),
+                                color: colors.hoverFill,
+                                borderRadius: BorderRadius.circular(
+                                  AppRadius.sm,
+                                ),
                               ),
                               child: Text(
                                 AppStrings.choose(
@@ -359,7 +367,6 @@ class _ChannelListState extends ConsumerState<_ChannelList> {
             },
           ),
         ],
-      ),
     );
   }
 }
@@ -383,12 +390,15 @@ class _ChannelListResizeHandle extends StatefulWidget {
 
 class _ChannelListResizeHandleState extends State<_ChannelListResizeHandle> {
   bool _active = false;
+  bool _hovered = false;
 
   @override
   Widget build(BuildContext context) {
     final colors = BonfireThemeExtension.of(context);
     return MouseRegion(
       cursor: SystemMouseCursors.resizeLeftRight,
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
       child: GestureDetector(
         behavior: HitTestBehavior.translucent,
         onHorizontalDragStart: (_) => setState(() => _active = true),
@@ -400,9 +410,18 @@ class _ChannelListResizeHandleState extends State<_ChannelListResizeHandle> {
         child: SizedBox(
           width: 8,
           child: Center(
-            child: Container(
-              width: _active ? 2 : 1,
-              color: _active ? colors.primary : colors.background,
+            child: AnimatedContainer(
+              duration: AppMotion.of(context, AppMotion.fast),
+              width: 2,
+              margin: const EdgeInsets.symmetric(vertical: 16),
+              decoration: BoxDecoration(
+                color: _active
+                    ? colors.primary
+                    : _hovered
+                    ? colors.primary.withValues(alpha: 0.45)
+                    : Colors.transparent,
+                borderRadius: BorderRadius.circular(1),
+              ),
             ),
           ),
         ),
@@ -487,10 +506,20 @@ List<Widget> _buildChannelEntries(
         onToggle: () => onToggleCollapsed(category.id),
       ),
     );
-    if (!isCollapsed) {
-      for (final channel in byParent[category.id] ?? const <AccordChannel>[]) {
-        entries.add(tile(channel));
-      }
+    // The category's channels fold away under their header rather than
+    // vanishing.
+    final children = byParent[category.id] ?? const <AccordChannel>[];
+    if (children.isNotEmpty) {
+      entries.add(
+        AnimatedReveal(
+          key: ValueKey('category-${category.id}'),
+          open: !isCollapsed,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [for (final channel in children) tile(channel)],
+          ),
+        ),
+      );
     }
   }
   return entries;
@@ -601,8 +630,9 @@ class _CategoryHeader extends ConsumerWidget {
                 overflow: TextOverflow.ellipsis,
                 style: Theme.of(context).textTheme.labelSmall!.copyWith(
                   color: colors.gray,
-                  fontWeight: FontWeight.bold,
-                  letterSpacing: 0.5,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 1.0,
                 ),
               ),
             ),
@@ -808,24 +838,37 @@ class _ChannelTileState extends ConsumerState<_ChannelTile> {
         ? colors.green
         : (enabled ? colors.dirtyWhite : colors.gray);
 
+    // A voice channel with people in it renders as one card: the channel row
+    // on top, its participants nested beneath on a guide line.
+    final grouped = isVoice && voiceCount > 0;
+    const rowRadius = BorderRadius.all(Radius.circular(AppRadius.sm));
     final tileRow = MouseRegion(
       onEnter: (_) => setState(() => _hovered = true),
       onExit: (_) => setState(() => _hovered = false),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 1),
+        padding: grouped
+            ? EdgeInsets.zero
+            : const EdgeInsets.symmetric(horizontal: 8, vertical: 1),
         child: Material(
-          color: widget.selected ? colors.darkGray : Colors.transparent,
-          borderRadius: BorderRadius.circular(4),
+          color: widget.selected ? colors.selectedFill : Colors.transparent,
+          borderRadius: rowRadius,
+          clipBehavior: Clip.antiAlias,
           child: InkWell(
-            borderRadius: BorderRadius.circular(4),
+            borderRadius: rowRadius,
             onTap: enabled ? _handleTap : null,
             onLongPress: () => _showMenu(null),
             onSecondaryTapUp: (d) => _showMenu(d.globalPosition),
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
               child: Row(
                 children: [
-                  Icon(_glyph, size: 18, color: iconColor),
+                  Icon(
+                    _glyph,
+                    size: 18,
+                    color: widget.selected && !connectedHere && enabled
+                        ? colors.emphasis
+                        : iconColor,
+                  ),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
@@ -833,20 +876,22 @@ class _ChannelTileState extends ConsumerState<_ChannelTile> {
                       overflow: TextOverflow.ellipsis,
                       style: Theme.of(context).textTheme.bodyMedium!.copyWith(
                         color: enabled
-                            ? (unread ? Colors.white : colors.dirtyWhite)
+                            ? (unread || widget.selected
+                                  ? colors.emphasis
+                                  : colors.dirtyWhite)
                             : colors.gray,
                         fontWeight: unread
                             ? FontWeight.w600
+                            : widget.selected
+                            ? FontWeight.w500
                             : FontWeight.normal,
                       ),
                     ),
                   ),
                   if (isVoice && voiceCount > 0)
-                    Text(
-                      '$voiceCount',
-                      style: Theme.of(
-                        context,
-                      ).textTheme.labelSmall!.copyWith(color: colors.gray),
+                    _CountChip(
+                      count: voiceCount,
+                      color: connectedHere ? colors.green : colors.gray,
                     )
                   else if (mentions > 0)
                     _MentionBadge(count: mentions)
@@ -854,8 +899,8 @@ class _ChannelTileState extends ConsumerState<_ChannelTile> {
                     Container(
                       width: 8,
                       height: 8,
-                      decoration: const BoxDecoration(
-                        color: Colors.white,
+                      decoration: BoxDecoration(
+                        color: colors.emphasis,
                         shape: BoxShape.circle,
                       ),
                     ),
@@ -892,19 +937,79 @@ class _ChannelTileState extends ConsumerState<_ChannelTile> {
     );
 
     if (!isVoice) return tileRow;
+    final block = grouped
+        ? AnimatedContainer(
+            duration: AppMotion.of(context, AppMotion.medium),
+            curve: AppMotion.curve,
+            margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+            decoration: BoxDecoration(
+              // The call you're in is tinted green, matching its icon.
+              color: connectedHere
+                  ? colors.green.withValues(alpha: 0.08)
+                  : colors.hoverFill.withValues(
+                      alpha: colors.isLight ? 0.05 : 0.035,
+                    ),
+              borderRadius: BorderRadius.circular(AppRadius.md),
+              border: Border.all(
+                color: connectedHere
+                    ? colors.green.withValues(alpha: 0.35)
+                    : colors.hairline,
+              ),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                tileRow,
+                VoiceParticipantList(
+                  channelId: channel.id,
+                  spaceId: widget.spaceId,
+                ),
+              ],
+            ),
+          )
+        : Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              tileRow,
+              VoiceParticipantList(
+                channelId: channel.id,
+                spaceId: widget.spaceId,
+              ),
+            ],
+          );
     return OnboardingAnchor(
       anchor: OnboardingAnchorId.voiceChannel,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          VoiceMemberDropTarget(
-            channel: channel,
-            spaceId: widget.spaceId,
-            child: tileRow,
-          ),
-          VoiceParticipantList(channelId: channel.id, spaceId: widget.spaceId),
-        ],
+      child: VoiceMemberDropTarget(
+        channel: channel,
+        spaceId: widget.spaceId,
+        child: block,
       ),
+    );
+  }
+}
+
+/// A small "people here" count on a voice channel row.
+class _CountChip extends StatelessWidget {
+  const _CountChip({required this.count, required this.color});
+
+  final int count;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(Icons.person, size: 13, color: color),
+        const SizedBox(width: 2),
+        Text(
+          '$count',
+          style: Theme.of(context).textTheme.labelSmall!.copyWith(
+            color: color,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ],
     );
   }
 }
@@ -919,14 +1024,18 @@ class _MentionBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final text = count > 99 ? '99+' : count.toString();
+    final colors = BonfireThemeExtension.of(context);
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      constraints: const BoxConstraints(minWidth: 20),
+      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
       decoration: BoxDecoration(
         color: const Color(0xFFED4245),
-        borderRadius: BorderRadius.circular(4),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: colors.canvas, width: 2),
       ),
       child: Text(
         text,
+        textAlign: TextAlign.center,
         style: const TextStyle(
           color: Colors.white,
           fontSize: 11,

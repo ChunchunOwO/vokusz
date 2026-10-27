@@ -66,8 +66,9 @@ class _RichPresenceCardState extends State<RichPresenceCard> {
     return Container(
       padding: const EdgeInsets.all(8),
       decoration: BoxDecoration(
-        color: colors.background,
-        borderRadius: BorderRadius.circular(8),
+        color: colors.inset,
+        borderRadius: BorderRadius.circular(AppRadius.md),
+        border: Border.all(color: colors.hairline),
       ),
       child: Row(
         children: [

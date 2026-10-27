@@ -1,3 +1,4 @@
+import 'package:bonfire/shared/components/leading_icon.dart';
 import 'package:bonfire/l10n/ui_copy.dart';
 import 'package:bonfire/features/authentication/models/accord_auth_state.dart';
 import 'package:bonfire/features/authentication/models/accord_session.dart';
@@ -61,10 +62,15 @@ class AccordSettingsScreen extends ConsumerWidget {
     }
 
     return Scaffold(
-      backgroundColor: colors.background,
+      backgroundColor: colors.canvas,
       appBar: AppBar(
-        backgroundColor: colors.foreground,
-        title: Text(AppStrings.of(context).settings),
+        backgroundColor: colors.canvas,
+        title: Text(
+          AppStrings.of(context).settings,
+          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+            fontWeight: FontWeight.w700,
+          ),
+        ),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
           onPressed: () =>
@@ -182,8 +188,32 @@ class _DesktopSettingsState extends State<_DesktopSettings> {
           onSelect: (category) => setState(() => _selected = category),
           onLogOut: widget.onLogOut,
         ),
-        VerticalDivider(width: 1, thickness: 1, color: colors.background),
-        Expanded(child: _CategoryPane(category: _selected)),
+        // The content is a raised sheet beside the sidebar, as in the home
+        // screen.
+        Expanded(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(0, 0, 8, 8),
+            // A Material, not a coloured box, so the tiles' ink paints on it.
+            child: Material(
+              color: colors.sheet,
+              clipBehavior: Clip.antiAlias,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(AppRadius.lg),
+                side: BorderSide(color: colors.hairline),
+              ),
+              // Categories cross-fade rather than snapping.
+              child: AnimatedSwitcher(
+                duration: AppMotion.of(context, AppMotion.medium),
+                switchInCurve: AppMotion.curve,
+                switchOutCurve: Curves.easeIn,
+                child: KeyedSubtree(
+                  key: ValueKey(_selected),
+                  child: _CategoryPane(category: _selected),
+                ),
+              ),
+            ),
+          ),
+        ),
       ],
     );
   }
@@ -207,7 +237,7 @@ class _CategorySidebar extends StatelessWidget {
     final colors = BonfireThemeExtension.of(context);
     return Material(
       key: const ValueKey('settings-sidebar'),
-      color: colors.foreground,
+      color: Colors.transparent,
       child: FocusTraversalGroup(
         policy: OrderedTraversalPolicy(),
         child: SizedBox(
@@ -231,7 +261,13 @@ class _CategorySidebar extends StatelessWidget {
                   ],
                 ),
               ),
-              Divider(height: 1, thickness: 1, color: colors.background),
+              Divider(
+                height: 1,
+                thickness: 1,
+                indent: 12,
+                endIndent: 12,
+                color: colors.hairline,
+              ),
               FocusTraversalOrder(
                 order: const NumericFocusOrder(100),
                 child: _LogOutTile(onLogOut: onLogOut),
@@ -264,21 +300,21 @@ class _SidebarTile extends StatelessWidget {
       child: ListTile(
         dense: true,
         selected: selected,
-        selectedTileColor: Colors.transparent,
+        selectedTileColor: colors.selectedFill,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(4),
-          side: BorderSide(
-            color: selected ? colors.primary : Colors.transparent,
-          ),
+          borderRadius: BorderRadius.circular(AppRadius.md),
         ),
         leading: Icon(
           category.icon,
           size: 20,
-          color: selected ? colors.primary : colors.dirtyWhite,
+          color: selected ? colors.primary : colors.gray,
         ),
         title: Text(
           AppStrings.of(context).settingsCategory(category.name),
-          style: TextStyle(color: selected ? colors.primary : null),
+          style: TextStyle(
+            color: selected ? colors.emphasis : colors.dirtyWhite,
+            fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+          ),
         ),
         onTap: onTap,
       ),
@@ -440,7 +476,7 @@ class _AppearanceSection extends StatelessWidget {
                 color: defaultAccentFor(settings.themePreset),
                 selected: settings.accentColor == null,
                 label: AppStrings.of(context).accentDefault,
-                borderRadius: BorderRadius.circular(4),
+                borderRadius: BorderRadius.circular(AppRadius.md),
                 onTap: () => controller.setAccentColor(null),
               ),
               for (final (argb, name) in avatarColorPalette)
@@ -448,7 +484,7 @@ class _AppearanceSection extends StatelessWidget {
                   color: Color(argb),
                   selected: settings.accentColor == argb,
                   label: name,
-                  borderRadius: BorderRadius.circular(4),
+                  borderRadius: BorderRadius.circular(AppRadius.md),
                   onTap: () => controller.setAccentColor(argb),
                 ),
             ],
@@ -606,13 +642,12 @@ class _VoiceVideoSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colors = BonfireThemeExtension.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         SectionHeader(AppStrings.of(context).voiceAndVideo),
         ListTile(
-          leading: Icon(Icons.mic_none, color: colors.dirtyWhite),
+          leading: LeadingIcon(Icons.mic_none),
           title: Text(UiCopy.voiceVideoSettings(context: context)),
           subtitle: Text(
             UiCopy.microphoneSpeakerSensitivityCameraMicTest(context: context),
@@ -660,8 +695,8 @@ class _AccountSection extends StatelessWidget {
               alignment: Alignment.center,
               decoration: BoxDecoration(
                 color: colors.foreground,
-                borderRadius: BorderRadius.circular(4),
-                border: Border.all(color: colors.darkGray),
+                borderRadius: BorderRadius.circular(AppRadius.md),
+                border: Border.all(color: colors.hairline),
               ),
               child: Text(
                 accordInitial(session.username),
@@ -673,14 +708,14 @@ class _AccountSection extends StatelessWidget {
           ),
         const RichPresenceSettings(),
         ListTile(
-          leading: Icon(Icons.edit_outlined, color: colors.dirtyWhite),
+          leading: LeadingIcon(Icons.edit_outlined),
           title: Text(AppStrings.of(context).editProfile),
           subtitle: Text(AppStrings.of(context).editProfileHint),
           trailing: const Icon(Icons.chevron_right),
           onTap: () => showAccordProfileEdit(context),
         ),
         ListTile(
-          leading: Icon(Icons.lock_outline, color: colors.dirtyWhite),
+          leading: LeadingIcon(Icons.lock_outline),
           title: Text(AppStrings.of(context).passwordSecurity),
           subtitle: Text(AppStrings.of(context).passwordSecurityHint),
           trailing: const Icon(Icons.chevron_right),
@@ -688,7 +723,7 @@ class _AccountSection extends StatelessWidget {
         ),
         if (hasMultipleConnections)
           ListTile(
-            leading: Icon(Icons.dns_outlined, color: colors.dirtyWhite),
+            leading: LeadingIcon(Icons.dns_outlined),
             title: Text(UiCopy.perServerProfile(context: context)),
             subtitle: Text(
               UiCopy.overrideNameBioAvatarOnOneServer(context: context),
@@ -697,7 +732,7 @@ class _AccountSection extends StatelessWidget {
             onTap: onPickServerProfile,
           ),
         ListTile(
-          leading: Icon(Icons.devices, color: colors.dirtyWhite),
+          leading: LeadingIcon(Icons.devices),
           title: Text(UiCopy.deviceProfiles2(context: context)),
           subtitle: Text(
             UiCopy.localProfilesWithAnOptionalCasualPin(context: context),
@@ -707,7 +742,7 @@ class _AccountSection extends StatelessWidget {
         ),
         if (showSubPageTiles) ...[
           ListTile(
-            leading: Icon(Icons.link, color: colors.dirtyWhite),
+            leading: LeadingIcon(Icons.link),
             title: Text(UiCopy.connections(context: context)),
             subtitle: Text(
               UiCopy.linkedThirdPartyOauthAccounts(context: context),
@@ -716,7 +751,7 @@ class _AccountSection extends StatelessWidget {
             onTap: () => showConnectionsSettings(context),
           ),
           ListTile(
-            leading: Icon(Icons.privacy_tip_outlined, color: colors.dirtyWhite),
+            leading: LeadingIcon(Icons.privacy_tip_outlined),
             title: Text(UiCopy.privacyData(context: context)),
             subtitle: Text(
               UiCopy.dataExportLeaveDeleteDataRetention(context: context),
@@ -727,7 +762,7 @@ class _AccountSection extends StatelessWidget {
         ],
         if (session?.isAdmin ?? false)
           ListTile(
-            leading: Icon(Icons.admin_panel_settings, color: colors.dirtyWhite),
+            leading: LeadingIcon(Icons.admin_panel_settings),
             title: Text(UiCopy.serverAdministration(context: context)),
             subtitle: Text(UiCopy.spacesUsersReportsSettings(context: context)),
             onTap: () => context.push('/admin'),
@@ -762,13 +797,12 @@ class _UpdatesSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colors = BonfireThemeExtension.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         SectionHeader(UiCopy.updates(context: context)),
         ListTile(
-          leading: Icon(Icons.system_update, color: colors.dirtyWhite),
+          leading: LeadingIcon(Icons.system_update),
           title: Text(UiCopy.updates(context: context)),
           subtitle: Text(
             UiCopy.currentVersionCheckForNewReleases(context: context),
@@ -806,7 +840,6 @@ class _DeveloperSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colors = BonfireThemeExtension.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -821,7 +854,7 @@ class _DeveloperSection extends StatelessWidget {
         ),
         if (settings.developerMode)
           ListTile(
-            leading: Icon(Icons.terminal, color: colors.dirtyWhite),
+            leading: LeadingIcon(Icons.terminal),
             title: Text(UiCopy.clientMcpServer(context: context)),
             subtitle: Text(
               UiCopy.tokenPortToolGroupsActivity(context: context),
@@ -852,7 +885,7 @@ class _AboutSection extends StatelessWidget {
           trailing: Text('v$kAppVersion'),
         ),
         ListTile(
-          leading: const Icon(Icons.privacy_tip_outlined),
+          leading: const LeadingIcon(Icons.privacy_tip_outlined),
           title: Text(UiCopy.privacyPolicy(context: context)),
           subtitle: Text(
             UiCopy.howTheAppAndIndependentServersHandle(context: context),
@@ -875,7 +908,7 @@ class _LogOutTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = BonfireThemeExtension.of(context);
     return ListTile(
-      leading: Icon(Icons.logout, color: colors.red),
+      leading: LeadingIcon(Icons.logout, color: colors.red),
       title: Text(
         AppStrings.of(context).logOut,
         style: TextStyle(color: colors.red),
@@ -897,7 +930,7 @@ Future<void> _pickServerProfile(BuildContext context, WidgetRef ref) async {
         children: [
           for (final conn in connections)
             ListTile(
-              leading: const Icon(Icons.dns_outlined),
+              leading: const LeadingIcon(Icons.dns_outlined),
               title: Text(
                 conn.session.server.name ?? conn.session.server.baseUrl,
               ),

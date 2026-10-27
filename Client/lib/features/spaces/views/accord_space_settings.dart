@@ -1,3 +1,4 @@
+import 'package:bonfire/shared/components/leading_icon.dart';
 import 'package:bonfire/l10n/app_strings.dart';
 import 'package:bonfire/l10n/ui_copy.dart';
 import 'dart:typed_data';
@@ -27,6 +28,7 @@ import 'package:bonfire/shared/components/image_crop_dialog.dart';
 import 'package:bonfire/theme/theme.dart';
 import 'package:collection/collection.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:bonfire/shared/components/surface_card.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -514,11 +516,14 @@ class _SpaceSettingsState extends ConsumerState<_SpaceSettings> {
         : null;
 
     return Scaffold(
-      backgroundColor: colors.background,
+      backgroundColor: colors.canvas,
       appBar: AppBar(
-        backgroundColor: colors.foreground,
+        backgroundColor: colors.canvas,
         title: Text(
           space?.name ?? AppStrings.label('Space settings', context: context),
+          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+            fontWeight: FontWeight.w700,
+          ),
         ),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
@@ -613,7 +618,7 @@ class _SpaceSettingsState extends ConsumerState<_SpaceSettings> {
             if (accordHasPermission(perms, AccordPermission.manageSpace) ||
                 accordHasPermission(perms, AccordPermission.moderateMembers))
               ListTile(
-                leading: const Icon(Icons.shield_outlined),
+                leading: const LeadingIcon(Icons.shield_outlined),
                 title: Text(UiCopy.automod(context: context)),
                 subtitle: Text(
                   UiCopy.attachmentRulesAndModerationReview(context: context),

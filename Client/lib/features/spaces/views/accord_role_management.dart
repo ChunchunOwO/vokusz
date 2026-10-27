@@ -247,7 +247,7 @@ class _RoleManagementState extends ConsumerState<_RoleManagement> {
 
     return Dialog(
       backgroundColor: colors.foreground,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.md)),
       child: ConstrainedBox(
         constraints: dialogConstraints(context, maxWidth: 720, maxHeight: 560),
         child: Column(
@@ -280,14 +280,12 @@ class _RoleManagementState extends ConsumerState<_RoleManagement> {
                       onReorder: _reorder,
                     ),
                   ),
-                  VerticalDivider(width: 1, color: colors.background),
+                  VerticalDivider(width: 1, color: colors.hairline),
                   Expanded(
                     child: selected == null
-                        ? Center(
-                            child: Text(
-                              UiCopy.selectARoleToEdit(context: context),
-                              style: Theme.of(context).textTheme.bodyMedium,
-                            ),
+                        ? EmptyStateView(
+                            icon: Icons.shield_outlined,
+                            message: UiCopy.selectARoleToEdit(context: context),
                           )
                         : _RoleEditorPane(
                             key: ValueKey(selected.id),
@@ -327,7 +325,7 @@ class _Header extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.fromLTRB(20, 16, 12, 16),
       decoration: BoxDecoration(
-        border: Border(bottom: BorderSide(color: colors.background, width: 1)),
+        border: Border(bottom: BorderSide(color: colors.hairline)),
       ),
       child: Row(
         children: [
@@ -418,7 +416,7 @@ class _RoleListPane extends StatelessWidget {
               onTap: () => onSelect(everyone.id),
             ),
           ),
-        if (everyone != null) Divider(height: 1, color: colors.background),
+        if (everyone != null) Divider(height: 1, color: colors.hairline),
       ],
     );
   }
@@ -445,10 +443,10 @@ class _RoleListTile extends StatelessWidget {
     final colors = BonfireThemeExtension.of(context);
     final dot = accordRoleColor(role.color) ?? colors.gray;
     final tile = Material(
-      color: selected ? colors.darkGray : Colors.transparent,
-      borderRadius: BorderRadius.circular(4),
+      color: selected ? colors.selectedFill : Colors.transparent,
+      borderRadius: BorderRadius.circular(AppRadius.md),
       child: InkWell(
-        borderRadius: BorderRadius.circular(4),
+        borderRadius: BorderRadius.circular(AppRadius.md),
         onTap: onTap,
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
@@ -581,7 +579,7 @@ class _RoleEditorPaneState extends State<_RoleEditorPane> {
               filled: true,
               fillColor: colors.darkGray,
               border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(4),
+                borderRadius: BorderRadius.circular(AppRadius.md),
                 borderSide: BorderSide.none,
               ),
             ),
@@ -702,7 +700,7 @@ class _ColorSwatch extends StatelessWidget {
       selected: selected,
       onTap: onTap,
       size: 28,
-      borderRadius: BorderRadius.circular(4),
+      borderRadius: BorderRadius.circular(AppRadius.md),
       borderWidth: 2,
       icon: color == null ? Icons.format_color_reset : null,
       iconColor: color == null ? colors.gray : Colors.white,

@@ -243,7 +243,7 @@ class _AdminReportsTabState extends ConsumerState<AdminReportsTab> {
         padding: const EdgeInsets.all(12),
         itemCount: _reports.length,
         separatorBuilder: (_, _) =>
-            Divider(height: 16, color: colors.background),
+            Divider(height: 16, color: colors.hairline),
         itemBuilder: (context, i) => ModerationReportRow(
           report: _reports[i],
           busy: _busy,

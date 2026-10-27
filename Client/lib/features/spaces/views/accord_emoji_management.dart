@@ -230,11 +230,9 @@ class _EmojiManagementState extends ConsumerState<_EmojiManagement> {
                     : emojis.isEmpty
                     ? Padding(
                         padding: const EdgeInsets.all(24),
-                        child: Center(
-                          child: Text(
-                            UiCopy.noCustomEmojiYet(context: context),
-                            style: theme.textTheme.bodyMedium,
-                          ),
+                        child: EmptyStateView(
+                          icon: Icons.emoji_emotions_outlined,
+                          message: UiCopy.noCustomEmojiYet(context: context),
                         ),
                       )
                     : ListView.separated(

@@ -14,7 +14,8 @@
 // supplies a real default font, and being a real engine it also renders the
 // shadows, image decoding and layout the shipped app does.
 //
-// Scene is chosen by query string: `?scene=1` … `?scene=6`.
+// Scene is chosen by query string: `?scene=1` … `?scene=6` (plus `?scene=7`,
+// the settings screen, for design review only).
 
 import 'package:accordkit/accordkit.dart';
 import 'package:bonfire/features/authentication/models/accord_auth_state.dart';
@@ -33,6 +34,7 @@ import 'package:bonfire/features/profiles/services/profile_store.dart';
 import 'package:bonfire/features/server/controllers/connections.dart';
 import 'package:bonfire/features/server/models/accord_server.dart';
 import 'package:bonfire/features/settings/models/accord_settings.dart';
+import 'package:bonfire/features/settings/views/accord_settings_screen.dart';
 import 'package:bonfire/features/spaces/controllers/spaces.dart';
 import 'package:bonfire/features/spaces/views/accord_home.dart';
 import 'package:bonfire/features/spaces/views/accord_role_management.dart';
@@ -45,6 +47,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'review_screens.dart';
 import 'seeded_space.dart';
 
 /// A wider channel list than the 220pt default.
@@ -240,15 +243,23 @@ class _CaptureApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // `?theme=light` (any preset name) previews another palette; the store set
+    // itself is shot in the default dark theme.
+    final preset = AppThemePreset.fromName(Uri.base.queryParameters['theme']);
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      theme: buildAppTheme(AppThemePreset.dark),
+      theme: buildAppTheme(preset),
       // Mirrors the router shell in `lib/router/controller.dart`, which is the
       // Material ancestor every screen is really built under.
       home: Builder(
         builder: (context) => Scaffold(
           backgroundColor: BonfireThemeExtension.of(context).background,
-          body: scene == 6 ? const _Welcome() : _Home(scene: scene),
+          body: switch (scene) {
+            6 => const _Welcome(),
+            // Not part of the store set: a preview of the settings screen.
+            7 => const AccordSettingsScreen(),
+            _ => _Home(scene: scene),
+          },
         ),
       ),
     );
@@ -289,6 +300,14 @@ class _HomeState extends State<_Home> {
   @override
   void initState() {
     super.initState();
+    final review = Uri.base.queryParameters['open'];
+    if (review != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        await Future<void>.delayed(const Duration(milliseconds: 1200));
+        if (mounted) await openReviewScreen(context, review);
+      });
+      return;
+    }
     if (widget.scene == 2) {
       // The call scene shows the video grid beside the channel's own chat, and
       // `VoiceChannelView` only splits them above 720pt of message column. Fold

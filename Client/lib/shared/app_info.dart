@@ -71,9 +71,21 @@ bool get isPackageManagerBuild =>
     kPackageManagerBuild ||
     (debugPackageManagerBuild ?? _packageManagerInstall);
 
+/// Kill switch for the in-app updater on every build: `true` means no startup
+/// or periodic check, no Updates settings section and no banner. Releases are
+/// published on GitHub ([kGithubRepo]), so it is off.
+const bool kSelfUpdateDisabled = false;
+
+/// Overrides [kSelfUpdateDisabled] in tests. Null in production.
+@visibleForTesting
+bool? debugSelfUpdateDisabled;
+
 /// Shared gate for automatic checks, manual checks, downloads and applying a
 /// staged update. Package managers own the installed files even when writable.
-bool get isSelfUpdateEnabled => !isAppStoreBuild && !isPackageManagerBuild;
+bool get isSelfUpdateEnabled =>
+    !(debugSelfUpdateDisabled ?? kSelfUpdateDisabled) &&
+    !isAppStoreBuild &&
+    !isPackageManagerBuild;
 
 /// Overrides [isDeveloperModeAvailable] in tests, which can neither set a
 /// `--dart-define` nor pretend to run on another platform. Null in production.
@@ -116,9 +128,9 @@ bool get isBackgroundConnectionAvailable =>
 /// the Flutter client's own repository. See [kGithubLatestReleaseUrl].
 const String kGithubRepo = 'ChunchunOwO/vokusz';
 
-/// The Accord server this build opens on. Plain HTTP on the server port until
-/// the hostname has a certificate.
-const String kDefaultAccordServerUrl = 'https://vokusz.shiinasuki.com';
+/// The Accord server this build opens on. It is served on 8443 because 80/443
+/// on that host belong to another service.
+const String kDefaultAccordServerUrl = 'https://vokusz.shiinasuki.com:8443';
 
 /// In-app support links. Docs live in this repo; there is no product website.
 const String kVokuszHelpUrl =

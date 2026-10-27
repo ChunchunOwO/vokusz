@@ -1,10 +1,10 @@
+import 'package:bonfire/shared/components/leading_icon.dart';
 import 'package:bonfire/l10n/ui_copy.dart';
 import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:bonfire/features/settings/controllers/settings.dart';
 import 'package:bonfire/shared/utils/rest_result_ext.dart';
-import 'package:bonfire/theme/theme.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -94,11 +94,10 @@ class SettingsBackupSection extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final colors = BonfireThemeExtension.of(context);
     return Column(
       children: [
         ListTile(
-          leading: Icon(Icons.upload_file, color: colors.dirtyWhite),
+          leading: LeadingIcon(Icons.upload_file),
           title: Text(UiCopy.exportSettings(context: context)),
           subtitle: Text(
             UiCopy.saveYourPreferencesToAJsonFile(context: context),
@@ -106,10 +105,7 @@ class SettingsBackupSection extends ConsumerWidget {
           onTap: () => _export(context, ref),
         ),
         ListTile(
-          leading: Icon(
-            Icons.download_for_offline_outlined,
-            color: colors.dirtyWhite,
-          ),
+          leading: LeadingIcon(Icons.download_for_offline_outlined),
           title: Text(UiCopy.importSettings(context: context)),
           subtitle: Text(
             UiCopy.restorePreferencesFromAJsonFile(context: context),

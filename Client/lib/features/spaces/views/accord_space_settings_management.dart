@@ -8,14 +8,13 @@ class _MembershipSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colors = BonfireThemeExtension.of(context);
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         SectionHeader(UiCopy.membership(context: context)),
         ListTile(
-          leading: Icon(Icons.badge_outlined, color: colors.dirtyWhite),
+          leading: LeadingIcon(Icons.badge_outlined),
           title: Text(UiCopy.changeYourNickname(context: context)),
           subtitle: Text(UiCopy.howYouAppearInThisSpace(context: context)),
           trailing: const Icon(Icons.chevron_right),
@@ -49,7 +48,6 @@ class _ManagementSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colors = BonfireThemeExtension.of(context);
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -57,7 +55,7 @@ class _ManagementSection extends StatelessWidget {
         SectionHeader(UiCopy.management(context: context)),
         if (canManageRoles)
           ListTile(
-            leading: Icon(Icons.shield_outlined, color: colors.dirtyWhite),
+            leading: LeadingIcon(Icons.shield_outlined),
             title: Text(UiCopy.roles2(context: context)),
             subtitle: Text(UiCopy.createEditAndOrderRoles(context: context)),
             trailing: const Icon(Icons.chevron_right),
@@ -65,7 +63,7 @@ class _ManagementSection extends StatelessWidget {
           ),
         if (canViewAuditLog)
           ListTile(
-            leading: Icon(Icons.history, color: colors.dirtyWhite),
+            leading: LeadingIcon(Icons.history),
             title: Text(UiCopy.auditLog(context: context)),
             subtitle: Text(
               UiCopy.recentModerationAndAdminActions(context: context),
@@ -75,14 +73,14 @@ class _ManagementSection extends StatelessWidget {
           ),
         if (canModerate) ...[
           ListTile(
-            leading: Icon(Icons.gavel, color: colors.dirtyWhite),
+            leading: LeadingIcon(Icons.gavel),
             title: Text(UiCopy.bannedMembers(context: context)),
             subtitle: Text(UiCopy.reviewAndUnbanMembers(context: context)),
             trailing: const Icon(Icons.chevron_right),
             onTap: () => showAccordBanList(context, spaceId: spaceId),
           ),
           ListTile(
-            leading: Icon(Icons.flag_outlined, color: colors.dirtyWhite),
+            leading: LeadingIcon(Icons.flag_outlined),
             title: Text(UiCopy.reports(context: context)),
             subtitle: Text(
               UiCopy.reviewAndResolveMemberReports(context: context),
@@ -93,10 +91,7 @@ class _ManagementSection extends StatelessWidget {
         ],
         if (canManageEmojis)
           ListTile(
-            leading: Icon(
-              Icons.emoji_emotions_outlined,
-              color: colors.dirtyWhite,
-            ),
+            leading: LeadingIcon(Icons.emoji_emotions_outlined),
             title: Text(UiCopy.customEmoji(context: context)),
             subtitle: Text(UiCopy.uploadRenameAndDeleteEmoji(context: context)),
             trailing: const Icon(Icons.chevron_right),
@@ -104,7 +99,7 @@ class _ManagementSection extends StatelessWidget {
           ),
         if (canUseSoundboard)
           ListTile(
-            leading: Icon(Icons.graphic_eq, color: colors.dirtyWhite),
+            leading: LeadingIcon(Icons.graphic_eq),
             title: Text(UiCopy.soundboard(context: context)),
             subtitle: Text(
               UiCopy.playAndManageSoundboardClips(context: context),
@@ -142,14 +137,14 @@ class _DangerZoneSection extends StatelessWidget {
       children: [
         SectionHeader(UiCopy.dangerZone(context: context)),
         ListTile(
-          leading: Icon(Icons.swap_horiz, color: colors.dirtyWhite),
+          leading: LeadingIcon(Icons.swap_horiz),
           title: Text(UiCopy.transferOwnership(context: context)),
           subtitle: Text(UiCopy.handThisSpaceToAnotherMember(context: context)),
           trailing: const Icon(Icons.chevron_right),
           onTap: () => showTransferOwnership(context, spaceId: spaceId),
         ),
         ListTile(
-          leading: Icon(Icons.delete_forever, color: colors.red),
+          leading: LeadingIcon(Icons.delete_forever, color: colors.red),
           title: Text(
             UiCopy.deleteSpace(context: context),
             style: TextStyle(color: colors.red),

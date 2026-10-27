@@ -231,7 +231,6 @@ class _ForumChannelViewState extends ConsumerState<ForumChannelView> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     final colors = BonfireThemeExtension.of(context);
     final openPost = _openPostMessage;
     if (openPost != null) {
@@ -266,11 +265,9 @@ class _ForumChannelViewState extends ConsumerState<ForumChannelView> {
               child: posts == null
                   ? const LoadingView()
                   : posts.isEmpty
-                  ? Center(
-                      child: Text(
-                        UiCopy.noPostsYet(context: context),
-                        style: theme.textTheme.bodyMedium,
-                      ),
+                  ? EmptyStateView(
+                      icon: Icons.forum_outlined,
+                      message: UiCopy.noPostsYet(context: context),
                     )
                   : RefreshIndicator(
                       onRefresh: _reload,

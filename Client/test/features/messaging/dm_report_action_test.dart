@@ -11,6 +11,7 @@ import 'package:bonfire/features/settings/controllers/settings.dart';
 import 'package:bonfire/features/settings/models/accord_settings.dart';
 import 'package:bonfire/features/user/controllers/blocked_users.dart';
 import 'package:bonfire/theme/app_theme.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -151,6 +152,16 @@ Future<void> _tick(WidgetTester tester, {int frames = 12}) async {
   }
 }
 
+/// Moves a mouse over [row] so its floating hover toolbar is built — the bar
+/// only exists under the pointer, the way a desktop user reaches it.
+Future<void> _hover(WidgetTester tester, Finder row) async {
+  final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+  await mouse.addPointer(location: tester.getTopLeft(row) + const Offset(4, 4));
+  addTearDown(mouse.removePointer);
+  await mouse.moveTo(tester.getCenter(row));
+  await tester.pump();
+}
+
 void main() {
   testWidgets('a direct message from someone else can be reported', (
     tester,
@@ -161,6 +172,7 @@ void main() {
     await _tick(tester);
 
     expect(_body('from them'), findsOneWidget);
+    await _hover(tester, find.byKey(const ValueKey('m2')));
     await tester.tap(
       find.descendant(
         of: find.byKey(const ValueKey('m2')),
@@ -190,6 +202,7 @@ void main() {
     await tester.pumpWidget(harness.app);
     await _tick(tester);
 
+    await _hover(tester, find.byKey(const ValueKey('m1')));
     await tester.tap(
       find.descendant(
         of: find.byKey(const ValueKey('m1')),

@@ -41,6 +41,16 @@ if(MSVC)
   add_compile_definitions(_SILENCE_EXPERIMENTAL_COROUTINE_DEPRECATION_WARNINGS)
 endif()
 
+# Read every C/C++ source as UTF-8 whatever the build machine's code page. On
+# a Chinese-locale Windows (code page 936) MSVC otherwise reads UTF-8 headers
+# such as flutter_webrtc's loopback_capturer.h as GBK, warns C4819, and the /WX
+# in APPLY_STANDARD_SETTINGS fails the plugin (livekit_client includes that
+# header too). English-locale CI never sees it. The per-target /utf-8 flags in
+# runner/ and obs/ predate this and are harmless duplicates.
+if(MSVC)
+  add_compile_options("$<$<COMPILE_LANGUAGE:C,CXX>:/utf-8>")
+endif()
+
 # Compilation settings that should be applied to most targets.
 #
 # Be cautious about adding new options here, as plugins use this function by

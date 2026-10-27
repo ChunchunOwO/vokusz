@@ -10,6 +10,7 @@ import 'package:bonfire/features/server/models/accord_server.dart';
 import 'package:bonfire/features/settings/controllers/settings.dart';
 import 'package:bonfire/features/settings/models/accord_settings.dart';
 import 'package:bonfire/theme/app_theme.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -183,12 +184,24 @@ Finder _row(String messageId, String body) {
   return row;
 }
 
+
+/// Moves a mouse over [row] so its floating hover toolbar is built — the bar
+/// only exists under the pointer, the way a desktop user reaches it.
+Future<void> _hover(WidgetTester tester, Finder row) async {
+  final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+  await mouse.addPointer(location: tester.getTopLeft(row) + const Offset(4, 4));
+  addTearDown(mouse.removePointer);
+  await mouse.moveTo(tester.getCenter(row));
+  await tester.pump();
+}
+
 /// Opens [messageId]'s overflow menu and picks [action] from it.
 Future<void> _menuAction(
   WidgetTester tester,
   Finder row,
   String action,
 ) async {
+  await _hover(tester, row);
   await tester.tap(
     find.descendant(of: row, matching: find.byTooltip('Message actions')),
   );
@@ -268,6 +281,7 @@ void main() {
     final harness = await _pumpPane(tester);
 
     // Open the emoji picker from the first message's hover actions.
+    await _hover(tester, _row('m1', 'first message'));
     await tester.tap(
       find.descendant(
         of: _row('m1', 'first message'),

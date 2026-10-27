@@ -1,3 +1,4 @@
+import 'package:bonfire/shared/components/surface_card.dart';
 import 'package:bonfire/l10n/ui_copy.dart';
 import 'package:bonfire/features/authentication/models/accord_auth_state.dart';
 import 'package:bonfire/features/authentication/repositories/accord_auth.dart';
@@ -431,8 +432,11 @@ class _AccordLoginScreenState extends ConsumerState<AccordLoginScreen> {
             setState(() => _view = _LoggedOutView.credentials),
         onJoinRequiresAuth: _onDiscoveryJoinRequiresAuth,
       ),
+      // The sign-in form sits on a raised card over the canvas.
       _LoggedOutView.credentials => _centered(
-        _AuthForm(
+        SurfaceCard(
+          padding: const EdgeInsets.fromLTRB(24, 24, 24, 20),
+          child: _AuthForm(
           usernameController: _usernameController,
           passwordController: _passwordController,
           displayNameController: _displayNameController,
@@ -448,7 +452,9 @@ class _AccordLoginScreenState extends ConsumerState<AccordLoginScreen> {
           error:
               _authLocalError ??
               (state is AccordAuthFailed ? state.message : null),
+          ),
         ),
+        maxWidth: 460,
       ),
     };
 
@@ -469,7 +475,7 @@ class _AccordLoginScreenState extends ConsumerState<AccordLoginScreen> {
   Widget _fill(Widget child) {
     final colors = BonfireThemeExtension.of(context);
     return ColoredBox(
-      color: colors.background,
+      color: colors.canvas,
       child: SizedBox.expand(child: child),
     );
   }
@@ -748,22 +754,20 @@ class _SubmitButton extends StatelessWidget {
     final colors = BonfireThemeExtension.of(context);
     return SizedBox(
       height: 50,
+      // The theme's solid accent action.
       child: ElevatedButton(
         onPressed: onPressed,
         style: ElevatedButton.styleFrom(
-          elevation: 0,
-          backgroundColor: colors.background,
-          foregroundColor: colors.dirtyWhite,
-          side: BorderSide(color: colors.primary),
           shape: const RoundedRectangleBorder(
-            borderRadius: BorderRadius.all(Radius.circular(4)),
+            borderRadius: BorderRadius.all(Radius.circular(AppRadius.lg)),
           ),
         ),
         child: Text(
           label,
-          style: Theme.of(
-            context,
-          ).textTheme.titleSmall!.copyWith(color: colors.dirtyWhite),
+          style: Theme.of(context).textTheme.titleSmall!.copyWith(
+            color: colors.onPrimary,
+            fontWeight: FontWeight.w600,
+          ),
         ),
       ),
     );

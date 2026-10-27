@@ -233,6 +233,15 @@ UI end-to-end, multi-instance, and LiveKit SFU scenarios run advisory
 
 ### Release builds
 
+Building for Windows needs Visual Studio 2022 (Build Tools are enough) with the
+"Desktop development with C++" workload (`Microsoft.VisualStudio.Workload.VCTools`
+with its recommended components) **plus** the "C++ ATL" component
+(`Microsoft.VisualStudio.Component.VC.ATL`) — `flutter_secure_storage` and
+`flutter_local_notifications` include ATL headers. Windows Developer Mode must
+be on for plugin symlinks. The first build downloads the pinned OBS runtime
+(about 200 MB). Sources compile as UTF-8 (`/utf-8`), so a Chinese-locale
+(code page 936) machine builds the same as CI.
+
 ```bash
 scripts/build.sh windows
 flutter build windows

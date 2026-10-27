@@ -83,16 +83,29 @@ class WelcomeView extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.center,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            // A wordmark rather than a heading: tight, heavy, and underscored by
+            // a short accent rule — the same signal line the app chrome uses.
             Text(
               'Vokusz',
               textAlign: TextAlign.center,
-              style:
-                  (wide
-                          ? theme.textTheme.headlineMedium
-                          : theme.textTheme.headlineSmall)
-                      ?.copyWith(fontWeight: FontWeight.w700),
+              style: theme.textTheme.headlineSmall?.copyWith(
+                fontSize: wide ? 40 : 28,
+                fontWeight: FontWeight.w800,
+                letterSpacing: -0.5,
+              ),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 10),
+            Center(
+              child: Container(
+                width: 36,
+                height: 3,
+                decoration: BoxDecoration(
+                  color: colors.primary,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            const SizedBox(height: 14),
             Text(
               UiCopy.freeScreenSharingSmoothStableVoiceOn(context: context),
               textAlign: TextAlign.center,
@@ -145,14 +158,13 @@ class WelcomeView extends StatelessWidget {
           onPressed: onBrowse,
           icon: const Icon(Icons.explore_outlined, size: 20),
           label: Text(UiCopy.browseServers()),
+          // The default next step: the theme's solid accent action.
           style: ElevatedButton.styleFrom(
-            elevation: 0,
-            backgroundColor: colors.background,
-            foregroundColor: colors.dirtyWhite,
-            textStyle: theme.textTheme.titleSmall,
-            side: BorderSide(color: colors.primary),
+            textStyle: theme.textTheme.titleSmall?.copyWith(
+              fontWeight: FontWeight.w600,
+            ),
             shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(4),
+              borderRadius: BorderRadius.circular(AppRadius.lg),
             ),
           ),
         ),
@@ -171,9 +183,12 @@ class WelcomeView extends StatelessWidget {
       label: Text(UiCopy.runYourOwnServer(context: context)),
       style: OutlinedButton.styleFrom(
         foregroundColor: colors.dirtyWhite,
-        side: BorderSide(color: colors.primary),
-        textStyle: theme.textTheme.titleSmall,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+        textStyle: theme.textTheme.titleSmall?.copyWith(
+          fontWeight: FontWeight.w600,
+        ),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppRadius.lg),
+        ),
       ),
     ),
   );
@@ -214,13 +229,24 @@ class _HighlightCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 18),
       decoration: BoxDecoration(
-        color: colors.foreground,
-        borderRadius: BorderRadius.circular(4),
+        color: colors.sheet,
+        borderRadius: BorderRadius.circular(AppRadius.lg),
+        border: Border.all(color: colors.hairline),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(highlight.icon, size: 22, color: colors.primary),
+          // The icon sits in a soft accent tile.
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color: colors.accentSoft,
+              borderRadius: BorderRadius.circular(AppRadius.md),
+            ),
+            alignment: Alignment.center,
+            child: Icon(highlight.icon, size: 20, color: colors.primary),
+          ),
           const SizedBox(height: 10),
           Text(
             AppStrings.label(highlight.title, context: context),

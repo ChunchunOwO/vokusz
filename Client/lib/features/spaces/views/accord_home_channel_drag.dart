@@ -60,12 +60,6 @@ class _ChannelDragListState extends ConsumerState<_ChannelDragList> {
   static List<ChannelReorderEntry> _flatten(List<AccordChannel> channels) =>
       flattenChannelsForReorder(channels, uncategorizedFirst: true);
 
-  /// The items actually shown: every category, plus the children of categories
-  /// that aren't collapsed (uncategorized channels are always shown).
-  List<ChannelReorderEntry> get _visible => _items
-      .where((e) => e.isCategory || !widget.collapsed.contains(e.parentId))
-      .toList();
-
   void _drop(
     ChannelReorderEntry moved,
     String? parentId, {
@@ -112,10 +106,15 @@ class _ChannelDragListState extends ConsumerState<_ChannelDragList> {
           !identical(details.data, before),
       onAcceptWithDetails: (details) =>
           _drop(details.data, parentId, before: before),
-      builder: (context, candidates, rejected) => Container(
-        color: candidates.isEmpty
-            ? null
-            : Theme.of(context).colorScheme.primary.withValues(alpha: 0.2),
+      // The drop slot lights up with a soft accent wash under a drag.
+      builder: (context, candidates, rejected) => AnimatedContainer(
+        duration: AppMotion.of(context, AppMotion.fast),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(AppRadius.sm),
+          color: Theme.of(context).colorScheme.primary.withValues(
+            alpha: candidates.isEmpty ? 0 : 0.22,
+          ),
+        ),
         child: child,
       ),
     );
@@ -208,39 +207,80 @@ class _ChannelDragListState extends ConsumerState<_ChannelDragList> {
     );
   }
 
+  /// One entry's drop gap plus its draggable row.
+  List<Widget> _entryWidgets(BuildContext context, ChannelReorderEntry entry) {
+    final colors = BonfireThemeExtension.of(context);
+    return [
+      _target(
+        const SizedBox(height: 8),
+        entry.isCategory ? null : entry.parentId,
+        before: entry,
+        categories: entry.isCategory,
+      ),
+      Draggable<ChannelReorderEntry>(
+        key: ValueKey(entry.channel.id),
+        data: entry,
+        maxSimultaneousDrags: _persisting ? 0 : 1,
+        // A lifted chip in the sheet colour, matching the menus.
+        feedback: Material(
+          color: colors.sheet,
+          elevation: 8,
+          shadowColor: colors.shadow,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppRadius.md),
+            side: BorderSide(color: colors.hairline),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  entry.isCategory ? Icons.folder_outlined : Icons.tag,
+                  size: 16,
+                  color: colors.gray,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  entry.channel.name ?? entry.channel.id,
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: colors.emphasis,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        childWhenDragging: Opacity(
+          opacity: 0.35,
+          child: _buildItem(context, entry),
+        ),
+        child: entry.isCategory
+            ? _target(_buildItem(context, entry), entry.channel.id)
+            : _buildItem(context, entry),
+      ),
+    ];
+  }
+
   @override
   Widget build(BuildContext context) {
-    final visible = _visible;
     return ListView(
       padding: const EdgeInsets.only(bottom: 8),
       children: [
-        for (final entry in visible) ...[
-          _target(
-            const SizedBox(height: 8),
-            entry.isCategory ? null : entry.parentId,
-            before: entry,
-            categories: entry.isCategory,
-          ),
-          Draggable<ChannelReorderEntry>(
-            key: ValueKey(entry.channel.id),
-            data: entry,
-            maxSimultaneousDrags: _persisting ? 0 : 1,
-            feedback: Material(
-              elevation: 6,
-              child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: Text(entry.channel.name ?? entry.channel.id),
+        for (final entry in _items)
+          if (entry.isCategory || entry.parentId == null)
+            ..._entryWidgets(context, entry)
+          else
+            // A collapsed category's channels fold away under its header (and
+            // stop accepting drops once fully closed).
+            AnimatedReveal(
+              key: ValueKey('reveal-${entry.channel.id}'),
+              open: !widget.collapsed.contains(entry.parentId),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: _entryWidgets(context, entry),
               ),
             ),
-            childWhenDragging: Opacity(
-              opacity: 0.35,
-              child: _buildItem(context, entry),
-            ),
-            child: entry.isCategory
-                ? _target(_buildItem(context, entry), entry.channel.id)
-                : _buildItem(context, entry),
-          ),
-        ],
         _target(const SizedBox(height: 24), null, categories: true),
       ],
     );

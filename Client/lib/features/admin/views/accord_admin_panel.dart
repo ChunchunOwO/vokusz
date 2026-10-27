@@ -32,7 +32,8 @@ class AccordAdminPanel extends ConsumerWidget {
       return Scaffold(
         backgroundColor: colors.background,
         appBar: AppBar(
-          backgroundColor: colors.foreground,
+          backgroundColor: colors.background,
+          shape: Border(bottom: BorderSide(color: colors.hairline)),
           title: Text(UiCopy.serverAdministration(context: context)),
           leading: IconButton(
             icon: const Icon(Icons.arrow_back),
@@ -65,7 +66,8 @@ class AccordAdminPanel extends ConsumerWidget {
       child: Scaffold(
         backgroundColor: colors.background,
         appBar: AppBar(
-          backgroundColor: colors.foreground,
+          backgroundColor: colors.background,
+          shape: Border(bottom: BorderSide(color: colors.hairline)),
           title: Text(UiCopy.serverAdministration(context: context)),
           leading: IconButton(
             icon: const Icon(Icons.arrow_back),
